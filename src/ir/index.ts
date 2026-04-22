@@ -72,3 +72,5 @@ export type {
   NeverType,
   EffectSet,
 } from './types.js';
+
+export { serializeModule, deserializeModule, IonIRSerdeError } from './serde.js';

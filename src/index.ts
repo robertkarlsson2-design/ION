@@ -64,6 +64,8 @@ export type {
   EffectSet,
 } from './ir/index.js';
 
+export { serializeModule, deserializeModule, IonIRSerdeError } from './ir/index.js';
+
 export type { Span, SymbolId } from './types.js';
 export { makeSymbolId } from './types.js';
 
