@@ -1,696 +1,808 @@
 import type {
   IonIRModule,
   IonIRNode,
+  ModuleRefNode,
   AdtDeclNode,
-  Param,
   CasePattern,
-  CaseArm,
-  AdtArm,
-  EffectHandler,
-  OopMethod,
   LiteralValue,
+  Param,
 } from '../ir/nodes.js';
 import type { IonType } from '../ir/types.js';
 
 // ---------------------------------------------------------------------------
-// Public types
+// Internal types
 // ---------------------------------------------------------------------------
 
-/** Thrown when encoding encounters an irrecoverable structural problem. */
-export class WireEncodeError extends Error {
-  constructor(message: string, readonly path: readonly string[]) {
-    super(message);
-    this.name = 'WireEncodeError';
-  }
+type Alias = string;
+
+interface NameRecord {
+  count: number;
+  firstPos: number;
+}
+
+interface PoolEntry {
+  alias: Alias;
+  value: string;
+}
+
+interface SymbolPool {
+  readonly toAlias: ReadonlyMap<string, Alias>;
+  readonly entries: ReadonlyArray<PoolEntry>;
+}
+
+interface TypePool {
+  readonly toAlias: ReadonlyMap<string, Alias>;
+  readonly entries: ReadonlyArray<PoolEntry>;
+}
+
+interface EncoderContext {
+  readonly sym: SymbolPool;
+  readonly typ: TypePool;
+}
+
+function assertNever(x: never): never {
+  throw new Error(`Unexpected value: ${String(x)}`);
 }
 
 // ---------------------------------------------------------------------------
-// Internal: AliasGenerator
+// Phase 1a: name collection
 // ---------------------------------------------------------------------------
 
-class AliasGenerator {
-  private n = 0;
+class NameCollector {
+  private readonly names = new Map<string, NameRecord>();
+  private pos = 0;
 
-  /** Returns the next alias: 0→'a', 25→'z', 26→'aa', 51→'az', 52→'ba', … */
-  next(): string {
-    const n = this.n++;
-    if (n < 26) return String.fromCharCode(97 + n);
-    const m = n - 26;
-    return String.fromCharCode(97 + Math.floor(m / 26)) + String.fromCharCode(97 + (m % 26));
+  record(name: string): void {
+    const existing = this.names.get(name);
+    if (existing !== undefined) {
+      existing.count++;
+    } else {
+      this.names.set(name, { count: 1, firstPos: this.pos++ });
+    }
+  }
+
+  result(): Map<string, NameRecord> {
+    return this.names;
   }
 }
 
+function collectNamesFromType(t: IonType, c: NameCollector): void {
+  switch (t.kind) {
+    case 'Int':
+    case 'Float':
+    case 'Str':
+    case 'Bool':
+    case 'Null':
+    case 'Unit':
+    case 'Never':
+    case 'TypeVar':
+      break;
+    case 'List':
+      collectNamesFromType(t.elem, c);
+      break;
+    case 'Option':
+      collectNamesFromType(t.inner, c);
+      break;
+    case 'Map':
+      collectNamesFromType(t.key, c);
+      collectNamesFromType(t.value, c);
+      break;
+    case 'Result':
+      collectNamesFromType(t.ok, c);
+      collectNamesFromType(t.err, c);
+      break;
+    case 'Fn':
+      for (const p of t.params) collectNamesFromType(p, c);
+      collectNamesFromType(t.ret, c);
+      break;
+    case 'User':
+      c.record(t.name);
+      for (const a of t.args) collectNamesFromType(a, c);
+      break;
+    default:
+      assertNever(t);
+  }
+}
+
+function collectNamesFromPattern(p: CasePattern, c: NameCollector): void {
+  switch (p.kind) {
+    case 'Wildcard':
+    case 'Literal':
+      break;
+    case 'Var':
+      c.record(p.name);
+      break;
+    case 'Constructor':
+      c.record(p.ctorName);
+      for (const f of p.fields) collectNamesFromPattern(f, c);
+      break;
+    default:
+      assertNever(p);
+  }
+}
+
+function collectNamesFromNode(node: IonIRNode, c: NameCollector): void {
+  collectNamesFromType(node.type, c);
+
+  switch (node.kind) {
+    case 'Var':
+      c.record(node.name);
+      break;
+    case 'Literal':
+      break;
+    case 'App':
+      collectNamesFromNode(node.callee, c);
+      for (const a of node.args) collectNamesFromNode(a, c);
+      break;
+    case 'Abs':
+      for (const p of node.params) {
+        c.record(p.name);
+        collectNamesFromType(p.type, c);
+      }
+      collectNamesFromNode(node.body, c);
+      break;
+    case 'Let':
+      c.record(node.name);
+      collectNamesFromType(node.bindingType, c);
+      collectNamesFromNode(node.value, c);
+      collectNamesFromNode(node.body, c);
+      break;
+    case 'Case':
+      collectNamesFromNode(node.scrutinee, c);
+      for (const arm of node.arms) {
+        collectNamesFromPattern(arm.pattern, c);
+        if (arm.guard !== undefined) collectNamesFromNode(arm.guard, c);
+        collectNamesFromNode(arm.body, c);
+      }
+      break;
+    case 'Constructor':
+      c.record(node.ctorName);
+      for (const a of node.args) collectNamesFromNode(a, c);
+      break;
+    case 'Accessor':
+      collectNamesFromNode(node.receiver, c);
+      c.record(node.member);
+      break;
+    case 'ModuleRef':
+      for (const p of node.modulePath) c.record(p);
+      break;
+    case 'ForeignRef':
+      c.record(node.target);
+      c.record(node.module);
+      c.record(node.symbol);
+      break;
+    case 'Effect':
+      c.record(node.effectTag);
+      collectNamesFromNode(node.body, c);
+      break;
+    case 'OopClass':
+      c.record(node.name);
+      for (const f of node.fields) {
+        c.record(f.name);
+        collectNamesFromType(f.type, c);
+      }
+      for (const m of node.methods) {
+        c.record(m.name);
+        for (const p of m.params) {
+          c.record(p.name);
+          collectNamesFromType(p.type, c);
+        }
+        collectNamesFromType(m.retType, c);
+        if (m.body !== undefined) collectNamesFromNode(m.body, c);
+      }
+      break;
+    case 'OopInterface':
+      c.record(node.name);
+      for (const mem of node.members) {
+        c.record(mem.name);
+        collectNamesFromType(mem.type, c);
+      }
+      break;
+    case 'OopNew':
+      for (const a of node.args) collectNamesFromNode(a, c);
+      break;
+    case 'OopVirtualCall':
+      collectNamesFromNode(node.receiver, c);
+      c.record(node.method);
+      for (const a of node.args) collectNamesFromNode(a, c);
+      break;
+    case 'OopThis':
+      break;
+    case 'AsyncBlock':
+      collectNamesFromNode(node.body, c);
+      break;
+    case 'Await':
+      collectNamesFromNode(node.expr, c);
+      break;
+    case 'AdtDecl':
+      c.record(node.name);
+      for (const v of node.variants) {
+        c.record(v.tag);
+        for (const f of v.fields) {
+          c.record(f.name);
+          collectNamesFromType(f.type, c);
+        }
+      }
+      break;
+    case 'AdtMatch':
+      collectNamesFromNode(node.scrutinee, c);
+      for (const arm of node.arms) {
+        c.record(arm.tag);
+        for (const b of arm.bindings) {
+          c.record(b.name);
+          collectNamesFromType(b.type, c);
+        }
+        collectNamesFromNode(arm.body, c);
+      }
+      break;
+    case 'EffectDecl':
+      c.record(node.name);
+      for (const op of node.operations) {
+        c.record(op.name);
+        for (const p of op.params) {
+          c.record(p.name);
+          collectNamesFromType(p.type, c);
+        }
+        collectNamesFromType(op.retType, c);
+      }
+      break;
+    case 'Perform':
+      c.record(node.operation);
+      for (const a of node.args) collectNamesFromNode(a, c);
+      break;
+    case 'Handle':
+      collectNamesFromNode(node.body, c);
+      for (const h of node.handlers) {
+        c.record(h.operation);
+        for (const p of h.params) {
+          c.record(p.name);
+          collectNamesFromType(p.type, c);
+        }
+        collectNamesFromNode(h.body, c);
+      }
+      if (node.returnClause !== undefined) collectNamesFromNode(node.returnClause, c);
+      break;
+    case 'Resume':
+      collectNamesFromNode(node.value, c);
+      break;
+    default:
+      assertNever(node);
+  }
+}
+
+/** Depth-first traversal; records occurrence count and first-encounter position for every name. */
+function collectNames(module: IonIRModule): Map<string, NameRecord> {
+  const c = new NameCollector();
+  for (const imp of module.imports) {
+    for (const p of imp.modulePath) c.record(p);
+    collectNamesFromType(imp.type, c);
+  }
+  for (const d of module.data) collectNamesFromNode(d, c);
+  for (const decl of module.decls) collectNamesFromNode(decl, c);
+  return c.result();
+}
+
 // ---------------------------------------------------------------------------
-// Internal: pools and context
+// Phase 1b: raw type serialisation (no pool lookup — used for pool keys)
 // ---------------------------------------------------------------------------
 
-type SymbolPool = ReadonlyMap<string, string>;
-type TypePool = ReadonlyMap<string, string>;
+/** Serialises an IonType to its canonical wire string without pool aliasing. */
+function serializeTypeRaw(t: IonType): string {
+  switch (t.kind) {
+    case 'Int':   return 'int';
+    case 'Float': return 'flt';
+    case 'Str':   return 'str';
+    case 'Bool':  return 'bool';
+    case 'Null':  return 'null';
+    case 'Unit':  return 'unit';
+    case 'Never': return 'never';
+    case 'TypeVar': return `$${t.id}`;
+    case 'List':  return `list<${serializeTypeRaw(t.elem)}>`;
+    case 'Option': return `opt<${serializeTypeRaw(t.inner)}>`;
+    case 'Map':   return `map<${serializeTypeRaw(t.key)},${serializeTypeRaw(t.value)}>`;
+    case 'Result': return `res<${serializeTypeRaw(t.ok)},${serializeTypeRaw(t.err)}>`;
+    case 'Fn': {
+      const params = t.params.map(serializeTypeRaw).join(',');
+      const effects = [...t.effects].sort().map(e => `!${e}`).join('');
+      return `fn(${params})->${serializeTypeRaw(t.ret)}${effects}`;
+    }
+    case 'User':
+      return t.args.length === 0
+        ? t.name
+        : `${t.name}<${t.args.map(serializeTypeRaw).join(',')}>`;
+    default:
+      return assertNever(t);
+  }
+}
 
-interface WireContext {
-  readonly symbolPool: SymbolPool;
-  readonly typePool: TypePool;
+function isPrimitiveType(t: IonType): boolean {
+  return (
+    t.kind === 'Int' || t.kind === 'Float' || t.kind === 'Str' ||
+    t.kind === 'Bool' || t.kind === 'Null' || t.kind === 'Unit' ||
+    t.kind === 'Never' || t.kind === 'TypeVar'
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1c: type expression collection
+// ---------------------------------------------------------------------------
+
+function collectTypesFromType(t: IonType, out: Map<string, number>): void {
+  if (!isPrimitiveType(t)) {
+    const expr = serializeTypeRaw(t);
+    out.set(expr, (out.get(expr) ?? 0) + 1);
+  }
+  switch (t.kind) {
+    case 'Int': case 'Float': case 'Str': case 'Bool':
+    case 'Null': case 'Unit': case 'Never': case 'TypeVar':
+      break;
+    case 'List':   collectTypesFromType(t.elem, out); break;
+    case 'Option': collectTypesFromType(t.inner, out); break;
+    case 'Map':
+      collectTypesFromType(t.key, out);
+      collectTypesFromType(t.value, out);
+      break;
+    case 'Result':
+      collectTypesFromType(t.ok, out);
+      collectTypesFromType(t.err, out);
+      break;
+    case 'Fn':
+      for (const p of t.params) collectTypesFromType(p, out);
+      collectTypesFromType(t.ret, out);
+      break;
+    case 'User':
+      for (const a of t.args) collectTypesFromType(a, out);
+      break;
+    default:
+      assertNever(t);
+  }
+}
+
+function collectTypesFromNode(node: IonIRNode, out: Map<string, number>): void {
+  collectTypesFromType(node.type, out);
+  switch (node.kind) {
+    case 'Var': case 'Literal': case 'ModuleRef': case 'OopThis': break;
+    case 'App':
+      collectTypesFromNode(node.callee, out);
+      for (const a of node.args) collectTypesFromNode(a, out);
+      break;
+    case 'Abs':
+      for (const p of node.params) collectTypesFromType(p.type, out);
+      collectTypesFromNode(node.body, out);
+      break;
+    case 'Let':
+      collectTypesFromType(node.bindingType, out);
+      collectTypesFromNode(node.value, out);
+      collectTypesFromNode(node.body, out);
+      break;
+    case 'Case':
+      collectTypesFromNode(node.scrutinee, out);
+      for (const arm of node.arms) {
+        if (arm.guard !== undefined) collectTypesFromNode(arm.guard, out);
+        collectTypesFromNode(arm.body, out);
+      }
+      break;
+    case 'Constructor':
+      for (const a of node.args) collectTypesFromNode(a, out);
+      break;
+    case 'Accessor': collectTypesFromNode(node.receiver, out); break;
+    case 'ForeignRef':
+      for (const p of node.sig.params) collectTypesFromType(p, out);
+      collectTypesFromType(node.sig.ret, out);
+      break;
+    case 'Effect': collectTypesFromNode(node.body, out); break;
+    case 'OopClass':
+      for (const f of node.fields) collectTypesFromType(f.type, out);
+      for (const m of node.methods) {
+        for (const p of m.params) collectTypesFromType(p.type, out);
+        collectTypesFromType(m.retType, out);
+        if (m.body !== undefined) collectTypesFromNode(m.body, out);
+      }
+      break;
+    case 'OopInterface':
+      for (const mem of node.members) collectTypesFromType(mem.type, out);
+      break;
+    case 'OopNew':
+      for (const a of node.args) collectTypesFromNode(a, out);
+      break;
+    case 'OopVirtualCall':
+      collectTypesFromNode(node.receiver, out);
+      for (const a of node.args) collectTypesFromNode(a, out);
+      break;
+    case 'AsyncBlock': collectTypesFromNode(node.body, out); break;
+    case 'Await':      collectTypesFromNode(node.expr, out); break;
+    case 'AdtDecl':
+      for (const v of node.variants) {
+        for (const f of v.fields) collectTypesFromType(f.type, out);
+      }
+      break;
+    case 'AdtMatch':
+      collectTypesFromNode(node.scrutinee, out);
+      for (const arm of node.arms) {
+        for (const b of arm.bindings) collectTypesFromType(b.type, out);
+        collectTypesFromNode(arm.body, out);
+      }
+      break;
+    case 'EffectDecl':
+      for (const op of node.operations) {
+        for (const p of op.params) collectTypesFromType(p.type, out);
+        collectTypesFromType(op.retType, out);
+      }
+      break;
+    case 'Perform':
+      for (const a of node.args) collectTypesFromNode(a, out);
+      break;
+    case 'Handle':
+      collectTypesFromNode(node.body, out);
+      for (const h of node.handlers) {
+        for (const p of h.params) collectTypesFromType(p.type, out);
+        collectTypesFromNode(h.body, out);
+      }
+      if (node.returnClause !== undefined) collectTypesFromNode(node.returnClause, out);
+      break;
+    case 'Resume': collectTypesFromNode(node.value, out); break;
+    default: assertNever(node);
+  }
+}
+
+/** Collects all non-primitive type expressions and their occurrence counts. */
+function collectTypes(module: IonIRModule): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const imp of module.imports) collectTypesFromType(imp.type, out);
+  for (const d of module.data) collectTypesFromNode(d, out);
+  for (const decl of module.decls) collectTypesFromNode(decl, out);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: pool construction
+// ---------------------------------------------------------------------------
+
+/** Infinite generator: a–z, then aa–zz. */
+function* aliasSequence(): Generator<Alias, never, undefined> {
+  const chars = 'abcdefghijklmnopqrstuvwxyz';
+  for (const c of chars) yield c;
+  for (const c1 of chars) {
+    for (const c2 of chars) {
+      yield c1 + c2;
+    }
+  }
+  // unreachable in practice; satisfies Generator return type
+  throw new Error('alias space exhausted');
+}
+
+function tokenCost(len: number): number {
+  return Math.ceil(len / 4);
+}
+
+function shouldPool(len: number, count: number): boolean {
+  const cost = tokenCost(len);
+  return count * (cost - 1) > 2 + cost;
 }
 
 /**
- * Pooling heuristic: approximate cl100k token savings.
- * inline_tokens ≈ ceil(len/4), ref_tokens = 1, decl_cost = ref + '=' + inline
+ * Pooling heuristic:
+ *   tokenCost(name) = ceil(name.length / 4)
+ *   pool if: count * (tokenCost(name) - 1) > 2 + tokenCost(name)
+ * Sort entries by firstPos ascending.
  */
-function shouldPool(key: string, count: number): boolean {
-  const inlineTokens = Math.ceil(key.length / 4);
-  if (inlineTokens <= 1) return false;
-  const declCost = 1 + 1 + inlineTokens;
-  return count * (inlineTokens - 1) > declCost;
-}
+function buildSymbolPool(names: Map<string, NameRecord>): SymbolPool {
+  const candidates = [...names.entries()]
+    .filter(([name, rec]) => shouldPool(name.length, rec.count))
+    .sort(([, a], [, b]) => a.firstPos - b.firstPos);
 
-function symOrName(name: string, ctx: WireContext): string {
-  return ctx.symbolPool.get(name) ?? name;
-}
+  const toAlias = new Map<string, Alias>();
+  const entries: PoolEntry[] = [];
+  const gen = aliasSequence();
 
-// ---------------------------------------------------------------------------
-// Canonical type expression — uses S pool, NOT T pool (for T-pool key)
-// ---------------------------------------------------------------------------
-
-function canonicalEffects(sortedTags: readonly string[]): string {
-  return sortedTags.length === 0 ? '' : `!${sortedTags.join(',')}`;
-}
-
-function canonicalType(type: IonType, symPool: SymbolPool): string {
-  switch (type.kind) {
-    case 'Int': return 'int';
-    case 'Float': return 'float';
-    case 'Str': return 'str';
-    case 'Bool': return 'bool';
-    case 'Null': return 'null';
-    case 'Unit': return 'unit';
-    case 'Never': return 'never';
-    case 'TypeVar': return `?${type.id}`;
-    case 'List': return `list<${canonicalType(type.elem, symPool)}>`;
-    case 'Option': return `opt<${canonicalType(type.inner, symPool)}>`;
-    case 'Map': return `map<${canonicalType(type.key, symPool)},${canonicalType(type.value, symPool)}>`;
-    case 'Result': return `res<${canonicalType(type.ok, symPool)},${canonicalType(type.err, symPool)}>`;
-    case 'Fn': {
-      const params = type.params.map(p => canonicalType(p, symPool)).join(',');
-      const ret = canonicalType(type.ret, symPool);
-      const effects = canonicalEffects([...type.effects].sort());
-      return `(${params})->${ret}${effects}`;
-    }
-    case 'User': {
-      const name = symPool.get(type.name) ?? type.name;
-      const args = type.args.length
-        ? `<${type.args.map(a => canonicalType(a, symPool)).join(',')}>`
-        : '';
-      return name + args;
-    }
+  for (const [name] of candidates) {
+    const next = gen.next();
+    const alias = next.value as Alias;
+    toAlias.set(name, alias);
+    entries.push({ alias, value: name });
   }
+
+  return { toAlias, entries };
+}
+
+/**
+ * Type pool: deduplicate all non-primitive type expressions.
+ * Sort entries alphabetically by typeExpr.
+ * Pooling heuristic same formula applied to serialized type expression length.
+ */
+function buildTypePool(typeExprs: Map<string, number>): TypePool {
+  const candidates = [...typeExprs.entries()]
+    .filter(([expr, count]) => shouldPool(expr.length, count))
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  const toAlias = new Map<string, Alias>();
+  const entries: PoolEntry[] = [];
+  const gen = aliasSequence();
+
+  for (const [expr] of candidates) {
+    const next = gen.next();
+    const alias = next.value as Alias;
+    toAlias.set(expr, alias);
+    entries.push({ alias, value: expr });
+  }
+
+  return { toAlias, entries };
 }
 
 // ---------------------------------------------------------------------------
-// Type encoding for wire output — uses both S and T pools
+// Phase 3: section serialisers
 // ---------------------------------------------------------------------------
 
-function encodeType(type: IonType, ctx: WireContext): string {
-  const key = canonicalType(type, ctx.symbolPool);
-  return ctx.typePool.get(key) ?? encodeTypeRaw(type, ctx);
+/** Returns "I1". */
+function encodeVersionLine(): string {
+  return 'I1';
 }
 
-function encodeTypeRaw(type: IonType, ctx: WireContext): string {
-  switch (type.kind) {
-    case 'Int': return 'int';
-    case 'Float': return 'float';
-    case 'Str': return 'str';
-    case 'Bool': return 'bool';
-    case 'Null': return 'null';
-    case 'Unit': return 'unit';
-    case 'Never': return 'never';
-    case 'TypeVar': return `?${type.id}`;
-    case 'List': return `list<${encodeType(type.elem, ctx)}>`;
-    case 'Option': return `opt<${encodeType(type.inner, ctx)}>`;
-    case 'Map': return `map<${encodeType(type.key, ctx)},${encodeType(type.value, ctx)}>`;
-    case 'Result': return `res<${encodeType(type.ok, ctx)},${encodeType(type.err, ctx)}>`;
-    case 'Fn': {
-      const params = type.params.map(p => encodeType(p, ctx)).join(',');
-      const ret = encodeType(type.ret, ctx);
-      const effects = canonicalEffects([...type.effects].sort());
-      return `(${params})->${ret}${effects}`;
-    }
-    case 'User': {
-      const name = symOrName(type.name, ctx);
-      const args = type.args.length
-        ? `<${type.args.map(a => encodeType(a, ctx)).join(',')}>`
-        : '';
-      return name + args;
-    }
-  }
+/** Returns "M <module> v=<version>". */
+function encodeModuleLine(m: IonIRModule): string {
+  return `M ${m.module} v=${m.version}`;
 }
 
-// ---------------------------------------------------------------------------
-// Name collection for symbol pool
-// ---------------------------------------------------------------------------
-
-function collectNamesModule(module: IonIRModule): {
-  counts: Map<string, number>;
-  firstUse: Map<string, number>;
-} {
-  const counts = new Map<string, number>();
-  const firstUse = new Map<string, number>();
-  let order = 0;
-
-  function rec(name: string): void {
-    if (!firstUse.has(name)) firstUse.set(name, order++);
-    counts.set(name, (counts.get(name) ?? 0) + 1);
-  }
-
-  function walkType(type: IonType): void {
-    switch (type.kind) {
-      case 'List': walkType(type.elem); break;
-      case 'Option': walkType(type.inner); break;
-      case 'Map': walkType(type.key); walkType(type.value); break;
-      case 'Result': walkType(type.ok); walkType(type.err); break;
-      case 'Fn': type.params.forEach(walkType); walkType(type.ret); break;
-      case 'User': rec(type.name); type.args.forEach(walkType); break;
-      default: break;
-    }
-  }
-
-  function walkParam(p: Param): void {
-    rec(p.name);
-    walkType(p.type);
-  }
-
-  function walkPattern(pat: CasePattern): void {
-    switch (pat.kind) {
-      case 'Var': rec(pat.name); break;
-      case 'Constructor': rec(pat.ctorName); pat.fields.forEach(walkPattern); break;
-      case 'Literal':
-      case 'Wildcard': break;
-    }
-  }
-
-  function walkNode(node: IonIRNode): void {
-    walkType(node.type);
-    switch (node.kind) {
-      case 'Var': rec(node.name); break;
-      case 'Literal': break;
-      case 'App': walkNode(node.callee); node.args.forEach(walkNode); break;
-      case 'Abs': node.params.forEach(walkParam); walkNode(node.body); break;
-      case 'Let':
-        rec(node.name);
-        walkType(node.bindingType);
-        walkNode(node.value);
-        walkNode(node.body);
-        break;
-      case 'Case':
-        walkNode(node.scrutinee);
-        for (const arm of node.arms) {
-          walkPattern(arm.pattern);
-          if (arm.guard) walkNode(arm.guard);
-          walkNode(arm.body);
-        }
-        break;
-      case 'Constructor': rec(node.ctorName); node.args.forEach(walkNode); break;
-      case 'Accessor': walkNode(node.receiver); break;
-      case 'ModuleRef': rec(node.modulePath.join('.')); break;
-      case 'ForeignRef':
-        node.sig.params.forEach(walkType);
-        walkType(node.sig.ret);
-        break;
-      case 'Effect': walkNode(node.body); break;
-      case 'OopClass':
-        rec(node.name);
-        node.fields.forEach(walkParam);
-        for (const m of node.methods) {
-          rec(m.name);
-          m.params.forEach(walkParam);
-          walkType(m.retType);
-          if (m.body) walkNode(m.body);
-        }
-        break;
-      case 'OopInterface':
-        rec(node.name);
-        for (const m of node.members) walkType(m.type);
-        break;
-      case 'OopNew': node.args.forEach(walkNode); break;
-      case 'OopVirtualCall': walkNode(node.receiver); node.args.forEach(walkNode); break;
-      case 'OopThis': break;
-      case 'AsyncBlock': walkNode(node.body); break;
-      case 'Await': walkNode(node.expr); break;
-      case 'AdtDecl':
-        rec(node.name);
-        for (const v of node.variants) {
-          rec(v.tag);
-          v.fields.forEach(walkParam);
-        }
-        break;
-      case 'AdtMatch':
-        walkNode(node.scrutinee);
-        for (const arm of node.arms) {
-          rec(arm.tag);
-          arm.bindings.forEach(walkParam);
-          walkNode(arm.body);
-        }
-        break;
-      case 'EffectDecl':
-        rec(node.name);
-        for (const op of node.operations) {
-          op.params.forEach(walkParam);
-          walkType(op.retType);
-        }
-        break;
-      case 'Perform': node.args.forEach(walkNode); break;
-      case 'Handle':
-        walkNode(node.body);
-        for (const h of node.handlers) {
-          h.params.forEach(walkParam);
-          walkNode(h.body);
-        }
-        if (node.returnClause) walkNode(node.returnClause);
-        break;
-      case 'Resume': walkNode(node.value); break;
-      default: {
-        const _exhaustive: never = node;
-        void _exhaustive;
-        throw new WireEncodeError(`Unexpected node kind during name collection`, []);
-      }
-    }
-  }
-
-  for (const imp of module.imports) walkNode(imp);
-  for (const d of module.data) walkNode(d);
-  for (const decl of module.decls) walkNode(decl);
-
-  return { counts, firstUse };
+/** Returns "S a=foo b=bar" or "" when pool is empty. */
+function encodeSymbolLine(pool: SymbolPool): string {
+  if (pool.entries.length === 0) return '';
+  return `S ${pool.entries.map(e => `${e.alias}=${e.value}`).join(' ')}`;
 }
 
-function buildSymbolPool(module: IonIRModule): SymbolPool {
-  const { counts, firstUse } = collectNamesModule(module);
-  const gen = new AliasGenerator();
-  const pool = new Map<string, string>();
+/** Returns "T a=opt<int>" or "" when pool is empty. */
+function encodeTypeLine(pool: TypePool): string {
+  if (pool.entries.length === 0) return '';
+  return `T ${pool.entries.map(e => `${e.alias}=${e.value}`).join(' ')}`;
+}
 
-  // Sort by first-use order to assign shortest aliases to earliest-seen names.
-  const sorted = [...counts.entries()]
-    .filter(([name, count]) => shouldPool(name, count))
-    // Non-null: every key in counts was added to firstUse in the same pass.
-    .sort(([a], [b]) => firstUse.get(a)! - firstUse.get(b)!);
+/** Returns "X <sid> from <module>:<sid> [; ...]" or "" when no imports. */
+function encodeImportLines(imports: readonly ModuleRefNode[]): string {
+  if (imports.length === 0) return '';
+  const parts = imports.map(imp => {
+    const modPath = imp.modulePath.join('.');
+    const sid = String(imp.symbolId);
+    return `${sid} from ${modPath}:${sid}`;
+  });
+  return `X ${parts.join('; ')}`;
+}
 
-  for (const [name] of sorted) {
-    pool.set(name, gen.next());
-  }
+/** Returns "D <name> <tag>{<fields>} ..." or "" when no data decls. */
+function encodeDataLines(data: readonly AdtDeclNode[], ctx: EncoderContext): string {
+  if (data.length === 0) return '';
+  const parts = data.map(adt => {
+    const name = encodeName(adt.name, ctx.sym);
+    const variants = adt.variants.map(v => {
+      const tag = encodeName(v.tag, ctx.sym);
+      const fields = v.fields.map(f =>
+        `${encodeName(f.name, ctx.sym)}:${encodeType(f.type, ctx)}`
+      ).join(',');
+      return `${tag}{${fields}}`;
+    });
+    return variants.length > 0 ? `${name} ${variants.join(' ')}` : name;
+  });
+  return `D ${parts.join(' ')}`;
+}
 
-  return pool;
+/** Returns "F <node> [<node> ...]" or "" when no decls. */
+function encodeDeclLines(decls: readonly IonIRNode[], ctx: EncoderContext): string {
+  if (decls.length === 0) return '';
+  return `F ${decls.map(d => encodeNode(d, ctx)).join(' ')}`;
 }
 
 // ---------------------------------------------------------------------------
-// Type collection for type pool
+// Phase 4: node + type serialisers
 // ---------------------------------------------------------------------------
 
-function collectTypesModule(module: IonIRModule, symPool: SymbolPool): {
-  counts: Map<string, number>;
-  firstUse: Map<string, number>;
-} {
-  const counts = new Map<string, number>();
-  const firstUse = new Map<string, number>();
-  let order = 0;
-
-  function recType(type: IonType): void {
-    const key = canonicalType(type, symPool);
-    if (!firstUse.has(key)) firstUse.set(key, order++);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-    switch (type.kind) {
-      case 'List': recType(type.elem); break;
-      case 'Option': recType(type.inner); break;
-      case 'Map': recType(type.key); recType(type.value); break;
-      case 'Result': recType(type.ok); recType(type.err); break;
-      case 'Fn': type.params.forEach(recType); recType(type.ret); break;
-      case 'User': type.args.forEach(recType); break;
-      default: break;
-    }
-  }
-
-  function walkParam(p: Param): void {
-    recType(p.type);
-  }
-
-  function walkNode(node: IonIRNode): void {
-    recType(node.type);
-    switch (node.kind) {
-      case 'Literal':
-      case 'Var':
-      case 'OopThis':
-      case 'ModuleRef': break;
-      case 'App': walkNode(node.callee); node.args.forEach(walkNode); break;
-      case 'Abs': node.params.forEach(walkParam); walkNode(node.body); break;
-      case 'Let': recType(node.bindingType); walkNode(node.value); walkNode(node.body); break;
-      case 'Case':
-        walkNode(node.scrutinee);
-        for (const arm of node.arms) {
-          if (arm.guard) walkNode(arm.guard);
-          walkNode(arm.body);
-        }
-        break;
-      case 'Constructor': node.args.forEach(walkNode); break;
-      case 'Accessor': walkNode(node.receiver); break;
-      case 'ForeignRef': node.sig.params.forEach(recType); recType(node.sig.ret); break;
-      case 'Effect': walkNode(node.body); break;
-      case 'OopClass':
-        node.fields.forEach(walkParam);
-        for (const m of node.methods) {
-          m.params.forEach(walkParam);
-          recType(m.retType);
-          if (m.body) walkNode(m.body);
-        }
-        break;
-      case 'OopInterface':
-        for (const m of node.members) recType(m.type);
-        break;
-      case 'OopNew': node.args.forEach(walkNode); break;
-      case 'OopVirtualCall': walkNode(node.receiver); node.args.forEach(walkNode); break;
-      case 'AsyncBlock': walkNode(node.body); break;
-      case 'Await': walkNode(node.expr); break;
-      case 'AdtDecl':
-        for (const v of node.variants) v.fields.forEach(walkParam);
-        break;
-      case 'AdtMatch':
-        walkNode(node.scrutinee);
-        for (const arm of node.arms) {
-          arm.bindings.forEach(walkParam);
-          walkNode(arm.body);
-        }
-        break;
-      case 'EffectDecl':
-        for (const op of node.operations) {
-          op.params.forEach(walkParam);
-          recType(op.retType);
-        }
-        break;
-      case 'Perform': node.args.forEach(walkNode); break;
-      case 'Handle':
-        walkNode(node.body);
-        for (const h of node.handlers) {
-          h.params.forEach(walkParam);
-          walkNode(h.body);
-        }
-        if (node.returnClause) walkNode(node.returnClause);
-        break;
-      case 'Resume': walkNode(node.value); break;
-      default: {
-        const _exhaustive: never = node;
-        void _exhaustive;
-        throw new WireEncodeError(`Unexpected node kind during type collection`, []);
-      }
-    }
-  }
-
-  for (const imp of module.imports) walkNode(imp);
-  for (const d of module.data) walkNode(d);
-  for (const decl of module.decls) walkNode(decl);
-
-  return { counts, firstUse };
+/** Returns the alias if the name is pooled, otherwise the raw name. */
+function encodeName(raw: string, pool: SymbolPool): string {
+  return pool.toAlias.get(raw) ?? raw;
 }
 
-function buildTypePool(module: IonIRModule, symPool: SymbolPool): TypePool {
-  const { counts, firstUse } = collectTypesModule(module, symPool);
-  const gen = new AliasGenerator();
-  const pool = new Map<string, string>();
-
-  const sorted = [...counts.entries()]
-    .filter(([key, count]) => shouldPool(key, count))
-    // Non-null: every key in counts was added to firstUse in the same pass.
-    .sort(([a], [b]) => firstUse.get(a)! - firstUse.get(b)!);
-
-  for (const [key] of sorted) {
-    pool.set(key, gen.next());
-  }
-
-  return pool;
+/** Returns the pool alias for this type expression if pooled, otherwise the raw serialisation. */
+function encodeType(type: IonType, ctx: EncoderContext): string {
+  const raw = serializeTypeRaw(type);
+  return ctx.typ.toAlias.get(raw) ?? raw;
 }
 
-// ---------------------------------------------------------------------------
-// Node sub-encoders
-// ---------------------------------------------------------------------------
-
-function encodeLiteral(value: LiteralValue): string {
-  switch (value.kind) {
-    case 'Int': return String(value.value);
-    case 'Float': return String(value.value);
-    case 'Str': return JSON.stringify(value.value);
-    case 'Bool': return value.value ? 'true' : 'false';
-    case 'Null': return 'null';
+function encodeLiteral(v: LiteralValue): string {
+  switch (v.kind) {
+    case 'Int':   return String(v.value);
+    case 'Float': return String(v.value);
+    case 'Str':   return JSON.stringify(v.value);
+    case 'Bool':  return v.value ? 'true' : 'false';
+    case 'Null':  return 'null';
+    default: return assertNever(v);
   }
 }
 
-function encodeParam(p: Param, ctx: WireContext): string {
-  return `${symOrName(p.name, ctx)}:${encodeType(p.type, ctx)}`;
-}
-
-function encodePat(pat: CasePattern, ctx: WireContext): string {
-  switch (pat.kind) {
+function encodePattern(p: CasePattern, ctx: EncoderContext): string {
+  switch (p.kind) {
     case 'Wildcard': return '_';
-    case 'Var': return `@${symOrName(pat.name, ctx)}`;
-    case 'Constructor':
-      return `${symOrName(pat.ctorName, ctx)}(${pat.fields.map(f => encodePat(f, ctx)).join(',')})`;
-    case 'Literal': return encodeLiteral(pat.value);
+    case 'Var':      return encodeName(p.name, ctx.sym);
+    case 'Constructor': {
+      const fields = p.fields.map(f => encodePattern(f, ctx)).join(',');
+      return `${encodeName(p.ctorName, ctx.sym)}(${fields})`;
+    }
+    case 'Literal': return encodeLiteral(p.value);
+    default: return assertNever(p);
   }
 }
 
-function encodeArm(arm: CaseArm, ctx: WireContext): string {
-  const pat = encodePat(arm.pattern, ctx);
-  const guard = arm.guard ? `?${encodeNode(arm.guard, ctx)}` : '';
-  return `${pat}${guard}->${encodeNode(arm.body, ctx)}`;
+function encodeParam(p: Param, ctx: EncoderContext): string {
+  return `${encodeName(p.name, ctx.sym)}:${encodeType(p.type, ctx)}`;
 }
 
-function encodeAdtArm(arm: AdtArm, ctx: WireContext): string {
-  const bindings = arm.bindings.map(p => encodeParam(p, ctx)).join(',');
-  return `${symOrName(arm.tag, ctx)}(${bindings})->${encodeNode(arm.body, ctx)}`;
-}
-
-function encodeHandler(h: EffectHandler, ctx: WireContext): string {
-  const params = h.params.map(p => encodeParam(p, ctx)).join(',');
-  return `${h.operation}(${params})->${encodeNode(h.body, ctx)}`;
-}
-
-function encodeMethod(m: OopMethod, ctx: WireContext): string {
-  const params = m.params.map(p => encodeParam(p, ctx)).join(',');
-  const ret = encodeType(m.retType, ctx);
-  const flags = `${m.isAbstract ? '!abstract' : ''}${m.isStatic ? '!static' : ''}`;
-  const body = m.body ? `=${encodeNode(m.body, ctx)}` : '';
-  return `${m.name}(${params}):${ret}${flags}${body}`;
-}
-
-function encodeAdtVariants(variants: AdtDeclNode['variants'], ctx: WireContext): string {
-  return variants.map(v => {
-    const fields = v.fields.map(f => encodeParam(f, ctx)).join(',');
-    return `${symOrName(v.tag, ctx)}(${fields})`;
-  }).join('|');
-}
-
-function encodeNode(node: IonIRNode, ctx: WireContext): string {
+/** Encodes an IonIRNode to its compact wire representation. */
+function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
   switch (node.kind) {
-    case 'Var': return symOrName(node.name, ctx);
-    case 'Literal': return encodeLiteral(node.value);
-    case 'App':
-      return `${encodeNode(node.callee, ctx)}(${node.args.map(a => encodeNode(a, ctx)).join(',')})`;
+    case 'Var':
+      return encodeName(node.name, ctx.sym);
+
+    case 'Literal':
+      return encodeLiteral(node.value);
+
+    case 'App': {
+      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
+      return `${encodeNode(node.callee, ctx)}(${args})`;
+    }
+
     case 'Abs': {
       const params = node.params.map(p => encodeParam(p, ctx)).join(',');
       return `(${params})->${encodeNode(node.body, ctx)}`;
     }
+
     case 'Let': {
-      const name = symOrName(node.name, ctx);
-      const bt = encodeType(node.bindingType, ctx);
-      return `let ${name}:${bt}=${encodeNode(node.value, ctx)};${encodeNode(node.body, ctx)}`;
+      const n = encodeName(node.name, ctx.sym);
+      return `let ${n}=${encodeNode(node.value, ctx)};${encodeNode(node.body, ctx)}`;
     }
+
     case 'Case': {
-      const arms = node.arms.map(a => encodeArm(a, ctx)).join(';');
-      return `case(${encodeNode(node.scrutinee, ctx)}){${arms}}`;
-    }
-    case 'Constructor': {
-      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
-      return `${symOrName(node.ctorName, ctx)}(${args})`;
-    }
-    case 'Accessor': return `${encodeNode(node.receiver, ctx)}.${node.member}`;
-    case 'ModuleRef': {
-      const path = node.modulePath.join('.');
-      return ctx.symbolPool.get(path) ?? path;
-    }
-    case 'ForeignRef': return `ffi:${node.target}.${node.symbol}`;
-    case 'Effect': return `eff[${node.effectTag}]{${encodeNode(node.body, ctx)}}`;
-    case 'OopClass': {
-      const superC = node.superClass ? `:${node.superClass}` : '';
-      const fields = node.fields.map(f => encodeParam(f, ctx)).join(';');
-      const methods = node.methods.map(m => encodeMethod(m, ctx)).join(';');
-      return `class ${symOrName(node.name, ctx)}${superC}{${fields};${methods}}`;
-    }
-    case 'OopInterface': {
-      const members = node.members.map(m => `${m.name}:${encodeType(m.type, ctx)}`).join(';');
-      return `iface ${symOrName(node.name, ctx)}{${members}}`;
-    }
-    case 'OopNew':
-      return `new ${node.ctorSymbolId}(${node.args.map(a => encodeNode(a, ctx)).join(',')})`;
-    case 'OopVirtualCall': {
-      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
-      return `${encodeNode(node.receiver, ctx)}.${node.method}(${args})`;
-    }
-    case 'OopThis': return 'this';
-    case 'AsyncBlock': return `async{${encodeNode(node.body, ctx)}}`;
-    case 'Await': return `await(${encodeNode(node.expr, ctx)})`;
-    case 'AdtDecl': {
-      const variants = encodeAdtVariants(node.variants, ctx);
-      return `${symOrName(node.name, ctx)}{${variants}}`;
-    }
-    case 'AdtMatch': {
-      const arms = node.arms.map(a => encodeAdtArm(a, ctx)).join(';');
+      const arms = node.arms.map(arm => {
+        const guard = arm.guard !== undefined ? ` if ${encodeNode(arm.guard, ctx)}` : '';
+        return `${encodePattern(arm.pattern, ctx)}${guard}->${encodeNode(arm.body, ctx)}`;
+      }).join(';');
       return `match(${encodeNode(node.scrutinee, ctx)}){${arms}}`;
     }
+
+    case 'Constructor': {
+      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
+      return `${encodeName(node.ctorName, ctx.sym)}(${args})`;
+    }
+
+    case 'Accessor':
+      return `${encodeNode(node.receiver, ctx)}.${encodeName(node.member, ctx.sym)}`;
+
+    case 'ModuleRef':
+      return `${node.modulePath.map(p => encodeName(p, ctx.sym)).join('.')}::${String(node.symbolId)}`;
+
+    case 'ForeignRef':
+      return `ffi:${node.target}:${node.module}:${node.symbol}`;
+
+    case 'Effect':
+      return `eff!${node.effectTag}(${encodeNode(node.body, ctx)})`;
+
+    // OOP dialect — provisional: awaiting decoder validation (TASK-004)
+    case 'OopClass': {
+      const fields = node.fields.map(f => encodeParam(f, ctx)).join(',');
+      const methods = node.methods.map(m => {
+        const ps = m.params.map(p => encodeParam(p, ctx)).join(',');
+        const body = m.body !== undefined ? encodeNode(m.body, ctx) : '';
+        return `${encodeName(m.name, ctx.sym)}(${ps})->${encodeType(m.retType, ctx)}{${body}}`;
+      }).join(';');
+      const sup = node.superClass !== undefined ? `:${String(node.superClass)}` : '';
+      return `class ${encodeName(node.name, ctx.sym)}${sup}{${fields}}{${methods}}`;
+    }
+
+    case 'OopInterface': {
+      const mems = node.members.map(m =>
+        `${encodeName(m.name, ctx.sym)}:${encodeType(m.type, ctx)}`
+      ).join(',');
+      return `iface ${encodeName(node.name, ctx.sym)}{${mems}}`;
+    }
+
+    case 'OopNew': {
+      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
+      return `new ${String(node.ctorSymbolId)}(${args})`;
+    }
+
+    case 'OopVirtualCall': {
+      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
+      return `${encodeNode(node.receiver, ctx)}->${encodeName(node.method, ctx.sym)}(${args})`;
+    }
+
+    case 'OopThis':
+      return 'this';
+
+    // Async dialect
+    case 'AsyncBlock':
+      return `async{${encodeNode(node.body, ctx)}}`;
+
+    case 'Await':
+      return `await(${encodeNode(node.expr, ctx)})`;
+
+    // ADT dialect
+    case 'AdtDecl': {
+      const variants = node.variants.map(v => {
+        const fields = v.fields.map(f =>
+          `${encodeName(f.name, ctx.sym)}:${encodeType(f.type, ctx)}`
+        ).join(',');
+        return `${encodeName(v.tag, ctx.sym)}(${fields})`;
+      }).join('|');
+      return `adt ${encodeName(node.name, ctx.sym)}{${variants}}`;
+    }
+
+    case 'AdtMatch': {
+      const arms = node.arms.map(arm => {
+        const bindings = arm.bindings.map(b => encodeParam(b, ctx)).join(',');
+        return `${encodeName(arm.tag, ctx.sym)}(${bindings})->${encodeNode(arm.body, ctx)}`;
+      }).join(';');
+      return `adt(${encodeNode(node.scrutinee, ctx)}){${arms}}`;
+    }
+
+    // Effects dialect — provisional: awaiting decoder validation (TASK-004)
     case 'EffectDecl': {
       const ops = node.operations.map(op => {
-        const params = op.params.map(p => encodeParam(p, ctx)).join(',');
-        return `${op.name}(${params}):${encodeType(op.retType, ctx)}`;
+        const ps = op.params.map(p => encodeParam(p, ctx)).join(',');
+        return `${encodeName(op.name, ctx.sym)}(${ps})->${encodeType(op.retType, ctx)}`;
       }).join(';');
-      return `eff ${symOrName(node.name, ctx)}{${ops}}`;
+      return `effect ${encodeName(node.name, ctx.sym)}{${ops}}`;
     }
+
     case 'Perform': {
       const args = node.args.map(a => encodeNode(a, ctx)).join(',');
-      return `perf ${node.effectSymbolId}.${node.operation}(${args})`;
+      return `perf!${String(node.effectSymbolId)}:${encodeName(node.operation, ctx.sym)}(${args})`;
     }
+
     case 'Handle': {
-      const body = encodeNode(node.body, ctx);
-      const handlers = node.handlers.map(h => encodeHandler(h, ctx));
-      const ret = node.returnClause ? `;ret:${encodeNode(node.returnClause, ctx)}` : '';
-      return `handle{${body}}[${handlers.join(';')}${ret}]`;
+      const handlers = node.handlers.map(h => {
+        const ps = h.params.map(p => encodeParam(p, ctx)).join(',');
+        return `${encodeName(h.operation, ctx.sym)}(${ps})->${encodeNode(h.body, ctx)}`;
+      }).join(';');
+      const ret = node.returnClause !== undefined
+        ? `;ret:${encodeNode(node.returnClause, ctx)}`
+        : '';
+      return `handle(${encodeNode(node.body, ctx)}){${handlers}}${ret}`;
     }
-    case 'Resume': return `resume(${encodeNode(node.value, ctx)})`;
-    default: {
-      const _exhaustive: never = node;
-      void _exhaustive;
-      throw new WireEncodeError(`Unexpected node kind`, []);
-    }
+
+    case 'Resume':
+      return `resume(${encodeNode(node.value, ctx)})`;
+
+    default:
+      return assertNever(node);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Section builders
-// ---------------------------------------------------------------------------
-
-function buildI1(): string {
-  return 'I1';
-}
-
-function buildM(module: IonIRModule): string {
-  const sortedDialects = [...module.dialects].sort();
-  return `M ${module.module} v=${module.version} d=${sortedDialects.join(',')}`;
-}
-
-function buildS(symbolPool: SymbolPool): string | null {
-  if (symbolPool.size === 0) return null;
-  const entries = [...symbolPool.entries()].map(([name, alias]) => `${alias}=${name}`).join(' ');
-  return `S ${entries}`;
-}
-
-function buildT(typePool: TypePool): string | null {
-  if (typePool.size === 0) return null;
-  const sorted = [...typePool.entries()].sort(([a], [b]) => a.localeCompare(b));
-  const entries = sorted.map(([expr, alias]) => `${alias}=${expr}`).join(' ');
-  return `T ${entries}`;
-}
-
-function buildX(module: IonIRModule, ctx: WireContext): string | null {
-  const parts: string[] = [];
-
-  for (const imp of module.imports) {
-    const path = imp.modulePath.join('.');
-    parts.push(`import ${ctx.symbolPool.get(path) ?? path}`);
-  }
-
-  for (const decl of module.decls) {
-    if (decl.kind === 'ForeignRef') {
-      parts.push(`extern ${decl.target}.${decl.module}.${decl.symbol} ${encodeType(decl.sig.ret, ctx)}`);
-    }
-  }
-
-  return parts.length === 0 ? null : `X ${parts.join(' ')}`;
-}
-
-function buildD(module: IonIRModule, ctx: WireContext): string[] {
-  const lines: string[] = [];
-
-  for (const adt of module.data) {
-    lines.push(`D ${symOrName(adt.name, ctx)}{${encodeAdtVariants(adt.variants, ctx)}}`);
-  }
-
-  for (const decl of module.decls) {
-    switch (decl.kind) {
-      case 'AdtDecl':
-        lines.push(`D ${symOrName(decl.name, ctx)}{${encodeAdtVariants(decl.variants, ctx)}}`);
-        break;
-      case 'OopClass': {
-        const superC = decl.superClass ? `:${decl.superClass}` : '';
-        const fields = decl.fields.map(f => encodeParam(f, ctx)).join(';');
-        const methods = decl.methods.map(m => encodeMethod(m, ctx)).join(';');
-        lines.push(`D class ${symOrName(decl.name, ctx)}${superC}{${fields};${methods}}`);
-        break;
-      }
-      case 'OopInterface': {
-        const members = decl.members.map(m => `${m.name}:${encodeType(m.type, ctx)}`).join(';');
-        lines.push(`D iface ${symOrName(decl.name, ctx)}{${members}}`);
-        break;
-      }
-      case 'EffectDecl': {
-        const ops = decl.operations.map(op => {
-          const params = op.params.map(p => encodeParam(p, ctx)).join(',');
-          return `${op.name}(${params}):${encodeType(op.retType, ctx)}`;
-        }).join(';');
-        lines.push(`D eff ${symOrName(decl.name, ctx)}{${ops}}`);
-        break;
-      }
-      default: break;
-    }
-  }
-
-  return lines;
-}
-
-const D_SECTION_KINDS = new Set([
-  'ForeignRef', 'OopClass', 'OopInterface', 'AdtDecl', 'EffectDecl',
-]);
-
-function buildF(module: IonIRModule, ctx: WireContext): string[] {
-  const lines: string[] = [];
-  for (const decl of module.decls) {
-    if (!D_SECTION_KINDS.has(decl.kind)) {
-      lines.push(`F ${encodeNode(decl, ctx)}`);
-    }
-  }
-  return lines;
 }
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Encodes an IonIRModule to .ionw text (byte-stable, deterministic).
- * Sections are emitted in order: I1 M S? T? X? D* F*
- */
+/** Encodes an IonIRModule to wire-format text. Deterministic and byte-stable. */
 export function encodeModule(module: IonIRModule): string {
-  const symbolPool = buildSymbolPool(module);
-  const typePool = buildTypePool(module, symbolPool);
-  const ctx: WireContext = { symbolPool, typePool };
+  const names = collectNames(module);
+  const types = collectTypes(module);
 
-  const sections: string[] = [];
-  sections.push(buildI1());
-  sections.push(buildM(module));
+  const sym = buildSymbolPool(names);
+  const typ = buildTypePool(types);
+  const ctx: EncoderContext = { sym, typ };
 
-  const sSection = buildS(symbolPool);
-  if (sSection !== null) sections.push(sSection);
+  const lines: string[] = [];
+  lines.push(encodeVersionLine());
+  lines.push(encodeModuleLine(module));
 
-  const tSection = buildT(typePool);
-  if (tSection !== null) sections.push(tSection);
+  const symLine = encodeSymbolLine(sym);
+  if (symLine) lines.push(symLine);
 
-  const xSection = buildX(module, ctx);
-  if (xSection !== null) sections.push(xSection);
+  const typLine = encodeTypeLine(typ);
+  if (typLine) lines.push(typLine);
 
-  sections.push(...buildD(module, ctx));
-  sections.push(...buildF(module, ctx));
+  const importLine = encodeImportLines(module.imports);
+  if (importLine) lines.push(importLine);
 
-  return sections.join('\n') + '\n';
+  const dataLine = encodeDataLines(module.data, ctx);
+  if (dataLine) lines.push(dataLine);
+
+  const declLine = encodeDeclLines(module.decls, ctx);
+  if (declLine) lines.push(declLine);
+
+  return lines.join('\n') + '\n';
 }
