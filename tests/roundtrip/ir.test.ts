@@ -467,4 +467,43 @@ describe('IonIR serde — error cases', () => {
     });
     expect(() => deserializeModule(raw)).toThrow(IonIRSerdeError);
   });
+
+  it('throws IonIRSerdeError when serializing Float(Infinity)', () => {
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Literal', value: { kind: 'Float', value: Infinity }, span, type: intType }],
+    };
+    expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+  });
+
+  it('throws IonIRSerdeError when serializing Float(-Infinity)', () => {
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Literal', value: { kind: 'Float', value: -Infinity }, span, type: intType }],
+    };
+    expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+  });
+
+  it('throws IonIRSerdeError when serializing Float(NaN)', () => {
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Literal', value: { kind: 'Float', value: NaN }, span, type: intType }],
+    };
+    expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+  });
 });
