@@ -26,5 +26,19 @@ export type {
   MatchArm,
   BinopKind,
   UnaryKind,
+  FnParam,
+  DeclAttribute,
+  FnDeclNode,
+  LetDeclNode,
+  DataDeclNode,
+  DataVariant,
+  RecordField,
+  TypeAliasDeclNode,
+  UseDeclNode,
+  ExternDeclNode,
+  ModuleDeclNode,
+  DeclNode,
+  ModuleNode,
 } from './cst.js';
 export { parseExpression, ParseError } from './expressions.js';
+export { parseModule, parseDeclaration } from './declarations.js';
