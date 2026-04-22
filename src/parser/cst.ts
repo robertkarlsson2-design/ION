@@ -220,3 +220,118 @@ export type ExprNode =
   | AccessorExprNode
   | PropagateExprNode
   | GroupExprNode;
+
+// ---------------------------------------------------------------------------
+// Declaration nodes
+// ---------------------------------------------------------------------------
+
+export interface FnParam {
+  readonly name: string;
+  readonly type_: TypeAnnotation | null;
+  readonly span: Span;
+}
+
+export interface DeclAttribute {
+  readonly name: string;
+  readonly args: readonly string[];
+  readonly span: Span;
+}
+
+export interface FnDeclNode {
+  readonly kind: 'FnDecl';
+  readonly pub: boolean;
+  readonly name: string;
+  readonly typeParams: readonly string[];
+  readonly params: readonly FnParam[];
+  readonly effects: readonly import('../ast/types.js').EffectTag[];
+  readonly returnType: TypeAnnotation | null;
+  readonly body: ExprNode;
+  readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
+  readonly attributes: readonly DeclAttribute[];
+}
+
+export interface LetDeclNode {
+  readonly kind: 'LetDecl';
+  readonly pub: boolean;
+  readonly name: string;
+  readonly type_: TypeAnnotation | null;
+  readonly value: ExprNode;
+  readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
+}
+
+export interface RecordField {
+  readonly name: string;
+  readonly type_: TypeAnnotation;
+  readonly span: Span;
+}
+
+export type DataVariant =
+  | { readonly kind: 'UnitVariant'; readonly name: string; readonly span: Span }
+  | { readonly kind: 'TupleVariant'; readonly name: string; readonly fields: readonly TypeAnnotation[]; readonly span: Span }
+  | { readonly kind: 'RecordVariant'; readonly name: string; readonly fields: readonly RecordField[]; readonly span: Span };
+
+export interface DataDeclNode {
+  readonly kind: 'DataDecl';
+  readonly pub: boolean;
+  readonly name: string;
+  readonly typeParams: readonly string[];
+  readonly variants: readonly DataVariant[];
+  readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
+}
+
+export interface TypeAliasDeclNode {
+  readonly kind: 'TypeAliasDecl';
+  readonly pub: boolean;
+  readonly name: string;
+  readonly typeParams: readonly string[];
+  readonly type_: TypeAnnotation;
+  readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
+}
+
+export interface UseDeclNode {
+  readonly kind: 'UseDecl';
+  readonly path: readonly string[];
+  readonly items: readonly string[] | null;
+  readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
+}
+
+export interface ExternDeclNode {
+  readonly kind: 'ExternDecl';
+  readonly pub: boolean;
+  readonly name: string;
+  readonly params: readonly FnParam[];
+  readonly effects: readonly import('../ast/types.js').EffectTag[];
+  readonly returnType: TypeAnnotation | null;
+  readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
+  readonly attributes: readonly DeclAttribute[];
+}
+
+export interface ModuleDeclNode {
+  readonly kind: 'ModuleDecl';
+  readonly pub: boolean;
+  readonly name: string;
+  readonly decls: readonly DeclNode[];
+  readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
+}
+
+export type DeclNode =
+  | FnDeclNode
+  | LetDeclNode
+  | DataDeclNode
+  | TypeAliasDeclNode
+  | UseDeclNode
+  | ExternDeclNode
+  | ModuleDeclNode;
+
+export interface ModuleNode {
+  readonly kind: 'Module';
+  readonly decls: readonly DeclNode[];
+  readonly span: Span;
+}
