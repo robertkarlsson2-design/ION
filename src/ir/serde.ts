@@ -116,7 +116,8 @@ function parseEffectSet(raw: unknown, path: string): EffectSet {
   return new Set(arr.map((t, i) => assertString(t, `${path}[${i}]`) as EffectTag));
 }
 
-function parseType(raw: unknown, path: string): IonType {
+function parseType(raw: unknown, path: string, depth = 0): IonType {
+  if (depth > 512) throw new IonIRSerdeError('type nesting exceeds maximum depth', path);
   const r = assertRecord(raw, path);
   const kind = assertString(r['kind'], `${path}.kind`);
   switch (kind) {
@@ -128,29 +129,29 @@ function parseType(raw: unknown, path: string): IonType {
     case 'Unit': return { kind: 'Unit' };
     case 'Never': return { kind: 'Never' };
     case 'TypeVar': return { kind: 'TypeVar', id: assertString(r['id'], `${path}.id`) };
-    case 'List': return { kind: 'List', elem: parseType(r['elem'], `${path}.elem`) };
-    case 'Option': return { kind: 'Option', inner: parseType(r['inner'], `${path}.inner`) };
+    case 'List': return { kind: 'List', elem: parseType(r['elem'], `${path}.elem`, depth + 1) };
+    case 'Option': return { kind: 'Option', inner: parseType(r['inner'], `${path}.inner`, depth + 1) };
     case 'Map': return {
       kind: 'Map',
-      key: parseType(r['key'], `${path}.key`),
-      value: parseType(r['value'], `${path}.value`),
+      key: parseType(r['key'], `${path}.key`, depth + 1),
+      value: parseType(r['value'], `${path}.value`, depth + 1),
     };
     case 'Result': return {
       kind: 'Result',
-      ok: parseType(r['ok'], `${path}.ok`),
-      err: parseType(r['err'], `${path}.err`),
+      ok: parseType(r['ok'], `${path}.ok`, depth + 1),
+      err: parseType(r['err'], `${path}.err`, depth + 1),
     };
     case 'Fn': return {
       kind: 'Fn',
-      params: assertArray(r['params'], `${path}.params`).map((p, i) => parseType(p, `${path}.params[${i}]`)),
-      ret: parseType(r['ret'], `${path}.ret`),
+      params: assertArray(r['params'], `${path}.params`).map((p, i) => parseType(p, `${path}.params[${i}]`, depth + 1)),
+      ret: parseType(r['ret'], `${path}.ret`, depth + 1),
       effects: parseEffectSet(r['effects'], `${path}.effects`),
     };
     case 'User': return {
       kind: 'User',
       name: assertString(r['name'], `${path}.name`),
       symbolId: makeSymbolId(assertString(r['symbolId'], `${path}.symbolId`)),
-      args: assertArray(r['args'], `${path}.args`).map((a, i) => parseType(a, `${path}.args[${i}]`)),
+      args: assertArray(r['args'], `${path}.args`).map((a, i) => parseType(a, `${path}.args[${i}]`, depth + 1)),
     };
     default:
       throw new IonIRSerdeError(`unknown type kind '${kind}'`, `${path}.kind`);
@@ -213,15 +214,15 @@ function parseCasePattern(raw: unknown, path: string): CasePattern {
   }
 }
 
-function parseCaseArm(raw: unknown, path: string): CaseArm {
+function parseCaseArm(raw: unknown, path: string, depth: number): CaseArm {
   const r = assertRecord(raw, path);
   const base = {
     pattern: parseCasePattern(r['pattern'], `${path}.pattern`),
-    body: parseNode(r['body'], `${path}.body`),
+    body: parseNode(r['body'], `${path}.body`, depth + 1),
     span: parseSpan(r['span'], `${path}.span`),
   };
   if ('guard' in r) {
-    return { ...base, guard: parseNode(r['guard'], `${path}.guard`) };
+    return { ...base, guard: parseNode(r['guard'], `${path}.guard`, depth + 1) };
   }
   return base;
 }
@@ -235,7 +236,7 @@ function parseForeignSig(raw: unknown, path: string): ForeignSignature {
   };
 }
 
-function parseOopMethod(raw: unknown, path: string): OopMethod {
+function parseOopMethod(raw: unknown, path: string, depth: number): OopMethod {
   const r = assertRecord(raw, path);
   const base = {
     name: assertString(r['name'], `${path}.name`),
@@ -247,7 +248,7 @@ function parseOopMethod(raw: unknown, path: string): OopMethod {
     span: parseSpan(r['span'], `${path}.span`),
   };
   if ('body' in r) {
-    return { ...base, body: parseNode(r['body'], `${path}.body`) };
+    return { ...base, body: parseNode(r['body'], `${path}.body`, depth + 1) };
   }
   return base;
 }
@@ -272,12 +273,12 @@ function parseEffectOp(raw: unknown, path: string): EffectOp {
   };
 }
 
-function parseEffectHandler(raw: unknown, path: string): EffectHandler {
+function parseEffectHandler(raw: unknown, path: string, depth: number): EffectHandler {
   const r = assertRecord(raw, path);
   return {
     operation: assertString(r['operation'], `${path}.operation`),
     params: assertArray(r['params'], `${path}.params`).map((p, i) => parseParam(p, `${path}.params[${i}]`)),
-    body: parseNode(r['body'], `${path}.body`),
+    body: parseNode(r['body'], `${path}.body`, depth + 1),
     span: parseSpan(r['span'], `${path}.span`),
   };
 }
@@ -292,12 +293,12 @@ function parseAdtVariant(raw: unknown, path: string): AdtVariant {
   };
 }
 
-function parseAdtArm(raw: unknown, path: string): AdtArm {
+function parseAdtArm(raw: unknown, path: string, depth: number): AdtArm {
   const r = assertRecord(raw, path);
   return {
     tag: assertString(r['tag'], `${path}.tag`),
     bindings: assertArray(r['bindings'], `${path}.bindings`).map((b, i) => parseParam(b, `${path}.bindings[${i}]`)),
-    body: parseNode(r['body'], `${path}.body`),
+    body: parseNode(r['body'], `${path}.body`, depth + 1),
     span: parseSpan(r['span'], `${path}.span`),
   };
 }
@@ -337,7 +338,8 @@ function parseModuleRefNode(raw: unknown, path: string): ModuleRefNode {
 // Node dispatcher
 // ---------------------------------------------------------------------------
 
-function parseNode(raw: unknown, path: string): IonIRNode {
+function parseNode(raw: unknown, path: string, depth = 0): IonIRNode {
+  if (depth > 512) throw new IonIRSerdeError('node tree exceeds maximum depth', path);
   const r = assertRecord(raw, path);
   const kind = assertString(r['kind'], `${path}.kind`);
 
@@ -365,8 +367,8 @@ function parseNode(raw: unknown, path: string): IonIRNode {
     case 'App': {
       const node: AppNode = {
         kind: 'App',
-        callee: parseNode(r['callee'], `${path}.callee`),
-        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`)),
+        callee: parseNode(r['callee'], `${path}.callee`, depth + 1),
+        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`, depth + 1)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -376,7 +378,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
       const node: AbsNode = {
         kind: 'Abs',
         params: assertArray(r['params'], `${path}.params`).map((p, i) => parseParam(p, `${path}.params[${i}]`)),
-        body: parseNode(r['body'], `${path}.body`),
+        body: parseNode(r['body'], `${path}.body`, depth + 1),
         captures: assertArray(r['captures'], `${path}.captures`).map((c, i) => makeSymbolId(assertString(c, `${path}.captures[${i}]`))),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
@@ -389,8 +391,8 @@ function parseNode(raw: unknown, path: string): IonIRNode {
         name: assertString(r['name'], `${path}.name`),
         symbolId: makeSymbolId(assertString(r['symbolId'], `${path}.symbolId`)),
         bindingType: parseType(r['bindingType'], `${path}.bindingType`),
-        value: parseNode(r['value'], `${path}.value`),
-        body: parseNode(r['body'], `${path}.body`),
+        value: parseNode(r['value'], `${path}.value`, depth + 1),
+        body: parseNode(r['body'], `${path}.body`, depth + 1),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -399,8 +401,8 @@ function parseNode(raw: unknown, path: string): IonIRNode {
     case 'Case': {
       const node: CaseNode = {
         kind: 'Case',
-        scrutinee: parseNode(r['scrutinee'], `${path}.scrutinee`),
-        arms: assertArray(r['arms'], `${path}.arms`).map((a, i) => parseCaseArm(a, `${path}.arms[${i}]`)),
+        scrutinee: parseNode(r['scrutinee'], `${path}.scrutinee`, depth + 1),
+        arms: assertArray(r['arms'], `${path}.arms`).map((a, i) => parseCaseArm(a, `${path}.arms[${i}]`, depth)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -411,7 +413,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
         kind: 'Constructor',
         ctorName: assertString(r['ctorName'], `${path}.ctorName`),
         symbolId: makeSymbolId(assertString(r['symbolId'], `${path}.symbolId`)),
-        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`)),
+        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`, depth + 1)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -420,7 +422,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
     case 'Accessor': {
       const node: AccessorNode = {
         kind: 'Accessor',
-        receiver: parseNode(r['receiver'], `${path}.receiver`),
+        receiver: parseNode(r['receiver'], `${path}.receiver`, depth + 1),
         member: assertString(r['member'], `${path}.member`),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
@@ -445,7 +447,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
       const node: EffectNode = {
         kind: 'Effect',
         effectTag: assertString(r['effectTag'], `${path}.effectTag`) as EffectTag,
-        body: parseNode(r['body'], `${path}.body`),
+        body: parseNode(r['body'], `${path}.body`, depth + 1),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -459,7 +461,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
         symbolId: makeSymbolId(assertString(r['symbolId'], `${path}.symbolId`)),
         interfaces: assertArray(r['interfaces'], `${path}.interfaces`).map((s, i) => makeSymbolId(assertString(s, `${path}.interfaces[${i}]`))),
         fields: assertArray(r['fields'], `${path}.fields`).map((f, i) => parseParam(f, `${path}.fields[${i}]`)),
-        methods: assertArray(r['methods'], `${path}.methods`).map((m, i) => parseOopMethod(m, `${path}.methods[${i}]`)),
+        methods: assertArray(r['methods'], `${path}.methods`).map((m, i) => parseOopMethod(m, `${path}.methods[${i}]`, depth)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -484,7 +486,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
       const node: OopNewNode = {
         kind: 'OopNew',
         ctorSymbolId: makeSymbolId(assertString(r['ctorSymbolId'], `${path}.ctorSymbolId`)),
-        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`)),
+        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`, depth + 1)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -493,9 +495,9 @@ function parseNode(raw: unknown, path: string): IonIRNode {
     case 'OopVirtualCall': {
       const node: OopVirtualCallNode = {
         kind: 'OopVirtualCall',
-        receiver: parseNode(r['receiver'], `${path}.receiver`),
+        receiver: parseNode(r['receiver'], `${path}.receiver`, depth + 1),
         method: assertString(r['method'], `${path}.method`),
-        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`)),
+        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`, depth + 1)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -513,7 +515,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
     case 'AsyncBlock': {
       const node: AsyncBlockNode = {
         kind: 'AsyncBlock',
-        body: parseNode(r['body'], `${path}.body`),
+        body: parseNode(r['body'], `${path}.body`, depth + 1),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -522,7 +524,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
     case 'Await': {
       const node: AwaitNode = {
         kind: 'Await',
-        expr: parseNode(r['expr'], `${path}.expr`),
+        expr: parseNode(r['expr'], `${path}.expr`, depth + 1),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -534,8 +536,8 @@ function parseNode(raw: unknown, path: string): IonIRNode {
     case 'AdtMatch': {
       const node: AdtMatchNode = {
         kind: 'AdtMatch',
-        scrutinee: parseNode(r['scrutinee'], `${path}.scrutinee`),
-        arms: assertArray(r['arms'], `${path}.arms`).map((a, i) => parseAdtArm(a, `${path}.arms[${i}]`)),
+        scrutinee: parseNode(r['scrutinee'], `${path}.scrutinee`, depth + 1),
+        arms: assertArray(r['arms'], `${path}.arms`).map((a, i) => parseAdtArm(a, `${path}.arms[${i}]`, depth)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -558,7 +560,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
         kind: 'Perform',
         effectSymbolId: makeSymbolId(assertString(r['effectSymbolId'], `${path}.effectSymbolId`)),
         operation: assertString(r['operation'], `${path}.operation`),
-        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`)),
+        args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`, depth + 1)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
@@ -567,13 +569,13 @@ function parseNode(raw: unknown, path: string): IonIRNode {
     case 'Handle': {
       const base = {
         kind: 'Handle' as const,
-        body: parseNode(r['body'], `${path}.body`),
-        handlers: assertArray(r['handlers'], `${path}.handlers`).map((h, i) => parseEffectHandler(h, `${path}.handlers[${i}]`)),
+        body: parseNode(r['body'], `${path}.body`, depth + 1),
+        handlers: assertArray(r['handlers'], `${path}.handlers`).map((h, i) => parseEffectHandler(h, `${path}.handlers[${i}]`, depth)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
       if ('returnClause' in r) {
-        const node: HandleNode = { ...base, returnClause: parseNode(r['returnClause'], `${path}.returnClause`) };
+        const node: HandleNode = { ...base, returnClause: parseNode(r['returnClause'], `${path}.returnClause`, depth + 1) };
         return node;
       }
       return base;
@@ -581,7 +583,7 @@ function parseNode(raw: unknown, path: string): IonIRNode {
     case 'Resume': {
       const node: ResumeNode = {
         kind: 'Resume',
-        value: parseNode(r['value'], `${path}.value`),
+        value: parseNode(r['value'], `${path}.value`, depth + 1),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };
