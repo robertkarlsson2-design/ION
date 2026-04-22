@@ -95,10 +95,13 @@ function spanMerge(a: Span, b: Span): Span {
 // Parser class (internal)
 // ---------------------------------------------------------------------------
 
+const MAX_PARSE_DEPTH = 512;
+
 class Parser {
   private readonly nonTrivia: Token[];
   private readonly triviasBefore: ReadonlyArray<readonly TriviaNode[]>;
   private pos: number;
+  private depth = 0;
 
   constructor(tokens: Token[]) {
     const nonTrivia: Token[] = [];
@@ -163,15 +166,28 @@ class Parser {
 
   /** Parse an expression with minimum precedence `minPrec`. */
   parseExpr(minPrec = 0): ExprNode {
-    let left = this.nud();
-
-    while (true) {
-      const prec = INFIX_PREC[this.peekKind()];
-      if (prec === undefined || prec <= minPrec) break;
-      left = this.led(left, prec);
+    this.depth++;
+    if (this.depth > MAX_PARSE_DEPTH) {
+      const tok = this.peek();
+      this.depth--;
+      throw new ParseError(
+        `expression nesting exceeds maximum depth of ${MAX_PARSE_DEPTH}`,
+        tok.span,
+      );
     }
+    try {
+      let left = this.nud();
 
-    return left;
+      while (true) {
+        const prec = INFIX_PREC[this.peekKind()];
+        if (prec === undefined || prec <= minPrec) break;
+        left = this.led(left, prec);
+      }
+
+      return left;
+    } finally {
+      this.depth--;
+    }
   }
 
   /** Prefix / atomic parse. */
@@ -768,7 +784,13 @@ function binopKindOf(kind: TokenKind): BinopKind | null {
  * Throws `ParseError` on the first syntactic error.
  */
 export function parseExpression(tokens: Token[]): ExprNode {
-  return new Parser(tokens).parseExpr();
+  try {
+    return new Parser(tokens).parseExpr();
+  } catch (err) {
+    if (err instanceof ParseError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new ParseError(`internal parser error: ${msg}`, _EOF_SPAN);
+  }
 }
 
 // Re-export CST types needed by consumers
