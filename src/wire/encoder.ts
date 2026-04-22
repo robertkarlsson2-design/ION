@@ -538,9 +538,10 @@ function encodeVersionLine(): string {
   return 'I1';
 }
 
-/** Returns "M <module> v=<version>". */
+/** Returns "M <module> v=<version> d=<dialects>". */
 function encodeModuleLine(m: IonIRModule): string {
-  return `M ${m.module} v=${m.version}`;
+  const dialects = [...m.dialects].sort().join(',');
+  return `M ${m.module} v=${m.version} d=${dialects}`;
 }
 
 /** Returns "S a=foo b=bar" or "" when pool is empty. */

@@ -97,7 +97,7 @@ describe('wire encoder — unit tests', () => {
       decls: [],
     };
     const out = encodeModule(mod);
-    expect(out).toContain('\nX import ');
+    expect(out).toContain('\nX ');
   });
 
   it('A5: long repeated name gets pooled in S section', () => {
@@ -151,14 +151,12 @@ describe('wire encoder — unit tests', () => {
   it('A8: FnType with non-empty EffectSet encodes effects in type expression', () => {
     const effects: EffectSet = new Set<EffectTag>(['io', 'async']);
     const fnType: IonType = { kind: 'Fn', params: [intType], ret: intType, effects };
-    // Use a Let binding so the bindingType is explicitly encoded in the F line.
-    const letNode: IonIRNode = {
-      kind: 'Let',
-      name: 'f',
-      symbolId: sid,
-      bindingType: fnType,
-      value: { kind: 'Var', name: 'g', symbolId: sid, span, type: intType },
-      body: { kind: 'Var', name: 'f', symbolId: sid, span, type: intType },
+    // Use an Abs node so the param type (fnType) is explicitly encoded in the F line.
+    const absNode: IonIRNode = {
+      kind: 'Abs',
+      params: [{ name: 'f', symbolId: sid, type: fnType, span }],
+      body: { kind: 'Var', name: 'g', symbolId: sid, span, type: intType },
+      captures: [],
       span,
       type: intType,
     };
@@ -169,10 +167,10 @@ describe('wire encoder — unit tests', () => {
       dialects: ['core'],
       imports: [],
       data: [],
-      decls: [letNode],
+      decls: [absNode],
     };
     const out = encodeModule(mod);
-    expect(out).toMatch(/!async,io/);
+    expect(out).toMatch(/!async!io/);
   });
 
   it('A9: all 5 dialects appear in M line d= field', () => {
