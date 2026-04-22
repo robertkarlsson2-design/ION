@@ -1,3 +1,2 @@
 export { encodeModule } from './encoder.js';
-export { prettyPrintModule, prettyPrintNode, prettyPrintType } from './pretty.js';
-export type { PrettyOptions } from './pretty.js';
+export { prettyPrintModule, prettyPrintNode, prettyPrintType, type PrettyOptions } from './pretty.js';

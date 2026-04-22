@@ -1,0 +1,701 @@
+{
+  "ionir": "1.0",
+  "module": "org.acme.users",
+  "version": "1.0.0",
+  "dialects": ["core", "ion-adt", "ion-oop"],
+  "imports": [],
+  "data": [
+    {
+      "kind": "AdtDecl",
+      "name": "UserStatus",
+      "symbolId": "users:UserStatus:0",
+      "variants": [
+        {
+          "tag": "Active",
+          "symbolId": "users:Active:1",
+          "fields": [],
+          "span": {"file":"users.ion","startLine":3,"startCol":2,"endLine":3,"endCol":8}
+        },
+        {
+          "tag": "Inactive",
+          "symbolId": "users:Inactive:2",
+          "fields": [],
+          "span": {"file":"users.ion","startLine":4,"startCol":2,"endLine":4,"endCol":10}
+        },
+        {
+          "tag": "Banned",
+          "symbolId": "users:Banned:3",
+          "fields": [],
+          "span": {"file":"users.ion","startLine":5,"startCol":2,"endLine":5,"endCol":8}
+        }
+      ],
+      "span": {"file":"users.ion","startLine":2,"startCol":0,"endLine":6,"endCol":1},
+      "type": {"kind": "Unit"}
+    },
+    {
+      "kind": "AdtDecl",
+      "name": "UserRole",
+      "symbolId": "users:UserRole:4",
+      "variants": [
+        {
+          "tag": "Admin",
+          "symbolId": "users:Admin:5",
+          "fields": [],
+          "span": {"file":"users.ion","startLine":9,"startCol":2,"endLine":9,"endCol":7}
+        },
+        {
+          "tag": "Moderator",
+          "symbolId": "users:Moderator:6",
+          "fields": [],
+          "span": {"file":"users.ion","startLine":10,"startCol":2,"endLine":10,"endCol":11}
+        },
+        {
+          "tag": "User",
+          "symbolId": "users:User:7",
+          "fields": [],
+          "span": {"file":"users.ion","startLine":11,"startCol":2,"endLine":11,"endCol":6}
+        }
+      ],
+      "span": {"file":"users.ion","startLine":8,"startCol":0,"endLine":12,"endCol":1},
+      "type": {"kind": "Unit"}
+    }
+  ],
+  "decls": [
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "email",
+          "symbolId": "users:email:10",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":15,"startCol":14,"endLine":15,"endCol":19}
+        },
+        {
+          "name": "password",
+          "symbolId": "users:password:11",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":15,"startCol":27,"endLine":15,"endCol":35}
+        },
+        {
+          "name": "role",
+          "symbolId": "users:role:12",
+          "type": {"kind": "User", "name": "UserRole", "symbolId": "users:UserRole:4", "args": []},
+          "span": {"file":"users.ion","startLine":15,"startCol":43,"endLine":15,"endCol":47}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Null"},
+        "span": {"file":"users.ion","startLine":16,"startCol":2,"endLine":16,"endCol":6},
+        "type": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":15,"startCol":0,"endLine":17,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [
+          {"kind": "Str"},
+          {"kind": "Str"},
+          {"kind": "User", "name": "UserRole", "symbolId": "users:UserRole:4", "args": []}
+        ],
+        "ret": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "id",
+          "symbolId": "users:id:13",
+          "type": {"kind": "Int"},
+          "span": {"file":"users.ion","startLine":20,"startCol":10,"endLine":20,"endCol":12}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Null"},
+        "span": {"file":"users.ion","startLine":21,"startCol":2,"endLine":21,"endCol":6},
+        "type": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":20,"startCol":0,"endLine":22,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Int"}],
+        "ret": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "id",
+          "symbolId": "users:id:14",
+          "type": {"kind": "Int"},
+          "span": {"file":"users.ion","startLine":25,"startCol":12,"endLine":25,"endCol":14}
+        },
+        {
+          "name": "email",
+          "symbolId": "users:email:15",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":25,"startCol":22,"endLine":25,"endCol":27}
+        },
+        {
+          "name": "role",
+          "symbolId": "users:role:16",
+          "type": {"kind": "User", "name": "UserRole", "symbolId": "users:UserRole:4", "args": []},
+          "span": {"file":"users.ion","startLine":25,"startCol":35,"endLine":25,"endCol":39}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Null"},
+        "span": {"file":"users.ion","startLine":26,"startCol":2,"endLine":26,"endCol":6},
+        "type": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":25,"startCol":0,"endLine":27,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [
+          {"kind": "Int"},
+          {"kind": "Str"},
+          {"kind": "User", "name": "UserRole", "symbolId": "users:UserRole:4", "args": []}
+        ],
+        "ret": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "id",
+          "symbolId": "users:id:17",
+          "type": {"kind": "Int"},
+          "span": {"file":"users.ion","startLine":30,"startCol":12,"endLine":30,"endCol":14}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Bool", "value": true},
+        "span": {"file":"users.ion","startLine":31,"startCol":2,"endLine":31,"endCol":6},
+        "type": {"kind": "Bool"}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":30,"startCol":0,"endLine":32,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Int"}],
+        "ret": {"kind": "Bool"},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "email",
+          "symbolId": "users:email:18",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":35,"startCol":16,"endLine":35,"endCol":21}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Bool", "value": true},
+        "span": {"file":"users.ion","startLine":36,"startCol":2,"endLine":36,"endCol":6},
+        "type": {"kind": "Bool"}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":35,"startCol":0,"endLine":37,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Str"}],
+        "ret": {"kind": "Bool"},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "password",
+          "symbolId": "users:password:19",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":40,"startCol":15,"endLine":40,"endCol":23}
+        },
+        {
+          "name": "salt",
+          "symbolId": "users:salt:20",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":40,"startCol":31,"endLine":40,"endCol":35}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Str", "value": ""},
+        "span": {"file":"users.ion","startLine":41,"startCol":2,"endLine":41,"endCol":4},
+        "type": {"kind": "Str"}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":40,"startCol":0,"endLine":42,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Str"}, {"kind": "Str"}],
+        "ret": {"kind": "Str"},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "role",
+          "symbolId": "users:role:21",
+          "type": {"kind": "User", "name": "UserRole", "symbolId": "users:UserRole:4", "args": []},
+          "span": {"file":"users.ion","startLine":45,"startCol":18,"endLine":45,"endCol":22}
+        },
+        {
+          "name": "action",
+          "symbolId": "users:action:22",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":45,"startCol":31,"endLine":45,"endCol":37}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Bool", "value": false},
+        "span": {"file":"users.ion","startLine":46,"startCol":2,"endLine":46,"endCol":7},
+        "type": {"kind": "Bool"}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":45,"startCol":0,"endLine":47,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [
+          {"kind": "User", "name": "UserRole", "symbolId": "users:UserRole:4", "args": []},
+          {"kind": "Str"}
+        ],
+        "ret": {"kind": "Bool"},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Null"},
+        "span": {"file":"users.ion","startLine":51,"startCol":2,"endLine":51,"endCol":6},
+        "type": {
+          "kind": "List",
+          "elem": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []}
+        }
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":50,"startCol":0,"endLine":52,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [],
+        "ret": {
+          "kind": "List",
+          "elem": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []}
+        },
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "id",
+          "symbolId": "users:id:23",
+          "type": {"kind": "Int"},
+          "span": {"file":"users.ion","startLine":55,"startCol":13,"endLine":55,"endCol":15}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Null"},
+        "span": {"file":"users.ion","startLine":56,"startCol":2,"endLine":56,"endCol":6},
+        "type": {"kind": "User", "name": "UserRole", "symbolId": "users:UserRole:4", "args": []}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":55,"startCol":0,"endLine":57,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Int"}],
+        "ret": {"kind": "User", "name": "UserRole", "symbolId": "users:UserRole:4", "args": []},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "id",
+          "symbolId": "users:id:24",
+          "type": {"kind": "Int"},
+          "span": {"file":"users.ion","startLine":60,"startCol":9,"endLine":60,"endCol":11}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Null"},
+        "span": {"file":"users.ion","startLine":61,"startCol":2,"endLine":61,"endCol":6},
+        "type": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":60,"startCol":0,"endLine":62,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Int"}],
+        "ret": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "id",
+          "symbolId": "users:id:25",
+          "type": {"kind": "Int"},
+          "span": {"file":"users.ion","startLine":65,"startCol":13,"endLine":65,"endCol":15}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Null"},
+        "span": {"file":"users.ion","startLine":66,"startCol":2,"endLine":66,"endCol":6},
+        "type": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":65,"startCol":0,"endLine":67,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Int"}],
+        "ret": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "id",
+          "symbolId": "users:id:26",
+          "type": {"kind": "Int"},
+          "span": {"file":"users.ion","startLine":70,"startCol":15,"endLine":70,"endCol":17}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Null"},
+        "span": {"file":"users.ion","startLine":71,"startCol":2,"endLine":71,"endCol":6},
+        "type": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":70,"startCol":0,"endLine":72,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Int"}],
+        "ret": {"kind": "User", "name": "UserStatus", "symbolId": "users:UserStatus:0", "args": []},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "email",
+          "symbolId": "users:email:27",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":75,"startCol":14,"endLine":75,"endCol":19}
+        },
+        {
+          "name": "password",
+          "symbolId": "users:password:28",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":75,"startCol":27,"endLine":75,"endCol":35}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Bool", "value": false},
+        "span": {"file":"users.ion","startLine":76,"startCol":2,"endLine":76,"endCol":7},
+        "type": {"kind": "Bool"}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":75,"startCol":0,"endLine":77,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Str"}, {"kind": "Str"}],
+        "ret": {"kind": "Bool"},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "id",
+          "symbolId": "users:id:29",
+          "type": {"kind": "Int"},
+          "span": {"file":"users.ion","startLine":80,"startCol":16,"endLine":80,"endCol":18}
+        },
+        {
+          "name": "password",
+          "symbolId": "users:password:30",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":80,"startCol":26,"endLine":80,"endCol":34}
+        },
+        {
+          "name": "newPassword",
+          "symbolId": "users:newPassword:31",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":80,"startCol":42,"endLine":80,"endCol":53}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Bool", "value": true},
+        "span": {"file":"users.ion","startLine":81,"startCol":2,"endLine":81,"endCol":6},
+        "type": {"kind": "Bool"}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":80,"startCol":0,"endLine":82,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Int"}, {"kind": "Str"}, {"kind": "Str"}],
+        "ret": {"kind": "Bool"},
+        "effects": []
+      }
+    },
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "email",
+          "symbolId": "users:email:32",
+          "type": {"kind": "Str"},
+          "span": {"file":"users.ion","startLine":85,"startCol":15,"endLine":85,"endCol":20}
+        }
+      ],
+      "body": {
+        "kind": "Literal",
+        "value": {"kind": "Str", "value": "reset-token"},
+        "span": {"file":"users.ion","startLine":86,"startCol":2,"endLine":86,"endCol":15},
+        "type": {"kind": "Str"}
+      },
+      "captures": [],
+      "span": {"file":"users.ion","startLine":85,"startCol":0,"endLine":87,"endCol":1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Str"}],
+        "ret": {"kind": "Str"},
+        "effects": []
+      }
+    },
+    {
+      "kind": "OopInterface",
+      "name": "UserRepository",
+      "symbolId": "users:UserRepository:33",
+      "members": [
+        {
+          "name": "create",
+          "symbolId": "users:ifcreate:34",
+          "type": {"kind":"Fn","params":[{"kind":"Str"},{"kind":"Str"},{"kind":"User","name":"UserRole","symbolId":"users:UserRole:4","args":[]}],"ret":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "getById",
+          "symbolId": "users:ifgetById:35",
+          "type": {"kind":"Fn","params":[{"kind":"Int"}],"ret":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "update",
+          "symbolId": "users:ifupdate:36",
+          "type": {"kind":"Fn","params":[{"kind":"Int"},{"kind":"Str"},{"kind":"User","name":"UserRole","symbolId":"users:UserRole:4","args":[]}],"ret":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "delete",
+          "symbolId": "users:ifdelete:37",
+          "type": {"kind":"Fn","params":[{"kind":"Int"}],"ret":{"kind":"Bool"},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "list",
+          "symbolId": "users:iflist:38",
+          "type": {"kind":"Fn","params":[],"ret":{"kind":"List","elem":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "findByEmail",
+          "symbolId": "users:iffindByEmail:39",
+          "type": {"kind":"Fn","params":[{"kind":"Str"}],"ret":{"kind":"Option","inner":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "ban",
+          "symbolId": "users:ifban:40",
+          "type": {"kind":"Fn","params":[{"kind":"Int"}],"ret":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "activate",
+          "symbolId": "users:ifactivate:41",
+          "type": {"kind":"Fn","params":[{"kind":"Int"}],"ret":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "deactivate",
+          "symbolId": "users:ifdeactivate:42",
+          "type": {"kind":"Fn","params":[{"kind":"Int"}],"ret":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "getRole",
+          "symbolId": "users:ifgetRole:43",
+          "type": {"kind":"Fn","params":[{"kind":"Int"}],"ret":{"kind":"User","name":"UserRole","symbolId":"users:UserRole:4","args":[]},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "countByStatus",
+          "symbolId": "users:ifcountByStatus:44",
+          "type": {"kind":"Fn","params":[{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}],"ret":{"kind":"Int"},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "findByRole",
+          "symbolId": "users:iffindByRole:45",
+          "type": {"kind":"Fn","params":[{"kind":"User","name":"UserRole","symbolId":"users:UserRole:4","args":[]}],"ret":{"kind":"List","elem":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}},"effects":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        }
+      ],
+      "span": {"file":"users.ion","startLine":90,"startCol":0,"endLine":110,"endCol":1},
+      "type": {"kind": "Unit"}
+    },
+    {
+      "kind": "OopClass",
+      "name": "UserService",
+      "symbolId": "users:UserService:50",
+      "interfaces": ["users:UserRepository:33"],
+      "fields": [
+        {
+          "name": "repository",
+          "symbolId": "users:repository:51",
+          "type": {"kind":"User","name":"UserRepository","symbolId":"users:UserRepository:33","args":[]},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        }
+      ],
+      "methods": [
+        {
+          "name": "create",
+          "symbolId": "users:create:52",
+          "params": [
+            {"name": "email", "symbolId": "users:email:53", "type": {"kind":"Str"}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}},
+            {"name": "password", "symbolId": "users:password:54", "type": {"kind":"Str"}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}},
+            {"name": "role", "symbolId": "users:role:55", "type": {"kind":"User","name":"UserRole","symbolId":"users:UserRole:4","args":[]}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}}
+          ],
+          "retType": {"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},
+          "isAbstract": false,
+          "isStatic": false,
+          "body": {"kind":"Literal","value":{"kind":"Null"},"span":{"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0},"type":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "getById",
+          "symbolId": "users:getById:56",
+          "params": [
+            {"name": "id", "symbolId": "users:id:57", "type": {"kind":"Int"}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}}
+          ],
+          "retType": {"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},
+          "isAbstract": false,
+          "isStatic": false,
+          "body": {"kind":"Literal","value":{"kind":"Null"},"span":{"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0},"type":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "update",
+          "symbolId": "users:update:58",
+          "params": [
+            {"name": "id", "symbolId": "users:id:59", "type": {"kind":"Int"}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}},
+            {"name": "email", "symbolId": "users:email:60", "type": {"kind":"Str"}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}},
+            {"name": "role", "symbolId": "users:role:61", "type": {"kind":"User","name":"UserRole","symbolId":"users:UserRole:4","args":[]}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}}
+          ],
+          "retType": {"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},
+          "isAbstract": false,
+          "isStatic": false,
+          "body": {"kind":"Literal","value":{"kind":"Null"},"span":{"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0},"type":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "delete",
+          "symbolId": "users:delete:62",
+          "params": [
+            {"name": "id", "symbolId": "users:id:63", "type": {"kind":"Int"}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}}
+          ],
+          "retType": {"kind":"Bool"},
+          "isAbstract": false,
+          "isStatic": false,
+          "body": {"kind":"Literal","value":{"kind":"Bool","value":true},"span":{"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0},"type":{"kind":"Bool"}},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "list",
+          "symbolId": "users:list:64",
+          "params": [],
+          "retType": {"kind":"List","elem":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}},
+          "isAbstract": false,
+          "isStatic": false,
+          "body": {"kind":"Literal","value":{"kind":"Null"},"span":{"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0},"type":{"kind":"List","elem":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}}},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "ban",
+          "symbolId": "users:ban:65",
+          "params": [
+            {"name": "id", "symbolId": "users:id:66", "type": {"kind":"Int"}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}}
+          ],
+          "retType": {"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},
+          "isAbstract": false,
+          "isStatic": false,
+          "body": {"kind":"Literal","value":{"kind":"Null"},"span":{"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0},"type":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "activate",
+          "symbolId": "users:activate:67",
+          "params": [
+            {"name": "id", "symbolId": "users:id:68", "type": {"kind":"Int"}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}}
+          ],
+          "retType": {"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]},
+          "isAbstract": false,
+          "isStatic": false,
+          "body": {"kind":"Literal","value":{"kind":"Null"},"span":{"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0},"type":{"kind":"User","name":"UserStatus","symbolId":"users:UserStatus:0","args":[]}},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        },
+        {
+          "name": "getRole",
+          "symbolId": "users:getRole:69",
+          "params": [
+            {"name": "id", "symbolId": "users:id:70", "type": {"kind":"Int"}, "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}}
+          ],
+          "retType": {"kind":"User","name":"UserRole","symbolId":"users:UserRole:4","args":[]},
+          "isAbstract": false,
+          "isStatic": false,
+          "body": {"kind":"Literal","value":{"kind":"Null"},"span":{"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0},"type":{"kind":"User","name":"UserRole","symbolId":"users:UserRole:4","args":[]}},
+          "span": {"file":"users.ion","startLine":1,"startCol":0,"endLine":1,"endCol":0}
+        }
+      ],
+      "span": {"file":"users.ion","startLine":112,"startCol":0,"endLine":150,"endCol":1},
+      "type": {"kind": "Unit"}
+    }
+  ]
+}
