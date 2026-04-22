@@ -8,7 +8,7 @@ import type {
   AstPatternNode,
   AstMatchArm,
 } from '../ast/nodes.js';
-import { Scope, type ScopeEntry } from './scope.js';
+import { Scope } from './scope.js';
 import { buildGraph, topoSort } from './graph.js';
 
 // ---------------------------------------------------------------------------
