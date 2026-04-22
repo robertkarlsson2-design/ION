@@ -91,6 +91,21 @@ describe('prettyPrintNode — leaf nodes', () => {
     expect(prettyPrintNode(node)).toBe('3.14');
   });
 
+  it('Literal Float integer value 1.0', () => {
+    const node: IonIRNode = { kind: 'Literal', value: { kind: 'Float', value: 1.0 }, span, type: { kind: 'Float' } };
+    expect(prettyPrintNode(node)).toBe('1.0');
+  });
+
+  it('Literal Float negative integer value -3.0', () => {
+    const node: IonIRNode = { kind: 'Literal', value: { kind: 'Float', value: -3.0 }, span, type: { kind: 'Float' } };
+    expect(prettyPrintNode(node)).toBe('-3.0');
+  });
+
+  it('Literal Float non-integer still works', () => {
+    const node: IonIRNode = { kind: 'Literal', value: { kind: 'Float', value: 0.5 }, span, type: { kind: 'Float' } };
+    expect(prettyPrintNode(node)).toBe('0.5');
+  });
+
   it('Literal Str with escapes', () => {
     const node: IonIRNode = { kind: 'Literal', value: { kind: 'Str', value: 'he said "hi"\nbye' }, span, type: strType };
     expect(prettyPrintNode(node)).toBe('"he said \\"hi\\"\\nbye"');
@@ -282,6 +297,24 @@ describe('prettyPrintNode — structural nodes', () => {
     };
     const result = prettyPrintNode(node);
     expect(result).toContain('0 => y');
+  });
+
+  it('Case with Float Literal pattern integer value', () => {
+    const node: IonIRNode = {
+      kind: 'Case',
+      scrutinee: xVar,
+      arms: [
+        {
+          pattern: { kind: 'Literal', value: { kind: 'Float', value: 2.0 }, span },
+          body: yVar,
+          span,
+        },
+      ],
+      span,
+      type: intType,
+    };
+    const result = prettyPrintNode(node);
+    expect(result).toContain('2.0 => y');
   });
 
   it('Effect node', () => {
