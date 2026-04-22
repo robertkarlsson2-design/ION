@@ -1,0 +1,412 @@
+import { type GBNFItem, type GBNFRule, serializeGBNF } from './gbnf.js';
+import { type JSONSchemaObject, buildIonIRSchema } from './ir-schema.js';
+
+// ---------------------------------------------------------------------------
+// Shorthand builders (keep rule definitions readable)
+// ---------------------------------------------------------------------------
+
+const lit = (text: string): GBNFItem => ({ kind: 'literal', text });
+const ref = (rule: string): GBNFItem => ({ kind: 'ref', rule });
+const cs = (chars: string): GBNFItem => ({ kind: 'charset', chars });
+const opt = (item: GBNFItem): GBNFItem => ({ kind: 'optional', item });
+const star = (item: GBNFItem): GBNFItem => ({ kind: 'star', item });
+const plus = (item: GBNFItem): GBNFItem => ({ kind: 'plus', item });
+const seq = (...items: GBNFItem[]): GBNFItem => ({ kind: 'seq', items });
+
+/** Build a GBNFRule: each spread argument is one alternative (array = sequence). */
+function rule(name: string, ...alts: GBNFItem[][]): GBNFRule {
+  return { name, alts };
+}
+
+const WS = ref('ws');    // mandatory whitespace
+const OWS = opt(WS);    // optional whitespace
+
+// ---------------------------------------------------------------------------
+// Grammar rules
+// ---------------------------------------------------------------------------
+
+/** The complete Ion surface grammar as a list of GBNF rules. */
+export const ION_SURFACE_RULES: GBNFRule[] = [
+  // --- entry point (must be first for GBNF root) ---
+  rule('root',
+    [OWS, star(seq(ref('decl'), OWS))],
+  ),
+
+  // --- declarations ---
+  rule('decl',
+    [star(seq(ref('attribute'), OWS)), opt(seq(lit('pub'), WS)), ref('decl-body')],
+  ),
+  rule('decl-body',
+    [ref('fn-decl')],
+    [ref('let-decl')],
+    [ref('data-decl')],
+    [ref('type-alias-decl')],
+    [ref('use-decl')],
+    [ref('extern-decl')],
+    [ref('module-decl')],
+  ),
+
+  // fn name<T>(params) effects? (-> R)? = expr
+  rule('fn-decl',
+    [
+      lit('fn'), WS, ref('identifier'),
+      opt(ref('type-params')),
+      OWS, lit('('), OWS, opt(ref('fn-param-list')), OWS, lit(')'),
+      opt(seq(WS, ref('effects'))),
+      opt(seq(OWS, lit('->'), OWS, ref('type-annotation'))),
+      OWS, lit('='), OWS, ref('expr'),
+    ],
+  ),
+
+  // let name (: T)? = expr
+  rule('let-decl',
+    [
+      lit('let'), WS, ref('identifier'),
+      opt(seq(OWS, lit(':'), OWS, ref('type-annotation'))),
+      OWS, lit('='), OWS, ref('expr'),
+    ],
+  ),
+
+  // data Name<T> = Variant | Variant(T) | Variant { field: T }
+  rule('data-decl',
+    [
+      lit('data'), WS, ref('identifier'),
+      opt(ref('type-params')),
+      OWS, lit('='), OWS,
+      ref('data-variant'),
+      star(seq(OWS, lit('|'), OWS, ref('data-variant'))),
+    ],
+  ),
+  rule('data-variant',
+    [ref('identifier'), OWS, lit('('), OWS, opt(ref('type-list')), OWS, lit(')')],
+    [ref('identifier'), OWS, lit('{'), OWS, ref('record-field-list'), OWS, lit('}')],
+    [ref('identifier')],
+  ),
+  rule('type-list',
+    [ref('type-annotation'), star(seq(OWS, lit(','), OWS, ref('type-annotation')))],
+  ),
+  rule('record-field-list',
+    [ref('record-field'), star(seq(OWS, lit(';'), OWS, ref('record-field')))],
+  ),
+  rule('record-field',
+    [ref('identifier'), OWS, lit(':'), OWS, ref('type-annotation')],
+  ),
+
+  // type Name<T> = TypeAnnotation
+  rule('type-alias-decl',
+    [
+      lit('type'), WS, ref('identifier'),
+      opt(ref('type-params')),
+      OWS, lit('='), OWS, ref('type-annotation'),
+    ],
+  ),
+
+  // use a.b.C  or  use a.b.{Foo, Bar}
+  rule('use-decl',
+    [
+      lit('use'), WS, ref('identifier'),
+      star(seq(lit('.'), ref('identifier'))),
+      opt(seq(
+        lit('.'), lit('{'), OWS,
+        ref('identifier'),
+        star(seq(OWS, lit(','), OWS, ref('identifier'))),
+        OWS, lit('}'),
+      )),
+    ],
+  ),
+
+  // extern fn name(params) effects? (-> R)?
+  rule('extern-decl',
+    [
+      lit('extern'), WS, lit('fn'), WS, ref('identifier'),
+      OWS, lit('('), OWS, opt(ref('fn-param-list')), OWS, lit(')'),
+      opt(seq(WS, ref('effects'))),
+      opt(seq(OWS, lit('->'), OWS, ref('type-annotation'))),
+    ],
+  ),
+
+  // module Name { decls... }
+  rule('module-decl',
+    [
+      lit('module'), WS, ref('identifier'),
+      OWS, lit('{'), OWS,
+      star(seq(ref('decl'), OWS)),
+      lit('}'),
+    ],
+  ),
+
+  // --- function parameters ---
+  rule('fn-param-list',
+    [ref('fn-param'), star(seq(OWS, lit(','), OWS, ref('fn-param')))],
+  ),
+  rule('fn-param',
+    [ref('identifier'), opt(seq(OWS, lit(':'), OWS, ref('type-annotation')))],
+  ),
+
+  // --- attributes: @name or @name(arg, arg) ---
+  rule('attribute',
+    [
+      lit('@'), ref('identifier'),
+      opt(seq(
+        lit('('), OWS,
+        opt(seq(ref('identifier'), star(seq(OWS, lit(','), OWS, ref('identifier'))))),
+        OWS, lit(')'),
+      )),
+    ],
+  ),
+
+  // --- effects: one or more effect tags ---
+  rule('effects',
+    [plus(ref('effect-tag'))],
+  ),
+  rule('effect-tag',
+    [lit('!io')],
+    [lit('!async')],
+    [lit('!llm')],
+  ),
+
+  // --- type params: <T, U, ...> ---
+  rule('type-params',
+    [lit('<'), OWS, ref('identifier'), star(seq(OWS, lit(','), OWS, ref('identifier'))), OWS, lit('>')],
+  ),
+
+  // --- type annotations ---
+  rule('type-annotation',
+    [ref('type-fn')],
+    [ref('type-tuple')],
+    [ref('type-generic')],
+    [ref('type-named')],
+  ),
+  rule('type-named',
+    [ref('identifier')],
+  ),
+  rule('type-generic',
+    [
+      ref('identifier'),
+      lit('<'), OWS,
+      ref('type-annotation'),
+      star(seq(OWS, lit(','), OWS, ref('type-annotation'))),
+      OWS, lit('>'),
+    ],
+  ),
+  // (T, ...) effects? -> R
+  rule('type-fn',
+    [
+      lit('('), OWS,
+      opt(seq(ref('type-annotation'), star(seq(OWS, lit(','), OWS, ref('type-annotation'))))),
+      OWS, lit(')'),
+      opt(seq(WS, ref('effects'))),
+      OWS, lit('->'), OWS, ref('type-annotation'),
+    ],
+  ),
+  // (T, T, T, ...) — at least two elements to distinguish from group
+  rule('type-tuple',
+    [
+      lit('('), OWS,
+      ref('type-annotation'), OWS, lit(','), OWS, ref('type-annotation'),
+      star(seq(OWS, lit(','), OWS, ref('type-annotation'))),
+      OWS, lit(')'),
+    ],
+  ),
+
+  // --- expressions (Pratt levels, lowest → highest) ---
+  rule('expr',
+    [ref('expr-pipeline')],
+  ),
+
+  // level 1: |>
+  rule('expr-pipeline',
+    [ref('expr-or'), star(seq(OWS, lit('|>'), OWS, ref('expr-or')))],
+  ),
+
+  // level 2: ||
+  rule('expr-or',
+    [ref('expr-and'), star(seq(OWS, lit('||'), OWS, ref('expr-and')))],
+  ),
+
+  // level 3: &&
+  rule('expr-and',
+    [ref('expr-cmp'), star(seq(OWS, lit('&&'), OWS, ref('expr-cmp')))],
+  ),
+
+  // levels 4–5: == != < > <= >=
+  rule('expr-cmp',
+    [ref('expr-add'), star(seq(OWS, ref('cmp-op'), OWS, ref('expr-add')))],
+  ),
+  rule('cmp-op',
+    [lit('==')], [lit('!=')], [lit('<=')], [lit('>=')], [lit('<')], [lit('>')],
+  ),
+
+  // level 6: + -
+  rule('expr-add',
+    [ref('expr-mul'), star(seq(OWS, ref('add-op'), OWS, ref('expr-mul')))],
+  ),
+  rule('add-op',
+    [lit('+')], [lit('-')],
+  ),
+
+  // level 7: * / %
+  rule('expr-mul',
+    [ref('expr-unary'), star(seq(OWS, ref('mul-op'), OWS, ref('expr-unary')))],
+  ),
+  rule('mul-op',
+    [lit('*')], [lit('/')], [lit('%')],
+  ),
+
+  // unary negation and logical not
+  rule('expr-unary',
+    [lit('-'), OWS, ref('expr-postfix')],
+    [lit('!'), OWS, ref('expr-postfix')],
+    [ref('expr-postfix')],
+  ),
+
+  // level 9 postfix: .field  (args)  ?
+  rule('expr-postfix',
+    [ref('expr-primary'), star(ref('postfix-suffix'))],
+  ),
+  rule('postfix-suffix',
+    [lit('.'), ref('identifier')],
+    [lit('('), OWS, opt(ref('arg-list')), OWS, lit(')')],
+    [lit('?')],
+  ),
+  rule('arg-list',
+    [ref('call-arg'), star(seq(OWS, lit(','), OWS, ref('call-arg')))],
+  ),
+  rule('call-arg',
+    [ref('identifier'), OWS, lit(':'), OWS, ref('expr')],
+    [ref('expr')],
+  ),
+
+  // primary expressions
+  rule('expr-primary',
+    [ref('literal')],
+    [ref('identifier')],
+    [ref('group-expr')],
+    [ref('if-expr')],
+    [ref('match-expr')],
+    [ref('let-expr')],
+    [ref('lambda-expr')],
+  ),
+  rule('group-expr',
+    [lit('('), OWS, ref('expr'), OWS, lit(')')],
+  ),
+  rule('if-expr',
+    [
+      lit('if'), WS, ref('expr'),
+      OWS, lit('{'), OWS, ref('expr'), OWS, lit('}'),
+      opt(seq(OWS, lit('else'), OWS, lit('{'), OWS, ref('expr'), OWS, lit('}'))),
+    ],
+  ),
+  rule('match-expr',
+    [
+      lit('match'), WS, ref('expr'),
+      OWS, lit('{'), OWS,
+      star(seq(ref('match-arm'), OWS)),
+      lit('}'),
+    ],
+  ),
+  rule('match-arm',
+    [
+      ref('pattern'),
+      opt(seq(OWS, lit('if'), WS, ref('expr'))),
+      OWS, lit('=>'), OWS, ref('expr'),
+      opt(seq(OWS, lit(','))),
+    ],
+  ),
+  rule('let-expr',
+    [
+      lit('let'), WS, ref('identifier'),
+      opt(seq(OWS, lit(':'), OWS, ref('type-annotation'))),
+      OWS, lit('='), OWS, ref('expr'),
+      OWS, lit(';'), OWS, ref('expr'),
+    ],
+  ),
+  rule('lambda-expr',
+    [
+      lit('|'), OWS,
+      opt(ref('lambda-param-list')),
+      OWS, lit('|'), OWS, ref('expr'),
+    ],
+  ),
+  rule('lambda-param-list',
+    [ref('lambda-param'), star(seq(OWS, lit(','), OWS, ref('lambda-param')))],
+  ),
+  rule('lambda-param',
+    [ref('identifier'), opt(seq(OWS, lit(':'), OWS, ref('type-annotation')))],
+  ),
+
+  // --- patterns ---
+  rule('pattern',
+    [ref('wildcard-pat')],
+    [ref('constructor-pat')],
+    [ref('tuple-pat')],
+    [ref('literal-pat')],
+    [ref('ident-pat')],
+  ),
+  rule('wildcard-pat',
+    [lit('_')],
+  ),
+  rule('ident-pat',
+    [ref('identifier')],
+  ),
+  rule('constructor-pat',
+    [
+      ref('identifier'),
+      lit('('), OWS,
+      opt(seq(ref('pattern'), star(seq(OWS, lit(','), OWS, ref('pattern'))))),
+      OWS, lit(')'),
+    ],
+  ),
+  rule('literal-pat',
+    [ref('literal')],
+  ),
+  rule('tuple-pat',
+    [
+      lit('('), OWS,
+      ref('pattern'), OWS, lit(','), OWS, ref('pattern'),
+      star(seq(OWS, lit(','), OWS, ref('pattern'))),
+      OWS, lit(')'),
+    ],
+  ),
+
+  // --- literals ---
+  rule('literal',
+    [ref('float-lit')],
+    [ref('int-lit')],
+    [ref('string-lit')],
+    [ref('bool-lit')],
+    [ref('null-lit')],
+  ),
+  rule('int-lit',
+    [plus(cs('0-9'))],
+  ),
+  rule('float-lit',
+    [plus(cs('0-9')), lit('.'), plus(cs('0-9'))],
+  ),
+  rule('string-lit',
+    [lit('"'), star(cs('^"')), lit('"')],
+  ),
+  rule('bool-lit',
+    [lit('true')],
+    [lit('false')],
+  ),
+  rule('null-lit',
+    [lit('null')],
+  ),
+
+  // --- identifier: [a-zA-Z_][a-zA-Z0-9_]* ---
+  rule('identifier',
+    [cs('a-zA-Z_'), star(cs('a-zA-Z0-9_'))],
+  ),
+
+  // --- whitespace: space, tab, newline, carriage-return ---
+  rule('ws',
+    [plus(cs(' \\t\\n\\r'))],
+  ),
+];
+
+/** Ion surface grammar serialized to llama.cpp-compatible GBNF text. */
+export const GBNF_ION: string = serializeGBNF(ION_SURFACE_RULES);
+
+/** JSON Schema draft-07 that validates any IonIRModule produced by the compiler. */
+export const ION_IR_SCHEMA: JSONSchemaObject = buildIonIRSchema();

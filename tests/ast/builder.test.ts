@@ -12,6 +12,7 @@ import {
 import type {
   AstExprNode,
   AstDeclNode,
+  AstModule,
   AstIdentNode,
   AstBinopExprNode,
   AstStringLitNode,
@@ -37,6 +38,10 @@ function parseDecl(src: string): AstDeclNode {
   return buildDecl(parseDeclaration(lex(src, 'test.ion')));
 }
 
+function parseMod(src: string): AstModule {
+  return buildModule(parseModule(lex(src, 'test.ion')));
+}
+
 function asKind<K extends AstExprNode['kind']>(
   node: AstExprNode,
   kind: K,
@@ -56,6 +61,38 @@ function asDeclKind<K extends AstDeclNode['kind']>(
 function hasNoLeadingTrivia(node: object): void {
   expect('leadingTrivia' in node).toBe(false);
 }
+
+/** Recursively asserts no key named 'leadingTrivia' exists anywhere in the tree. */
+function hasNoTrivia(node: unknown): boolean {
+  if (node === null || typeof node !== 'object') return true;
+  if (Array.isArray(node)) return node.every(hasNoTrivia);
+  const obj = node as Record<string, unknown>;
+  if ('leadingTrivia' in obj) return false;
+  return Object.values(obj).every(hasNoTrivia);
+}
+
+// ---------------------------------------------------------------------------
+// Trivia stripping
+// ---------------------------------------------------------------------------
+
+describe('trivia stripping', () => {
+  it('IdentNode has no leadingTrivia in AST', () => {
+    const node = parseExpr('foo');
+    expect(hasNoTrivia(node)).toBe(true);
+    expect('leadingTrivia' in node).toBe(false);
+  });
+
+  it('fn decl with leading comment has no leadingTrivia in AST', () => {
+    const node = parseDecl('// comment\nfn foo() = 1');
+    expect(hasNoTrivia(node)).toBe(true);
+    expect('leadingTrivia' in node).toBe(false);
+  });
+
+  it('full module has no trivia anywhere', () => {
+    const mod = parseMod('fn a() = 1\nlet b = true');
+    expect(hasNoTrivia(mod)).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Expressions — trivia stripped
@@ -185,6 +222,17 @@ describe('GroupExprNode elision', () => {
     const node = asKind(parseExpr('((42))'), 'LiteralInt');
     expect(node.value).toBe(42n);
   });
+
+  it('collapses nested groupings to plain Ident', () => {
+    const node = asKind(parseExpr('((x))'), 'Ident') as AstIdentNode;
+    expect(node.name).toBe('x');
+  });
+
+  it('GroupExpr kind is absent from result', () => {
+    const node = parseExpr('(42)');
+    expect(node.kind).not.toBe('GroupExpr');
+    expect(node.kind).toBe('LiteralInt');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -201,29 +249,6 @@ describe('literals pass-through', () => {
   it('LiteralBool true', () => {
     const node = asKind(parseExpr('true'), 'LiteralBool');
     expect(node.value).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// String interpolation
-// ---------------------------------------------------------------------------
-
-describe('string interpolation', () => {
-  it('builds AstStringLitNode with AstInterpPart', () => {
-    const node = asKind(parseExpr('"Hello, {name}!"'), 'StringLit') as AstStringLitNode;
-    expect(node.parts.length).toBeGreaterThan(0);
-    const interp = node.parts.find(p => p.kind === 'InterpPart') as AstInterpPart | undefined;
-    expect(interp).toBeDefined();
-    expect(interp?.expr.kind).toBe('Ident');
-    if (interp?.expr.kind === 'Ident') {
-      expect(interp.expr.name).toBe('name');
-      hasNoLeadingTrivia(interp.expr);
-    }
-  });
-
-  it('builds plain string with only TextPart', () => {
-    const node = asKind(parseExpr('"hello"'), 'StringLit') as AstStringLitNode;
-    expect(node.parts.every(p => p.kind === 'TextPart')).toBe(true);
   });
 });
 
@@ -275,6 +300,69 @@ describe('declarations — leadingTrivia stripped', () => {
     const node = asDeclKind(parseDecl('module Foo { let x = 1 }'), 'ModuleDecl') as AstModuleDeclNode;
     hasNoLeadingTrivia(node);
     expect(node.name).toBe('Foo');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Declaration structure
+// ---------------------------------------------------------------------------
+
+describe('declaration structure', () => {
+  it('fn double(x: Int) -> Int = x * 2', () => {
+    const node = asDeclKind(parseDecl('fn double(x: Int) -> Int = x * 2'), 'FnDecl') as AstFnDeclNode;
+    expect(node.name).toBe('double');
+    expect(node.params).toHaveLength(1);
+    expect(node.params[0]?.name).toBe('x');
+    expect(node.params[0]?.type_?.kind).toBe('Named');
+    expect(node.returnType?.kind).toBe('Named');
+    expect(node.body.kind).toBe('BinopExpr');
+    expect(hasNoTrivia(node)).toBe(true);
+  });
+
+  it('let x: Int = 42', () => {
+    const node = asDeclKind(parseDecl('let x: Int = 42'), 'LetDecl') as AstLetDeclNode;
+    expect(node.name).toBe('x');
+    expect(node.type_?.kind).toBe('Named');
+    expect(node.value.kind).toBe('LiteralInt');
+    expect(hasNoTrivia(node)).toBe(true);
+  });
+
+  it('data Point = Point { x: Int; y: Int }', () => {
+    const node = asDeclKind(parseDecl('data Point = Point { x: Int; y: Int }'), 'DataDecl') as AstDataDeclNode;
+    expect(node.name).toBe('Point');
+    expect(node.variants).toHaveLength(1);
+    expect(node.variants[0]?.kind).toBe('RecordVariant');
+    expect(hasNoTrivia(node)).toBe(true);
+  });
+
+  it('type Id = Int', () => {
+    const node = asDeclKind(parseDecl('type Id = Int'), 'TypeAliasDecl') as AstTypeAliasDeclNode;
+    expect(node.name).toBe('Id');
+    expect(node.type_.kind).toBe('Named');
+    expect(hasNoTrivia(node)).toBe(true);
+  });
+
+  it('use std.io.{read, write}', () => {
+    const node = asDeclKind(parseDecl('use std.io.{read, write}'), 'UseDecl') as AstUseDeclNode;
+    expect(node.path).toEqual(['std', 'io']);
+    expect(node.items).toEqual(['read', 'write']);
+    expect(hasNoTrivia(node)).toBe(true);
+  });
+
+  it('extern fn readFile(p: Str) !io -> Str', () => {
+    const node = asDeclKind(parseDecl('extern fn readFile(p: Str) !io -> Str'), 'ExternDecl') as AstExternDeclNode;
+    expect(node.name).toBe('readFile');
+    expect(node.effects).toContain('io');
+    expect(node.returnType?.kind).toBe('Named');
+    expect(hasNoTrivia(node)).toBe(true);
+  });
+
+  it('module Inner { fn foo() = 1 }', () => {
+    const node = asDeclKind(parseDecl('module Inner { fn foo() = 1 }'), 'ModuleDecl') as AstModuleDeclNode;
+    expect(node.name).toBe('Inner');
+    expect(node.decls).toHaveLength(1);
+    expect(node.decls[0]?.kind).toBe('FnDecl');
+    expect(hasNoTrivia(node)).toBe(true);
   });
 });
 
@@ -353,6 +441,46 @@ describe('span preservation', () => {
       expect(ast.span).toEqual(cst.inner.span);
     }
   });
+
+  it('preserves span on fn decl', () => {
+    const node = asDeclKind(parseDecl('fn foo() = 1'), 'FnDecl') as AstFnDeclNode;
+    expect(node.span.startLine).toBeGreaterThan(0);
+    expect(node.span.endLine).toBeGreaterThanOrEqual(node.span.startLine);
+  });
+
+  it('preserves span on let decl', () => {
+    const node = asDeclKind(parseDecl('let x = 42'), 'LetDecl') as AstLetDeclNode;
+    expect(node.span.startLine).toBeGreaterThan(0);
+  });
+
+  it('preserves span on expr', () => {
+    const node = parseExpr('1 + 2');
+    expect(node.span.startLine).toBeGreaterThan(0);
+    expect(node.span.endCol).toBeGreaterThan(node.span.startCol);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// String interpolation
+// ---------------------------------------------------------------------------
+
+describe('string interpolation', () => {
+  it('builds AstStringLitNode with AstInterpPart', () => {
+    const node = asKind(parseExpr('"Hello, {name}!"'), 'StringLit') as AstStringLitNode;
+    expect(node.parts.length).toBeGreaterThan(0);
+    const interp = node.parts.find(p => p.kind === 'InterpPart') as AstInterpPart | undefined;
+    expect(interp).toBeDefined();
+    expect(interp?.expr.kind).toBe('Ident');
+    if (interp?.expr.kind === 'Ident') {
+      expect(interp.expr.name).toBe('name');
+      hasNoLeadingTrivia(interp.expr);
+    }
+  });
+
+  it('builds plain string with only TextPart', () => {
+    const node = asKind(parseExpr('"hello"'), 'StringLit') as AstStringLitNode;
+    expect(node.parts.every(p => p.kind === 'TextPart')).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -418,6 +546,21 @@ describe('pattern nodes', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Match expression
+// ---------------------------------------------------------------------------
+
+describe('match expression', () => {
+  it('builds MatchExpr with arms', () => {
+    const node = asKind(parseExpr('match x | 1 -> true | _ -> false'), 'MatchExpr');
+    expect(node.scrutinee.kind).toBe('Ident');
+    expect(node.arms).toHaveLength(2);
+    expect(node.arms[0]?.pattern.kind).toBe('LiteralPat');
+    expect(node.arms[1]?.pattern.kind).toBe('WildcardPat');
+    expect(hasNoTrivia(node)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildModule
 // ---------------------------------------------------------------------------
 
@@ -438,5 +581,26 @@ describe('buildModule', () => {
     const ast = buildModule(cst);
     expect(ast.kind).toBe('Module');
     expect(ast.decls).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Full module integration
+// ---------------------------------------------------------------------------
+
+describe('full module integration', () => {
+  it('builds ModuleNode from multi-declaration source', () => {
+    const src = [
+      'fn add(a: Int, b: Int) -> Int = a + b',
+      'let pi: Float = 3.14',
+      'data Color = Red | Green | Blue',
+    ].join('\n');
+    const mod = parseMod(src);
+    expect(mod.kind).toBe('Module');
+    expect(mod.decls).toHaveLength(3);
+    expect(mod.decls[0]?.kind).toBe('FnDecl');
+    expect(mod.decls[1]?.kind).toBe('LetDecl');
+    expect(mod.decls[2]?.kind).toBe('DataDecl');
+    expect(hasNoTrivia(mod)).toBe(true);
   });
 });

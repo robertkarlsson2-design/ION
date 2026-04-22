@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { serializeModule, deserializeModule, IonIRSerdeError } from '../../src/ir/serde.js';
+import { serializeModule, deserializeModule, IonIRSerdeError, MAX_NESTING_DEPTH } from '../../src/ir/serde.js';
 import { makeSymbolId } from '../../src/types.js';
 import type { IonIRModule, IonIRNode, IonIRDialect } from '../../src/ir/nodes.js';
 import type { IonType, EffectSet } from '../../src/ir/types.js';
@@ -466,5 +466,159 @@ describe('IonIR serde — error cases', () => {
       }],
     });
     expect(() => deserializeModule(raw)).toThrow(IonIRSerdeError);
+  });
+
+  it('throws IonIRSerdeError when serializing Float(Infinity)', () => {
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Literal', value: { kind: 'Float', value: Infinity }, span, type: intType }],
+    };
+    expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+  });
+
+  it('throws IonIRSerdeError when serializing Float(-Infinity)', () => {
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Literal', value: { kind: 'Float', value: -Infinity }, span, type: intType }],
+    };
+    expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+  });
+
+  it('throws IonIRSerdeError when serializing Float(NaN)', () => {
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Literal', value: { kind: 'Float', value: NaN }, span, type: intType }],
+    };
+    expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite D — depth limit guards
+// ---------------------------------------------------------------------------
+
+describe('IonIR serde — depth limit guards', () => {
+  const testSpan = { file: 'test.ion', startLine: 1, startCol: 0, endLine: 1, endCol: 1 };
+  const testSid = 'mod:x:0';
+
+  function makeDeepLetJson(depth: number): unknown {
+    const leaf = {
+      kind: 'Var',
+      name: 'x',
+      symbolId: testSid,
+      span: testSpan,
+      type: { kind: 'Int' },
+    };
+    let node: unknown = leaf;
+    for (let i = 0; i < depth; i++) {
+      node = {
+        kind: 'Let',
+        name: 'x',
+        symbolId: testSid,
+        bindingType: { kind: 'Int' },
+        value: leaf,
+        body: node,
+        span: testSpan,
+        type: { kind: 'Int' },
+      };
+    }
+    return node;
+  }
+
+  function makeDeepListTypeJson(depth: number): unknown {
+    let type: unknown = { kind: 'Int' };
+    for (let i = 0; i < depth; i++) {
+      type = { kind: 'List', elem: type };
+    }
+    return type;
+  }
+
+  function wrapInModule(decl: unknown): string {
+    return JSON.stringify({
+      ionir: '1.0',
+      module: 'org.test',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [decl],
+    });
+  }
+
+  it('node depth: exactly at limit does not throw', () => {
+    const json = wrapInModule(makeDeepLetJson(MAX_NESTING_DEPTH));
+    expect(() => deserializeModule(json)).not.toThrow();
+  });
+
+  it('node depth: one past the limit throws IonIRSerdeError', () => {
+    const json = wrapInModule(makeDeepLetJson(MAX_NESTING_DEPTH + 1));
+    expect(() => deserializeModule(json)).toThrow(IonIRSerdeError);
+  });
+
+  it('node depth: error message contains "node nesting exceeds maximum depth"', () => {
+    const json = wrapInModule(makeDeepLetJson(MAX_NESTING_DEPTH + 1));
+    expect(() => deserializeModule(json)).toThrow(/node nesting exceeds maximum depth/);
+  });
+
+  it('type depth: exactly at limit does not throw', () => {
+    const decl = {
+      kind: 'Var',
+      name: 'x',
+      symbolId: testSid,
+      span: testSpan,
+      type: makeDeepListTypeJson(MAX_NESTING_DEPTH),
+    };
+    const json = wrapInModule(decl);
+    expect(() => deserializeModule(json)).not.toThrow();
+  });
+
+  it('type depth: one past the limit throws IonIRSerdeError', () => {
+    const decl = {
+      kind: 'Var',
+      name: 'x',
+      symbolId: testSid,
+      span: testSpan,
+      type: makeDeepListTypeJson(MAX_NESTING_DEPTH + 1),
+    };
+    const json = wrapInModule(decl);
+    expect(() => deserializeModule(json)).toThrow(IonIRSerdeError);
+  });
+
+  it('type depth: error message contains "type nesting exceeds maximum depth"', () => {
+    const decl = {
+      kind: 'Var',
+      name: 'x',
+      symbolId: testSid,
+      span: testSpan,
+      type: makeDeepListTypeJson(MAX_NESTING_DEPTH + 1),
+    };
+    const json = wrapInModule(decl);
+    expect(() => deserializeModule(json)).toThrow(/type nesting exceeds maximum depth/);
+  });
+
+  it('depth error is an IonIRSerdeError instance', () => {
+    const json = wrapInModule(makeDeepLetJson(MAX_NESTING_DEPTH + 1));
+    let caught: unknown;
+    try {
+      deserializeModule(json);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(IonIRSerdeError);
   });
 });
