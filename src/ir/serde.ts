@@ -1,5 +1,5 @@
 import { makeSymbolId } from '../types.js';
-import type { Span, SymbolId } from '../types.js';
+import type { Span } from '../types.js';
 import type { EffectTag } from '../ast/types.js';
 import type {
   IonIRModule,
