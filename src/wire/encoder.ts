@@ -303,7 +303,7 @@ function serializeTypeRaw(t: IonType): string {
     case 'Result': return `res<${serializeTypeRaw(t.ok)},${serializeTypeRaw(t.err)}>`;
     case 'Fn': {
       const params = t.params.map(serializeTypeRaw).join(',');
-      const effects = [...t.effects].sort().map(e => `!${e}`).join('');
+      const effects = t.effects.size > 0 ? '!' + [...t.effects].sort().join(',') : '';
       return `fn(${params})->${serializeTypeRaw(t.ret)}${effects}`;
     }
     case 'User':
@@ -538,9 +538,11 @@ function encodeVersionLine(): string {
   return 'I1';
 }
 
-/** Returns "M <module> v=<version>". */
+/** Returns "M <module> v=<version> d=<dialects>". */
 function encodeModuleLine(m: IonIRModule): string {
-  return `M ${m.module} v=${m.version}`;
+  const base = `M ${m.module} v=${m.version}`;
+  if (m.dialects.length === 0) return base;
+  return `${base} d=${[...m.dialects].sort().join(',')}`;
 }
 
 /** Returns "S a=foo b=bar" or "" when pool is empty. */
@@ -555,13 +557,13 @@ function encodeTypeLine(pool: TypePool): string {
   return `T ${pool.entries.map(e => `${e.alias}=${e.value}`).join(' ')}`;
 }
 
-/** Returns "X <sid> from <module>:<sid> [; ...]" or "" when no imports. */
+/** Returns "X import <sid> from <module>:<sid> [; ...]" or "" when no imports. */
 function encodeImportLines(imports: readonly ModuleRefNode[]): string {
   if (imports.length === 0) return '';
   const parts = imports.map(imp => {
     const modPath = imp.modulePath.join('.');
     const sid = String(imp.symbolId);
-    return `${sid} from ${modPath}:${sid}`;
+    return `import ${sid} from ${modPath}:${sid}`;
   });
   return `X ${parts.join('; ')}`;
 }
@@ -653,7 +655,8 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
 
     case 'Let': {
       const n = encodeName(node.name, ctx.sym);
-      return `let ${n}=${encodeNode(node.value, ctx)};${encodeNode(node.body, ctx)}`;
+      const t = encodeType(node.bindingType, ctx);
+      return `let ${n}:${t}=${encodeNode(node.value, ctx)};${encodeNode(node.body, ctx)}`;
     }
 
     case 'Case': {
