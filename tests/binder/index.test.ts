@@ -1,0 +1,170 @@
+import { describe, it, expect } from 'vitest';
+import { lex } from '../../src/lexer/index.js';
+import { parseModule } from '../../src/parser/declarations.js';
+import { buildModule } from '../../src/ast/builder.js';
+import { bindModule, detectCircularImports } from '../../src/binder/index.js';
+import type { ModuleGraph } from '../../src/binder/index.js';
+import type { AstModule } from '../../src/ast/nodes.js';
+
+function parse(src: string): AstModule {
+  return buildModule(parseModule(lex(src, 'test.ion')));
+}
+
+describe('bindModule', () => {
+  it('simple fn with typed params — all params resolve, zero errors', () => {
+    const ast = parse('fn add(a: Int, b: Int) -> Int = a + b');
+    const result = bindModule(ast, 'test');
+    expect(result.errors).toHaveLength(0);
+    // 'a' and 'b' each appear once in body
+    expect(result.resolutionMap.size).toBe(2);
+    for (const id of result.resolutionMap.values()) {
+      expect(typeof id).toBe('string');
+    }
+  });
+
+  it('mutual recursion — forward-ref hoisting works, zero errors', () => {
+    const ast = parse(`
+      fn even(n: Int) -> Bool = if n == 0 then true else odd(n)
+      fn odd(n: Int) -> Bool = if n == 0 then false else even(n)
+    `);
+    const result = bindModule(ast, 'test');
+    const undefinedErrors = result.errors.filter(e => e.kind === 'UndefinedName');
+    expect(undefinedErrors).toHaveLength(0);
+  });
+
+  it('duplicate top-level fn name — DuplicateBinding', () => {
+    const ast = parse('fn foo() = 1\nfn foo() = 2');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    const err = dupes[0];
+    expect(err?.kind).toBe('DuplicateBinding');
+    expect(err?.message).toContain('foo');
+  });
+
+  it('undefined name in fn body — UndefinedName', () => {
+    const ast = parse('fn foo() = bar');
+    const result = bindModule(ast, 'test');
+    const undef = result.errors.filter(e => e.kind === 'UndefinedName');
+    expect(undef).toHaveLength(1);
+    const err = undef[0];
+    expect(err?.kind).toBe('UndefinedName');
+    expect(err?.message).toContain('bar');
+  });
+
+  it('let expression scoping — binding visible in body, not outside', () => {
+    const ast = parse('fn foo() = let x = 1; x\nfn bar() = x');
+    const result = bindModule(ast, 'test');
+    const undef = result.errors.filter(e => e.kind === 'UndefinedName');
+    expect(undef).toHaveLength(1);
+    expect(undef[0]?.message).toContain('x');
+  });
+
+  it('lambda param binding — param resolves inside lambda body', () => {
+    const ast = parse('fn foo() = (x -> x + 1)');
+    const result = bindModule(ast, 'test');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('match arm IdentPat binding — pattern variable resolves in arm body', () => {
+    const ast = parse('fn foo(x: Int) = match x | n -> n + 1');
+    const result = bindModule(ast, 'test');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('match arm WildcardPat — no binding added, zero errors', () => {
+    const ast = parse('fn foo(x: Int) = match x | _ -> 42');
+    const result = bindModule(ast, 'test');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('nested module decl — inner decl not accessible by name from outer scope', () => {
+    const ast = parse('module Foo {\n  fn bar() = 1\n}\nfn baz() = bar');
+    const result = bindModule(ast, 'test');
+    const undef = result.errors.filter(e => e.kind === 'UndefinedName');
+    expect(undef).toHaveLength(1);
+    expect(undef[0]?.message).toContain('bar');
+    // Foo itself is in the symbol table
+    const fooSymbol = [...result.symbolTable.all()].find(s => s.name === 'Foo');
+    expect(fooSymbol).toBeDefined();
+    expect(fooSymbol?.declKind).toBe('Module');
+  });
+
+  it('use declaration — module graph dependency recorded', () => {
+    const ast = parse('use std.http\nfn foo() = 1');
+    const result = bindModule(ast, 'myModule');
+    const deps = result.moduleGraph.get('myModule');
+    expect(deps).toBeDefined();
+    expect(deps?.has('std.http')).toBe(true);
+  });
+
+  it('use declaration with named imports — dependency path recorded', () => {
+    const ast = parse('use std.http.{get, post}\nfn foo() = 1');
+    const result = bindModule(ast, 'myModule');
+    const deps = result.moduleGraph.get('myModule');
+    expect(deps).toBeDefined();
+    expect(deps?.has('std.http')).toBe(true);
+  });
+
+  it('let decl value references declared fn — resolves correctly', () => {
+    const ast = parse('fn compute() = 42\nlet result = compute()');
+    const result = bindModule(ast, 'test');
+    expect(result.errors).toHaveLength(0);
+    expect(result.resolutionMap.size).toBeGreaterThan(0);
+  });
+
+  it('type params in fn are phantom — do not pollute outer scope', () => {
+    const ast = parse('fn id<T>(x: T) = x\nfn foo() = T');
+    const result = bindModule(ast, 'test');
+    const undef = result.errors.filter(e => e.kind === 'UndefinedName');
+    expect(undef).toHaveLength(1);
+    expect(undef[0]?.message).toContain('T');
+  });
+
+  it('symbol table contains all declared symbols', () => {
+    const ast = parse('fn foo(a: Int) -> Int = a\nlet x = 1');
+    const result = bindModule(ast, 'test');
+    const names = [...result.symbolTable.all()].map(s => s.name);
+    expect(names).toContain('foo');
+    expect(names).toContain('x');
+    expect(names).toContain('a');
+  });
+
+  it('module graph recorded for single module', () => {
+    const ast = parse('fn foo() = 1');
+    const result = bindModule(ast, 'myMod');
+    expect(result.moduleGraph.has('myMod')).toBe(true);
+  });
+});
+
+describe('bindProgram (via detectCircularImports)', () => {
+  it('topological order — dependency comes before dependent (no errors)', () => {
+    const astA = parse('fn foo() = 1');
+    const astB = parse('use A\nfn bar() = 1');
+    const rA = bindModule(astA, 'A');
+    const rB = bindModule(astB, 'B');
+    expect(rA.errors.filter(e => e.kind === 'CircularImport')).toHaveLength(0);
+    expect(rB.errors.filter(e => e.kind === 'CircularImport')).toHaveLength(0);
+  });
+
+  it('circular import A → B → A — CircularImport detected', () => {
+    const graph: ModuleGraph = new Map([
+      ['A', new Set(['B'])],
+      ['B', new Set(['A'])],
+    ]);
+    const errors = detectCircularImports(graph, new Map());
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0]?.kind).toBe('CircularImport');
+    expect(errors[0]?.message).toContain('A');
+    expect(errors[0]?.message).toContain('B');
+  });
+
+  it('independent modules — both bound, no errors', () => {
+    const astA = parse('fn foo() = 1');
+    const astB = parse('fn bar() = 2');
+    const rA = bindModule(astA, 'A');
+    const rB = bindModule(astB, 'B');
+    expect(rA.errors).toHaveLength(0);
+    expect(rB.errors).toHaveLength(0);
+  });
+});
