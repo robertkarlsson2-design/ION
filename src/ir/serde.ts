@@ -64,8 +64,37 @@ function setReplacer(_key: string, value: unknown): unknown {
   return value;
 }
 
+function assertFiniteNumbers(value: unknown, path: string): void {
+  if (typeof value === 'number') {
+    if (!isFinite(value)) {
+      throw new IonIRSerdeError(`value is not a finite number (got ${String(value)})`, path);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      assertFiniteNumbers(value[i], `${path}[${i}]`);
+    }
+    return;
+  }
+  if (value instanceof Set) {
+    let i = 0;
+    for (const elem of value) {
+      assertFiniteNumbers(elem, `${path}[${i}]`);
+      i++;
+    }
+    return;
+  }
+  if (typeof value === 'object' && value !== null) {
+    for (const [key, val] of Object.entries(value)) {
+      assertFiniteNumbers(val, path ? `${path}.${key}` : key);
+    }
+  }
+}
+
 /** Serializes an IonIRModule to a formatted JSON string. EffectSet is sorted for determinism. */
 export function serializeModule(module: IonIRModule): string {
+  assertFiniteNumbers(module, '');
   return JSON.stringify(module, setReplacer, 2);
 }
 
