@@ -210,7 +210,16 @@ export async function runTokens(args: string[]): Promise<RunResult> {
 
     let baseline: TokenReport;
     try {
-      baseline = JSON.parse(baselineText) as TokenReport;
+      const raw = JSON.parse(baselineText) as Record<string, unknown>;
+      if (typeof raw['wireTokens'] !== 'number' || typeof raw['prettyTokens'] !== 'number') {
+        process.stdout.write(`error: baseline '${baselinePath}' has invalid shape\n`);
+        return { exitCode: 1 };
+      }
+      if (raw['tokenizer'] !== 'cl100k' && raw['tokenizer'] !== 'o200k') {
+        process.stdout.write(`error: baseline '${baselinePath}' has invalid shape\n`);
+        return { exitCode: 1 };
+      }
+      baseline = raw as unknown as TokenReport;
     } catch {
       process.stdout.write(`error: baseline '${baselinePath}' is not valid JSON\n`);
       return { exitCode: 1 };
