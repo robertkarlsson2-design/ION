@@ -100,6 +100,42 @@ describe('wire encoder — unit tests', () => {
     expect(out).toContain('\nX import ');
   });
 
+  it('A4b: pooled import path segment uses alias in X line (regression ION-55)', () => {
+    // 'organization' has tokenCost=3 (12 chars / 4 = 3). With 3 occurrences:
+    // count*(cost-1) = 3*2 = 6 > 2+cost = 5, so it gets pooled.
+    let importIdx = 0;
+    const makeImport = (suffix: string): IonIRNode & { kind: 'ModuleRef' } => ({
+      kind: 'ModuleRef',
+      modulePath: ['organization', suffix],
+      symbolId: makeSymbolId(`mod:imp${importIdx++}:0`),
+      span,
+      type: intType,
+    });
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'test',
+      version: '1.0',
+      dialects: ['core'],
+      imports: [makeImport('acme'), makeImport('core'), makeImport('utils')],
+      data: [],
+      decls: [],
+    };
+    const out = encodeModule(mod);
+    const lines = out.split('\n');
+    const sLine = lines.find(l => l.startsWith('S '));
+    const xLine = lines.find(l => l.startsWith('X '));
+    // The pool must record 'organization'
+    expect(sLine).toMatch(/=organization(\s|$)/);
+    // The X line must not contain the raw segment — only the alias
+    expect(xLine).toBeDefined();
+    expect(xLine).not.toContain('organization');
+    // No non-S line should contain the raw segment
+    const nonSLines = lines.filter(l => !l.startsWith('S '));
+    for (const l of nonSLines) {
+      expect(l).not.toContain('organization');
+    }
+  });
+
   it('A5: long repeated name gets pooled in S section', () => {
     const longName = 'getUserByIdFromDatabase';
     const varNode: IonIRNode = { kind: 'Var', name: longName, symbolId: sid, span, type: intType };

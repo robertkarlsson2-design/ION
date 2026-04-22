@@ -558,10 +558,10 @@ function encodeTypeLine(pool: TypePool): string {
 }
 
 /** Returns "X import <sid> from <module>:<sid> [; ...]" or "" when no imports. */
-function encodeImportLines(imports: readonly ModuleRefNode[]): string {
+function encodeImportLines(imports: readonly ModuleRefNode[], ctx: EncoderContext): string {
   if (imports.length === 0) return '';
   const parts = imports.map(imp => {
-    const modPath = imp.modulePath.join('.');
+    const modPath = imp.modulePath.map(p => encodeName(p, ctx.sym)).join('.');
     const sid = String(imp.symbolId);
     return `import ${sid} from ${modPath}:${sid}`;
   });
@@ -798,7 +798,7 @@ export function encodeModule(module: IonIRModule): string {
   const typLine = encodeTypeLine(typ);
   if (typLine) lines.push(typLine);
 
-  const importLine = encodeImportLines(module.imports);
+  const importLine = encodeImportLines(module.imports, ctx);
   if (importLine) lines.push(importLine);
 
   const dataLine = encodeDataLines(module.data, ctx);
