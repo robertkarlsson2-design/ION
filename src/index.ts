@@ -73,3 +73,6 @@ export * from './ast/index.js';
 
 export { prettyPrintModule, prettyPrintNode, prettyPrintType } from './wire/index.js';
 export type { PrettyOptions } from './wire/index.js';
+
+export type { SymbolKind, SymbolInfo, BinderError, ModuleBindResult, ProgramBindResult } from './binder/types.js';
+export { bindModule, bindProgram } from './binder/index.js';
