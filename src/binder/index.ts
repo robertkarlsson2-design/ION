@@ -13,7 +13,6 @@ import type {
   BindError,
   DeclKind,
   ModuleEdge,
-  SymbolInfo,
 } from './types.js';
 import { ScopeChain } from './scope.js';
 
