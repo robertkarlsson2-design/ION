@@ -97,7 +97,6 @@ const KEYWORDS: ReadonlyMap<string, TokenKind> = new Map([
   ['null', TokenKind.NULL_LIT],
 ]);
 
-type LexMode = 'normal' | 'string' | 'interp';
 
 /** Tokenise an Ion source file into a flat token array (trivia included). */
 export function lex(source: string, file: string): Token[] {

@@ -4,7 +4,6 @@ import type { TypeAnnotation } from '../ast/types.js';
 import type {
   ExprNode,
   PatternNode,
-  LiteralNode,
   TriviaNode,
   StringPart,
   CallArg,
