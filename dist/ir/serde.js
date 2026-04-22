@@ -6,6 +6,7 @@ export class IonIRSerdeError extends Error {
         this.name = 'IonIRSerdeError';
     }
 }
+const MAX_DEPTH = 64;
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -112,9 +113,12 @@ function typeToJson(t) {
         case 'TypeVar': return { kind: 'TypeVar', id: t.id };
     }
 }
-function typeFromJson(raw, ctx) {
+function typeFromJson(raw, ctx, depth) {
+    if (depth <= 0)
+        throw new IonIRSerdeError('Input exceeds maximum nesting depth');
     const obj = assertObj(raw, ctx);
     const kind = assertStr(obj['kind'], `${ctx}.kind`);
+    const d = depth - 1;
     switch (kind) {
         case 'Int': return { kind: 'Int' };
         case 'Float': return { kind: 'Float' };
@@ -123,27 +127,27 @@ function typeFromJson(raw, ctx) {
         case 'Null': return { kind: 'Null' };
         case 'Unit': return { kind: 'Unit' };
         case 'Never': return { kind: 'Never' };
-        case 'List': return { kind: 'List', elem: typeFromJson(obj['elem'], `${ctx}.elem`) };
+        case 'List': return { kind: 'List', elem: typeFromJson(obj['elem'], `${ctx}.elem`, d) };
         case 'Map':
             return {
                 kind: 'Map',
-                key: typeFromJson(obj['key'], `${ctx}.key`),
-                value: typeFromJson(obj['value'], `${ctx}.value`),
+                key: typeFromJson(obj['key'], `${ctx}.key`, d),
+                value: typeFromJson(obj['value'], `${ctx}.value`, d),
             };
-        case 'Option': return { kind: 'Option', inner: typeFromJson(obj['inner'], `${ctx}.inner`) };
+        case 'Option': return { kind: 'Option', inner: typeFromJson(obj['inner'], `${ctx}.inner`, d) };
         case 'Result':
             return {
                 kind: 'Result',
-                ok: typeFromJson(obj['ok'], `${ctx}.ok`),
-                err: typeFromJson(obj['err'], `${ctx}.err`),
+                ok: typeFromJson(obj['ok'], `${ctx}.ok`, d),
+                err: typeFromJson(obj['err'], `${ctx}.err`, d),
             };
         case 'Fn': {
             const paramsArr = assertArr(obj['params'], `${ctx}.params`);
             const effectsArr = assertArr(obj['effects'], `${ctx}.effects`);
             return {
                 kind: 'Fn',
-                params: paramsArr.map((p, i) => typeFromJson(p, `${ctx}.params[${i}]`)),
-                ret: typeFromJson(obj['ret'], `${ctx}.ret`),
+                params: paramsArr.map((p, i) => typeFromJson(p, `${ctx}.params[${i}]`, d)),
+                ret: typeFromJson(obj['ret'], `${ctx}.ret`, d),
                 effects: new Set(effectsArr.map((e, i) => assertStr(e, `${ctx}.effects[${i}]`))),
             };
         }
@@ -153,7 +157,7 @@ function typeFromJson(raw, ctx) {
                 kind: 'User',
                 name: assertStr(obj['name'], `${ctx}.name`),
                 symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-                args: argsArr.map((a, i) => typeFromJson(a, `${ctx}.args[${i}]`)),
+                args: argsArr.map((a, i) => typeFromJson(a, `${ctx}.args[${i}]`, d)),
             };
         }
         case 'TypeVar':
@@ -191,12 +195,12 @@ function paramToJson(p) {
         span: spanToJson(p.span),
     };
 }
-function paramFromJson(raw, ctx) {
+function paramFromJson(raw, ctx, depth) {
     const obj = assertObj(raw, ctx);
     return {
         name: assertStr(obj['name'], `${ctx}.name`),
         symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-        type: typeFromJson(obj['type'], `${ctx}.type`),
+        type: typeFromJson(obj['type'], `${ctx}.type`, depth),
         span: spanFromJson(obj['span'], `${ctx}.span`),
     };
 }
@@ -220,10 +224,13 @@ function casePatternToJson(p) {
             return { kind: 'Literal', value: literalValueToJson(p.value), span: spanToJson(p.span) };
     }
 }
-function casePatternFromJson(raw, ctx) {
+function casePatternFromJson(raw, ctx, depth) {
+    if (depth <= 0)
+        throw new IonIRSerdeError('Input exceeds maximum nesting depth');
     const obj = assertObj(raw, ctx);
     const kind = assertStr(obj['kind'], `${ctx}.kind`);
     const span = spanFromJson(obj['span'], `${ctx}.span`);
+    const d = depth - 1;
     switch (kind) {
         case 'Wildcard': return { kind: 'Wildcard', span };
         case 'Var':
@@ -239,7 +246,7 @@ function casePatternFromJson(raw, ctx) {
                 kind: 'Constructor',
                 ctorName: assertStr(obj['ctorName'], `${ctx}.ctorName`),
                 symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-                fields: fields.map((f, i) => casePatternFromJson(f, `${ctx}.fields[${i}]`)),
+                fields: fields.map((f, i) => casePatternFromJson(f, `${ctx}.fields[${i}]`, d)),
                 span,
             };
         }
@@ -260,13 +267,13 @@ function caseArmToJson(arm) {
         span: spanToJson(arm.span),
     };
 }
-function caseArmFromJson(raw, ctx) {
+function caseArmFromJson(raw, ctx, depth) {
     const obj = assertObj(raw, ctx);
     const guardRaw = obj['guard'];
     return {
-        pattern: casePatternFromJson(obj['pattern'], `${ctx}.pattern`),
-        ...(guardRaw !== undefined ? { guard: nodeFromJson(guardRaw, `${ctx}.guard`) } : {}),
-        body: nodeFromJson(obj['body'], `${ctx}.body`),
+        pattern: casePatternFromJson(obj['pattern'], `${ctx}.pattern`, depth),
+        ...(guardRaw !== undefined ? { guard: nodeFromJson(guardRaw, `${ctx}.guard`, depth) } : {}),
+        body: nodeFromJson(obj['body'], `${ctx}.body`, depth),
         span: spanFromJson(obj['span'], `${ctx}.span`),
     };
 }
@@ -280,12 +287,12 @@ function foreignSigToJson(sig) {
         template: sig.template,
     };
 }
-function foreignSigFromJson(raw, ctx) {
+function foreignSigFromJson(raw, ctx, depth) {
     const obj = assertObj(raw, ctx);
     const params = assertArr(obj['params'], `${ctx}.params`);
     return {
-        params: params.map((p, i) => typeFromJson(p, `${ctx}.params[${i}]`)),
-        ret: typeFromJson(obj['ret'], `${ctx}.ret`),
+        params: params.map((p, i) => typeFromJson(p, `${ctx}.params[${i}]`, depth)),
+        ret: typeFromJson(obj['ret'], `${ctx}.ret`, depth),
         template: assertStr(obj['template'], `${ctx}.template`),
     };
 }
@@ -304,16 +311,16 @@ function oopMethodToJson(m) {
         span: spanToJson(m.span),
     };
 }
-function oopMethodFromJson(raw, ctx) {
+function oopMethodFromJson(raw, ctx, depth) {
     const obj = assertObj(raw, ctx);
     const params = assertArr(obj['params'], `${ctx}.params`);
     const bodyRaw = obj['body'];
     return {
         name: assertStr(obj['name'], `${ctx}.name`),
         symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-        params: params.map((p, i) => paramFromJson(p, `${ctx}.params[${i}]`)),
-        retType: typeFromJson(obj['retType'], `${ctx}.retType`),
-        ...(bodyRaw !== undefined ? { body: nodeFromJson(bodyRaw, `${ctx}.body`) } : {}),
+        params: params.map((p, i) => paramFromJson(p, `${ctx}.params[${i}]`, depth)),
+        retType: typeFromJson(obj['retType'], `${ctx}.retType`, depth),
+        ...(bodyRaw !== undefined ? { body: nodeFromJson(bodyRaw, `${ctx}.body`, depth) } : {}),
         isAbstract: assertBool(obj['isAbstract'], `${ctx}.isAbstract`),
         isStatic: assertBool(obj['isStatic'], `${ctx}.isStatic`),
         span: spanFromJson(obj['span'], `${ctx}.span`),
@@ -327,12 +334,12 @@ function oopMemberToJson(m) {
         span: spanToJson(m.span),
     };
 }
-function oopMemberFromJson(raw, ctx) {
+function oopMemberFromJson(raw, ctx, depth) {
     const obj = assertObj(raw, ctx);
     return {
         name: assertStr(obj['name'], `${ctx}.name`),
         symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-        type: typeFromJson(obj['type'], `${ctx}.type`),
+        type: typeFromJson(obj['type'], `${ctx}.type`, depth),
         span: spanFromJson(obj['span'], `${ctx}.span`),
     };
 }
@@ -347,13 +354,13 @@ function adtVariantToJson(v) {
         span: spanToJson(v.span),
     };
 }
-function adtVariantFromJson(raw, ctx) {
+function adtVariantFromJson(raw, ctx, depth) {
     const obj = assertObj(raw, ctx);
     const fields = assertArr(obj['fields'], `${ctx}.fields`);
     return {
         tag: assertStr(obj['tag'], `${ctx}.tag`),
         symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-        fields: fields.map((f, i) => paramFromJson(f, `${ctx}.fields[${i}]`)),
+        fields: fields.map((f, i) => paramFromJson(f, `${ctx}.fields[${i}]`, depth)),
         span: spanFromJson(obj['span'], `${ctx}.span`),
     };
 }
@@ -365,13 +372,13 @@ function adtArmToJson(arm) {
         span: spanToJson(arm.span),
     };
 }
-function adtArmFromJson(raw, ctx) {
+function adtArmFromJson(raw, ctx, depth) {
     const obj = assertObj(raw, ctx);
     const bindings = assertArr(obj['bindings'], `${ctx}.bindings`);
     return {
         tag: assertStr(obj['tag'], `${ctx}.tag`),
-        bindings: bindings.map((b, i) => paramFromJson(b, `${ctx}.bindings[${i}]`)),
-        body: nodeFromJson(obj['body'], `${ctx}.body`),
+        bindings: bindings.map((b, i) => paramFromJson(b, `${ctx}.bindings[${i}]`, depth)),
+        body: nodeFromJson(obj['body'], `${ctx}.body`, depth),
         span: spanFromJson(obj['span'], `${ctx}.span`),
     };
 }
@@ -386,13 +393,13 @@ function effectOpToJson(op) {
         span: spanToJson(op.span),
     };
 }
-function effectOpFromJson(raw, ctx) {
+function effectOpFromJson(raw, ctx, depth) {
     const obj = assertObj(raw, ctx);
     const params = assertArr(obj['params'], `${ctx}.params`);
     return {
         name: assertStr(obj['name'], `${ctx}.name`),
-        params: params.map((p, i) => paramFromJson(p, `${ctx}.params[${i}]`)),
-        retType: typeFromJson(obj['retType'], `${ctx}.retType`),
+        params: params.map((p, i) => paramFromJson(p, `${ctx}.params[${i}]`, depth)),
+        retType: typeFromJson(obj['retType'], `${ctx}.retType`, depth),
         span: spanFromJson(obj['span'], `${ctx}.span`),
     };
 }
@@ -404,13 +411,13 @@ function effectHandlerToJson(h) {
         span: spanToJson(h.span),
     };
 }
-function effectHandlerFromJson(raw, ctx) {
+function effectHandlerFromJson(raw, ctx, depth) {
     const obj = assertObj(raw, ctx);
     const params = assertArr(obj['params'], `${ctx}.params`);
     return {
         operation: assertStr(obj['operation'], `${ctx}.operation`),
-        params: params.map((p, i) => paramFromJson(p, `${ctx}.params[${i}]`)),
-        body: nodeFromJson(obj['body'], `${ctx}.body`),
+        params: params.map((p, i) => paramFromJson(p, `${ctx}.params[${i}]`, depth)),
+        body: nodeFromJson(obj['body'], `${ctx}.body`, depth),
         span: spanFromJson(obj['span'], `${ctx}.span`),
     };
 }
@@ -581,11 +588,14 @@ function nodeToJson(n) {
 // ---------------------------------------------------------------------------
 // IonIRNode — nodeFromJson
 // ---------------------------------------------------------------------------
-function nodeFromJson(raw, ctx) {
+function nodeFromJson(raw, ctx, depth) {
+    if (depth <= 0)
+        throw new IonIRSerdeError('Input exceeds maximum nesting depth');
     const obj = assertObj(raw, ctx);
     const kind = assertStr(obj['kind'], `${ctx}.kind`);
     const span = spanFromJson(obj['span'], `${ctx}.span`);
-    const type = typeFromJson(obj['type'], `${ctx}.type`);
+    const type = typeFromJson(obj['type'], `${ctx}.type`, depth);
+    const d = depth - 1;
     switch (kind) {
         case 'Var':
             return {
@@ -606,8 +616,8 @@ function nodeFromJson(raw, ctx) {
             const args = assertArr(obj['args'], `${ctx}.args`);
             return {
                 kind: 'App',
-                callee: nodeFromJson(obj['callee'], `${ctx}.callee`),
-                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`)),
+                callee: nodeFromJson(obj['callee'], `${ctx}.callee`, d),
+                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`, d)),
                 span,
                 type,
             };
@@ -617,8 +627,8 @@ function nodeFromJson(raw, ctx) {
             const captures = assertArr(obj['captures'], `${ctx}.captures`);
             return {
                 kind: 'Abs',
-                params: params.map((p, i) => paramFromJson(p, `${ctx}.params[${i}]`)),
-                body: nodeFromJson(obj['body'], `${ctx}.body`),
+                params: params.map((p, i) => paramFromJson(p, `${ctx}.params[${i}]`, d)),
+                body: nodeFromJson(obj['body'], `${ctx}.body`, d),
                 captures: captures.map((c, i) => makeSymbolId(assertStr(c, `${ctx}.captures[${i}]`))),
                 span,
                 type,
@@ -629,9 +639,9 @@ function nodeFromJson(raw, ctx) {
                 kind: 'Let',
                 name: assertStr(obj['name'], `${ctx}.name`),
                 symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-                bindingType: typeFromJson(obj['bindingType'], `${ctx}.bindingType`),
-                value: nodeFromJson(obj['value'], `${ctx}.value`),
-                body: nodeFromJson(obj['body'], `${ctx}.body`),
+                bindingType: typeFromJson(obj['bindingType'], `${ctx}.bindingType`, d),
+                value: nodeFromJson(obj['value'], `${ctx}.value`, d),
+                body: nodeFromJson(obj['body'], `${ctx}.body`, d),
                 span,
                 type,
             };
@@ -639,8 +649,8 @@ function nodeFromJson(raw, ctx) {
             const arms = assertArr(obj['arms'], `${ctx}.arms`);
             return {
                 kind: 'Case',
-                scrutinee: nodeFromJson(obj['scrutinee'], `${ctx}.scrutinee`),
-                arms: arms.map((a, i) => caseArmFromJson(a, `${ctx}.arms[${i}]`)),
+                scrutinee: nodeFromJson(obj['scrutinee'], `${ctx}.scrutinee`, d),
+                arms: arms.map((a, i) => caseArmFromJson(a, `${ctx}.arms[${i}]`, d)),
                 span,
                 type,
             };
@@ -651,7 +661,7 @@ function nodeFromJson(raw, ctx) {
                 kind: 'Constructor',
                 ctorName: assertStr(obj['ctorName'], `${ctx}.ctorName`),
                 symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`)),
+                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`, d)),
                 span,
                 type,
             };
@@ -659,7 +669,7 @@ function nodeFromJson(raw, ctx) {
         case 'Accessor':
             return {
                 kind: 'Accessor',
-                receiver: nodeFromJson(obj['receiver'], `${ctx}.receiver`),
+                receiver: nodeFromJson(obj['receiver'], `${ctx}.receiver`, d),
                 member: assertStr(obj['member'], `${ctx}.member`),
                 span,
                 type,
@@ -680,7 +690,7 @@ function nodeFromJson(raw, ctx) {
                 target: assertStr(obj['target'], `${ctx}.target`),
                 module: assertStr(obj['module'], `${ctx}.module`),
                 symbol: assertStr(obj['symbol'], `${ctx}.symbol`),
-                sig: foreignSigFromJson(obj['sig'], `${ctx}.sig`),
+                sig: foreignSigFromJson(obj['sig'], `${ctx}.sig`, d),
                 span,
                 type,
             };
@@ -688,7 +698,7 @@ function nodeFromJson(raw, ctx) {
             return {
                 kind: 'Effect',
                 effectTag: assertStr(obj['effectTag'], `${ctx}.effectTag`),
-                body: nodeFromJson(obj['body'], `${ctx}.body`),
+                body: nodeFromJson(obj['body'], `${ctx}.body`, d),
                 span,
                 type,
             };
@@ -705,8 +715,8 @@ function nodeFromJson(raw, ctx) {
                     ? { superClass: makeSymbolId(assertStr(superClassRaw, `${ctx}.superClass`)) }
                     : {}),
                 interfaces: interfaces.map((s, i) => makeSymbolId(assertStr(s, `${ctx}.interfaces[${i}]`))),
-                fields: fields.map((f, i) => paramFromJson(f, `${ctx}.fields[${i}]`)),
-                methods: methods.map((m, i) => oopMethodFromJson(m, `${ctx}.methods[${i}]`)),
+                fields: fields.map((f, i) => paramFromJson(f, `${ctx}.fields[${i}]`, d)),
+                methods: methods.map((m, i) => oopMethodFromJson(m, `${ctx}.methods[${i}]`, d)),
                 span,
                 type,
             };
@@ -717,7 +727,7 @@ function nodeFromJson(raw, ctx) {
                 kind: 'OopInterface',
                 name: assertStr(obj['name'], `${ctx}.name`),
                 symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-                members: members.map((m, i) => oopMemberFromJson(m, `${ctx}.members[${i}]`)),
+                members: members.map((m, i) => oopMemberFromJson(m, `${ctx}.members[${i}]`, d)),
                 span,
                 type,
             };
@@ -727,7 +737,7 @@ function nodeFromJson(raw, ctx) {
             return {
                 kind: 'OopNew',
                 ctorSymbolId: makeSymbolId(assertStr(obj['ctorSymbolId'], `${ctx}.ctorSymbolId`)),
-                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`)),
+                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`, d)),
                 span,
                 type,
             };
@@ -736,9 +746,9 @@ function nodeFromJson(raw, ctx) {
             const args = assertArr(obj['args'], `${ctx}.args`);
             return {
                 kind: 'OopVirtualCall',
-                receiver: nodeFromJson(obj['receiver'], `${ctx}.receiver`),
+                receiver: nodeFromJson(obj['receiver'], `${ctx}.receiver`, d),
                 method: assertStr(obj['method'], `${ctx}.method`),
-                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`)),
+                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`, d)),
                 span,
                 type,
             };
@@ -746,16 +756,16 @@ function nodeFromJson(raw, ctx) {
         case 'OopThis':
             return { kind: 'OopThis', span, type };
         case 'AsyncBlock':
-            return { kind: 'AsyncBlock', body: nodeFromJson(obj['body'], `${ctx}.body`), span, type };
+            return { kind: 'AsyncBlock', body: nodeFromJson(obj['body'], `${ctx}.body`, d), span, type };
         case 'Await':
-            return { kind: 'Await', expr: nodeFromJson(obj['expr'], `${ctx}.expr`), span, type };
+            return { kind: 'Await', expr: nodeFromJson(obj['expr'], `${ctx}.expr`, d), span, type };
         case 'AdtDecl': {
             const variants = assertArr(obj['variants'], `${ctx}.variants`);
             return {
                 kind: 'AdtDecl',
                 name: assertStr(obj['name'], `${ctx}.name`),
                 symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-                variants: variants.map((v, i) => adtVariantFromJson(v, `${ctx}.variants[${i}]`)),
+                variants: variants.map((v, i) => adtVariantFromJson(v, `${ctx}.variants[${i}]`, d)),
                 span,
                 type,
             };
@@ -764,8 +774,8 @@ function nodeFromJson(raw, ctx) {
             const arms = assertArr(obj['arms'], `${ctx}.arms`);
             return {
                 kind: 'AdtMatch',
-                scrutinee: nodeFromJson(obj['scrutinee'], `${ctx}.scrutinee`),
-                arms: arms.map((a, i) => adtArmFromJson(a, `${ctx}.arms[${i}]`)),
+                scrutinee: nodeFromJson(obj['scrutinee'], `${ctx}.scrutinee`, d),
+                arms: arms.map((a, i) => adtArmFromJson(a, `${ctx}.arms[${i}]`, d)),
                 span,
                 type,
             };
@@ -776,7 +786,7 @@ function nodeFromJson(raw, ctx) {
                 kind: 'EffectDecl',
                 name: assertStr(obj['name'], `${ctx}.name`),
                 symbolId: makeSymbolId(assertStr(obj['symbolId'], `${ctx}.symbolId`)),
-                operations: operations.map((op, i) => effectOpFromJson(op, `${ctx}.operations[${i}]`)),
+                operations: operations.map((op, i) => effectOpFromJson(op, `${ctx}.operations[${i}]`, d)),
                 span,
                 type,
             };
@@ -787,7 +797,7 @@ function nodeFromJson(raw, ctx) {
                 kind: 'Perform',
                 effectSymbolId: makeSymbolId(assertStr(obj['effectSymbolId'], `${ctx}.effectSymbolId`)),
                 operation: assertStr(obj['operation'], `${ctx}.operation`),
-                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`)),
+                args: args.map((a, i) => nodeFromJson(a, `${ctx}.args[${i}]`, d)),
                 span,
                 type,
             };
@@ -797,10 +807,10 @@ function nodeFromJson(raw, ctx) {
             const returnClauseRaw = obj['returnClause'];
             return {
                 kind: 'Handle',
-                body: nodeFromJson(obj['body'], `${ctx}.body`),
-                handlers: handlers.map((h, i) => effectHandlerFromJson(h, `${ctx}.handlers[${i}]`)),
+                body: nodeFromJson(obj['body'], `${ctx}.body`, d),
+                handlers: handlers.map((h, i) => effectHandlerFromJson(h, `${ctx}.handlers[${i}]`, d)),
                 ...(returnClauseRaw !== undefined
-                    ? { returnClause: nodeFromJson(returnClauseRaw, `${ctx}.returnClause`) }
+                    ? { returnClause: nodeFromJson(returnClauseRaw, `${ctx}.returnClause`, d) }
                     : {}),
                 span,
                 type,
@@ -809,7 +819,7 @@ function nodeFromJson(raw, ctx) {
         case 'Resume':
             return {
                 kind: 'Resume',
-                value: nodeFromJson(obj['value'], `${ctx}.value`),
+                value: nodeFromJson(obj['value'], `${ctx}.value`, d),
                 span,
                 type,
             };
@@ -856,19 +866,19 @@ function moduleFromJson(raw) {
             return s;
         }),
         imports: importsArr.map((n, i) => {
-            const node = nodeFromJson(n, `IonIRModule.imports[${i}]`);
+            const node = nodeFromJson(n, `IonIRModule.imports[${i}]`, MAX_DEPTH);
             if (node.kind !== 'ModuleRef') {
                 throw new IonIRSerdeError(`IonIRModule.imports[${i}] must be a ModuleRef node, got "${node.kind}"`);
             }
             return node;
         }),
         data: dataArr.map((n, i) => {
-            const node = nodeFromJson(n, `IonIRModule.data[${i}]`);
+            const node = nodeFromJson(n, `IonIRModule.data[${i}]`, MAX_DEPTH);
             if (node.kind !== 'AdtDecl') {
                 throw new IonIRSerdeError(`IonIRModule.data[${i}] must be an AdtDecl node, got "${node.kind}"`);
             }
             return node;
         }),
-        decls: declsArr.map((n, i) => nodeFromJson(n, `IonIRModule.decls[${i}]`)),
+        decls: declsArr.map((n, i) => nodeFromJson(n, `IonIRModule.decls[${i}]`, MAX_DEPTH)),
     };
 }
