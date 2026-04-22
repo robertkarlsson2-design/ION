@@ -415,6 +415,27 @@ describe('wire decoder — node kinds', () => {
     });
     if (n.kind === 'Case') expect(n.arms[0]?.guard).toBeDefined();
   });
+
+  it('B29: Abs with Fn-typed parameter roundtrips', () => {
+    const fnType: IonType = { kind: 'Fn', params: [intType], ret: strType, effects: new Set() };
+    const n = decodeDecl({
+      kind: 'Abs',
+      params: [{ name: 'f', symbolId: sid, type: fnType, span }],
+      body: { kind: 'Var', name: 'f', symbolId: sid, span, type: strType },
+      captures: [],
+      span, type: intType,
+    });
+    expect(n.kind).toBe('Abs');
+    if (n.kind === 'Abs') {
+      expect(n.params[0]?.name).toBe('f');
+      expect(n.params[0]?.type.kind).toBe('Fn');
+      if (n.params[0]?.type.kind === 'Fn') {
+        expect(n.params[0].type.params).toHaveLength(1);
+        expect(n.params[0].type.params[0]).toEqual({ kind: 'Int' });
+        expect(n.params[0].type.ret).toEqual({ kind: 'Str' });
+      }
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

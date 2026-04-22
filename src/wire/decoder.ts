@@ -291,7 +291,7 @@ class WireParser {
     // find closing ) of params
     let depth = 0;
     let closeIdx = -1;
-    for (let i = 2; i < s.length; i++) {
+    for (let i = 3; i < s.length; i++) {
       if (s[i] === '(') depth++;
       else if (s[i] === ')') {
         if (depth === 0) { closeIdx = i; break; }
