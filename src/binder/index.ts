@@ -3,487 +3,402 @@ import type {
   AstDeclNode,
   AstExprNode,
   AstPatternNode,
-  AstIdentNode,
+  AstMatchArm,
   AstFnDeclNode,
 } from '../ast/nodes.js';
 import type { TypeAnnotation } from '../ast/types.js';
 import type { Span, SymbolId } from '../types.js';
-import type {
-  BindResult,
-  BindError,
-  DeclKind,
-  ModuleEdge,
-} from './types.js';
-import { ScopeChain } from './scope.js';
+import { makeSymbolId } from '../types.js';
 
-// ---- Internal per-module state ----------------------------------------------
+import { Scope } from './scope.js';
+import { SymbolTable } from './symbol-table.js';
+import type { DeclKind, SymbolEntry } from './symbol-table.js';
+import type { BindError } from './errors.js';
+import { buildModuleGraph, detectCircularImports } from './module-graph.js';
+import type { ModuleGraph } from './module-graph.js';
 
-interface BindState {
-  readonly moduleId: string;
-  readonly scope: ScopeChain;
-  readonly resolutions: Map<AstIdentNode, SymbolId>;
+export type { BindError, BindErrorKind } from './errors.js';
+export type { SymbolTable, SymbolEntry, DeclKind } from './symbol-table.js';
+export type { ModuleGraph } from './module-graph.js';
+export { detectCircularImports } from './module-graph.js';
+
+/** Maps spanKey(span) → SymbolId for every resolved name reference. */
+export type ResolutionMap = Map<string, SymbolId>;
+
+export interface BindResult {
+  readonly symbolTable: SymbolTable;
+  readonly resolutionMap: ResolutionMap;
+  readonly moduleGraph: ModuleGraph;
   readonly errors: BindError[];
-  readonly edges: ModuleEdge[];
 }
 
-// ---- Pass 1: hoist declarations ---------------------------------------------
+function spanKey(span: Span): string {
+  return `${span.file}:${span.startLine}:${span.startCol}`;
+}
 
-function hoistDecls(decls: readonly AstDeclNode[], state: BindState): void {
-  for (const decl of decls) {
+class Binder {
+  private readonly symbolTable: SymbolTable = new SymbolTable();
+  private readonly resolutionMap: ResolutionMap = new Map();
+  private readonly errors: BindError[] = [];
+  private counter: number = 0;
+  private readonly moduleGraph: ModuleGraph = new Map();
+  /** Maps "from→to" edge key to the UseDecl span for cycle reporting. */
+  private readonly edgeSpans: Map<string, Span> = new Map();
+
+  private freshId(modulePath: string, name: string): SymbolId {
+    return makeSymbolId(`${modulePath}$${name}$${this.counter++}`);
+  }
+
+  private registerDecl(
+    scope: Scope,
+    name: string,
+    declKind: DeclKind,
+    span: Span,
+    typeAnnotation: TypeAnnotation | null,
+    isPublic: boolean,
+    modulePath: string,
+  ): SymbolId {
+    if (scope.hasOwn(name)) {
+      this.errors.push({
+        kind: 'DuplicateBinding',
+        message: `Duplicate binding '${name}'`,
+        span,
+      });
+      // Return the existing id rather than creating a new one.
+      // Non-null: hasOwn() guarantees lookup succeeds at this scope level.
+      return scope.lookup(name) as SymbolId;
+    }
+    const id = this.freshId(modulePath, name);
+    scope.define(name, id);
+    const entry: SymbolEntry = { id, name, declKind, span, typeAnnotation, isPublic };
+    this.symbolTable.register(entry);
+    return id;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Top-level entry
+  // ---------------------------------------------------------------------------
+
+  bind(module: AstModule, modulePath: string): BindResult {
+    const moduleScope = new Scope(null);
+    this.bindDeclList(module.decls, moduleScope, modulePath);
+
+    // Merge the local module graph into the accumulated graph.
+    const localGraph = buildModuleGraph(modulePath, module.decls);
+    for (const [k, v] of localGraph) {
+      const existing = this.moduleGraph.get(k);
+      if (existing === undefined) {
+        this.moduleGraph.set(k, new Set(v));
+      } else {
+        for (const dep of v) existing.add(dep);
+      }
+    }
+
+    const circularErrors = detectCircularImports(this.moduleGraph, this.edgeSpans);
+    this.errors.push(...circularErrors);
+
+    return {
+      symbolTable: this.symbolTable,
+      resolutionMap: this.resolutionMap,
+      moduleGraph: this.moduleGraph,
+      errors: this.errors,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Two-pass declaration list binding (supports mutual recursion)
+  // ---------------------------------------------------------------------------
+
+  private bindDeclList(
+    decls: readonly AstDeclNode[],
+    scope: Scope,
+    modulePath: string,
+  ): void {
+    // Pass 1: declare all names (including use-imports) into scope.
+    for (const decl of decls) {
+      this.declareTopLevel(decl, scope, modulePath);
+    }
+    // Pass 2: resolve bodies and sub-declarations.
+    for (const decl of decls) {
+      this.resolveDecl(decl, scope, modulePath);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pass 1: declare
+  // ---------------------------------------------------------------------------
+
+  private declareTopLevel(
+    decl: AstDeclNode,
+    scope: Scope,
+    modulePath: string,
+  ): void {
     switch (decl.kind) {
       case 'FnDecl':
-        defTop(decl.name, 'fn', decl.span, decl.returnType ?? null, state);
+        this.registerDecl(scope, decl.name, 'Fn', decl.span, decl.returnType, decl.pub, modulePath);
         break;
+
       case 'LetDecl':
-        defTop(decl.name, 'let', decl.span, decl.type_ ?? null, state);
+        this.registerDecl(scope, decl.name, 'Let', decl.span, decl.type_, decl.pub, modulePath);
         break;
-      case 'DataDecl':
-        defTop(decl.name, 'data', decl.span, null, state);
-        break;
-      case 'TypeAliasDecl':
-        defTop(decl.name, 'typeAlias', decl.span, decl.type_, state);
-        break;
-      case 'ExternDecl':
-        defTop(decl.name, 'extern', decl.span, decl.returnType ?? null, state);
-        break;
-      case 'ModuleDecl':
-        defTop(decl.name, 'module', decl.span, null, state);
-        break;
-      case 'UseDecl':
-        state.edges.push({
-          fromModuleId: state.moduleId,
-          toModuleId: decl.path.join('.'),
-          alias: null,
-          importedNames: decl.items,
-          span: decl.span,
-        });
-        break;
-    }
-  }
-}
 
-function defTop(
-  name: string,
-  declKind: DeclKind,
-  span: Span,
-  typeStub: TypeAnnotation | null,
-  state: BindState,
-): void {
-  const result = state.scope.define({ name, declKind, span, typeStub, moduleId: state.moduleId });
-  if ('duplicate' in result) {
-    state.errors.push({
-      kind: 'DuplicateBinding',
-      code: 'E0302',
-      name,
-      span,
-      previousSpan: result.duplicate.span,
-      message: `duplicate binding '${name}'`,
-    });
-  }
-}
-
-// ---- Pass 2: walk expression bodies -----------------------------------------
-
-function walkDecls(decls: readonly AstDeclNode[], state: BindState): void {
-  for (const decl of decls) {
-    walkDecl(decl, state);
-  }
-}
-
-function walkDecl(decl: AstDeclNode, state: BindState): void {
-  switch (decl.kind) {
-    case 'FnDecl':
-      walkFn(decl, state);
-      break;
-    case 'LetDecl':
-      walkExpr(decl.value, state);
-      break;
-    case 'ModuleDecl':
-      state.scope.pushScope();
-      hoistDecls(decl.decls, state);
-      walkDecls(decl.decls, state);
-      state.scope.popScope();
-      break;
-    case 'DataDecl':
-    case 'TypeAliasDecl':
-    case 'ExternDecl':
-    case 'UseDecl':
-      break;
-  }
-}
-
-function walkFn(decl: AstFnDeclNode, state: BindState): void {
-  state.scope.pushScope();
-
-  // Type params as phantom symbols — available inside but not outside
-  for (const tp of decl.typeParams) {
-    state.scope.define({
-      name: tp,
-      declKind: 'param',
-      span: decl.span,
-      typeStub: null,
-      moduleId: state.moduleId,
-    });
-  }
-
-  for (const param of decl.params) {
-    const r = state.scope.define({
-      name: param.name,
-      declKind: 'param',
-      span: param.span,
-      typeStub: param.type_ ?? null,
-      moduleId: state.moduleId,
-    });
-    if ('duplicate' in r) {
-      state.errors.push({
-        kind: 'DuplicateBinding',
-        code: 'E0302',
-        name: param.name,
-        span: param.span,
-        previousSpan: r.duplicate.span,
-        message: `duplicate parameter '${param.name}'`,
-      });
-    }
-  }
-
-  walkExpr(decl.body, state);
-  state.scope.popScope();
-}
-
-function walkExpr(expr: AstExprNode, state: BindState): void {
-  switch (expr.kind) {
-    case 'Ident': {
-      const id = state.scope.resolve(expr.name);
-      if (id !== undefined) {
-        state.resolutions.set(expr, id);
-      } else {
-        state.errors.push({
-          kind: 'UndefinedName',
-          code: 'E0301',
-          name: expr.name,
-          span: expr.span,
-          message: `undefined name '${expr.name}'`,
-        });
-      }
-      break;
-    }
-    case 'LambdaExpr': {
-      state.scope.pushScope();
-      for (const p of expr.params) {
-        const r = state.scope.define({
-          name: p.name,
-          declKind: 'param',
-          span: p.span,
-          typeStub: p.type_ ?? null,
-          moduleId: state.moduleId,
-        });
-        if ('duplicate' in r) {
-          state.errors.push({
-            kind: 'DuplicateBinding',
-            code: 'E0302',
-            name: p.name,
-            span: p.span,
-            previousSpan: r.duplicate.span,
-            message: `duplicate lambda parameter '${p.name}'`,
-          });
-        }
-      }
-      walkExpr(expr.body, state);
-      state.scope.popScope();
-      break;
-    }
-    case 'LetExpr': {
-      walkExpr(expr.value, state);
-      state.scope.pushScope();
-      const r = state.scope.define({
-        name: expr.name,
-        declKind: 'letBound',
-        span: expr.span,
-        typeStub: expr.type_ ?? null,
-        moduleId: state.moduleId,
-      });
-      if ('duplicate' in r) {
-        state.errors.push({
-          kind: 'DuplicateBinding',
-          code: 'E0302',
-          name: expr.name,
-          span: expr.span,
-          previousSpan: r.duplicate.span,
-          message: `duplicate let binding '${expr.name}'`,
-        });
-      }
-      walkExpr(expr.body, state);
-      state.scope.popScope();
-      break;
-    }
-    case 'MatchExpr': {
-      walkExpr(expr.scrutinee, state);
-      for (const arm of expr.arms) {
-        state.scope.pushScope();
-        bindPattern(arm.pattern, state);
-        if (arm.guard !== null) walkExpr(arm.guard, state);
-        walkExpr(arm.body, state);
-        state.scope.popScope();
-      }
-      break;
-    }
-    case 'BinopExpr':
-      walkExpr(expr.left, state);
-      walkExpr(expr.right, state);
-      break;
-    case 'UnaryExpr':
-      walkExpr(expr.operand, state);
-      break;
-    case 'CallExpr':
-      walkExpr(expr.callee, state);
-      for (const arg of expr.args) walkExpr(arg.value, state);
-      break;
-    case 'PipelineExpr':
-      walkExpr(expr.left, state);
-      walkExpr(expr.right, state);
-      break;
-    case 'IfElseExpr':
-      walkExpr(expr.cond, state);
-      walkExpr(expr.then, state);
-      walkExpr(expr.else_, state);
-      break;
-    case 'AccessorExpr':
-      walkExpr(expr.receiver, state);
-      break;
-    case 'PropagateExpr':
-      walkExpr(expr.inner, state);
-      break;
-    case 'StringLit':
-      for (const part of expr.parts) {
-        if (part.kind === 'InterpPart') walkExpr(part.expr, state);
-      }
-      break;
-    case 'LiteralInt':
-    case 'LiteralFloat':
-    case 'LiteralBool':
-    case 'LiteralNull':
-      break;
-  }
-}
-
-function bindPattern(pat: AstPatternNode, state: BindState): void {
-  switch (pat.kind) {
-    case 'WildcardPat':
-    case 'LiteralPat':
-      break;
-    case 'IdentPat': {
-      const r = state.scope.define({
-        name: pat.name,
-        declKind: 'patternBound',
-        span: pat.span,
-        typeStub: null,
-        moduleId: state.moduleId,
-      });
-      if ('duplicate' in r) {
-        state.errors.push({
-          kind: 'DuplicateBinding',
-          code: 'E0302',
-          name: pat.name,
-          span: pat.span,
-          previousSpan: r.duplicate.span,
-          message: `duplicate pattern binding '${pat.name}'`,
-        });
-      }
-      break;
-    }
-    case 'ConstructorPat':
-      for (const f of pat.fields) bindPattern(f, state);
-      break;
-    case 'TuplePat':
-      for (const e of pat.elements) bindPattern(e, state);
-      break;
-  }
-}
-
-// ---- Cycle detection --------------------------------------------------------
-
-function findOneCycle(
-  start: string,
-  deps: Map<string, Set<string>>,
-  candidates: Set<string>,
-): string[] {
-  const path: string[] = [];
-  const onPath = new Set<string>();
-  let found: string[] | null = null;
-
-  function dfs(id: string): boolean {
-    if (found !== null) return true;
-    if (onPath.has(id)) {
-      found = path.slice(path.indexOf(id));
-      return true;
-    }
-    if (!candidates.has(id)) return false;
-
-    onPath.add(id);
-    path.push(id);
-
-    for (const dep of (deps.get(id) ?? [])) {
-      if (dfs(dep)) break;
-    }
-
-    if (found === null) {
-      path.pop();
-      onPath.delete(id);
-    }
-    return found !== null;
-  }
-
-  dfs(start);
-  return found ?? [start];
-}
-
-// ---- Public API -------------------------------------------------------------
-
-/**
- * Bind a single parsed module.
- * `moduleId` is an opaque key (typically file path).
- * `importedModules` provides already-bound dependency results for cross-module context;
- * symbol resolution across modules is the type checker's responsibility.
- */
-export function bindModule(
-  ast: AstModule,
-  moduleId: string,
-  importedModules?: ReadonlyMap<string, BindResult>,
-): BindResult {
-  void importedModules;
-
-  const scope = new ScopeChain();
-  const resolutions = new Map<AstIdentNode, SymbolId>();
-  const errors: BindError[] = [];
-  const edges: ModuleEdge[] = [];
-  const state: BindState = { moduleId, scope, resolutions, errors, edges };
-
-  hoistDecls(ast.decls, state);
-  walkDecls(ast.decls, state);
-
-  return {
-    symbolTable: scope.snapshot(),
-    moduleGraph: { edges, topologicalOrder: [moduleId] },
-    resolutions,
-    errors,
-  };
-}
-
-/**
- * Bind multiple modules at once, in dependency order.
- * Detects circular imports before attempting to bind.
- */
-export function bindProgram(
-  modules: ReadonlyMap<string, AstModule>,
-): ReadonlyMap<string, BindResult> {
-  // Build dependency graph: moduleId → set of dependency moduleIds it imports
-  const deps = new Map<string, Set<string>>();
-  for (const [id, ast] of modules) {
-    const myDeps = new Set<string>();
-    deps.set(id, myDeps);
-    for (const decl of ast.decls) {
-      if (decl.kind === 'UseDecl') {
-        const depId = decl.path.join('.');
-        if (modules.has(depId)) myDeps.add(depId);
-      }
-    }
-  }
-
-  // Build reverse adjacency list and in-degrees for Kahn's algorithm
-  const adj = new Map<string, Set<string>>();
-  const inDeg = new Map<string, number>();
-  for (const id of modules.keys()) {
-    adj.set(id, new Set());
-    inDeg.set(id, 0);
-  }
-  for (const [id, myDeps] of deps) {
-    for (const dep of myDeps) {
-      adj.get(dep)!.add(id);
-      inDeg.set(id, (inDeg.get(id) ?? 0) + 1);
-    }
-  }
-
-  // Kahn's topological sort
-  const queue: string[] = [];
-  for (const [id, deg] of inDeg) {
-    if (deg === 0) queue.push(id);
-  }
-  const topOrder: string[] = [];
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    topOrder.push(id);
-    for (const dep of (adj.get(id) ?? [])) {
-      const newDeg = (inDeg.get(dep) ?? 1) - 1;
-      inDeg.set(dep, newDeg);
-      if (newDeg === 0) queue.push(dep);
-    }
-  }
-
-  // Detect cycles: remaining nodes with inDeg > 0
-  const inCycle = new Set<string>();
-  for (const [id, deg] of inDeg) {
-    if (deg > 0) inCycle.add(id);
-  }
-
-  const circularErrors: BindError[] = [];
-  if (inCycle.size > 0) {
-    const visited = new Set<string>();
-    for (const startId of inCycle) {
-      if (visited.has(startId)) continue;
-      const cycle = findOneCycle(startId, deps, inCycle);
-      for (const id of cycle) visited.add(id);
-
-      // Find a span from the first use decl that creates the cycle edge
-      const firstId = cycle[0]!;
-      const nextId = cycle.length > 1 ? cycle[1]! : cycle[0]!;
-      const ast = modules.get(firstId);
-      let cycleSpan: Span = { file: firstId, startLine: 1, startCol: 0, endLine: 1, endCol: 0 };
-      if (ast !== undefined) {
-        cycleSpan = ast.span;
-        for (const decl of ast.decls) {
-          if (decl.kind === 'UseDecl' && decl.path.join('.') === nextId) {
-            cycleSpan = decl.span;
-            break;
+      case 'DataDecl': {
+        this.registerDecl(scope, decl.name, 'Data', decl.span, null, decl.pub, modulePath);
+        for (const variant of decl.variants) {
+          if (!scope.hasOwn(variant.name)) {
+            this.registerDecl(scope, variant.name, 'Data', variant.span, null, decl.pub, modulePath);
           }
         }
+        break;
       }
 
-      circularErrors.push({
-        kind: 'CircularImport',
-        code: 'E0303',
-        cycle,
-        span: cycleSpan,
-        message: `circular import: ${cycle.join(' → ')} → ${cycle[0]}`,
-      });
+      case 'TypeAliasDecl':
+        this.registerDecl(scope, decl.name, 'TypeAlias', decl.span, decl.type_, decl.pub, modulePath);
+        break;
+
+      case 'ExternDecl':
+        this.registerDecl(scope, decl.name, 'Extern', decl.span, decl.returnType, decl.pub, modulePath);
+        break;
+
+      case 'ModuleDecl':
+        this.registerDecl(scope, decl.name, 'Module', decl.span, null, decl.pub, modulePath);
+        break;
+
+      case 'UseDecl': {
+        // Processed in pass 1 so imported aliases are in scope before bodies resolve.
+        const importedPath = decl.path.join('.');
+        const edgeKey = `${modulePath}→${importedPath}`;
+        this.edgeSpans.set(edgeKey, decl.span);
+
+        if (decl.items === null) {
+          // `use a.b.c` — alias is the last path segment.
+          const alias = decl.path[decl.path.length - 1];
+          if (alias !== undefined) {
+            this.registerDecl(scope, alias, 'Module', decl.span, null, false, modulePath);
+          }
+        } else {
+          // `use a.b.{x, y}` — each item imported by name.
+          for (const item of decl.items) {
+            this.registerDecl(scope, item, 'Module', decl.span, null, false, modulePath);
+          }
+        }
+        break;
+      }
     }
   }
 
-  // Bind modules in topological order, then cyclic ones
-  const resultMap = new Map<string, BindResult>();
-  const allEdges: ModuleEdge[] = [];
+  // ---------------------------------------------------------------------------
+  // Pass 2: resolve bodies
+  // ---------------------------------------------------------------------------
 
-  for (const id of topOrder) {
-    const result = bindModule(modules.get(id)!, id, resultMap);
-    allEdges.push(...result.moduleGraph.edges);
-    resultMap.set(id, result);
-  }
-  for (const id of inCycle) {
-    const result = bindModule(modules.get(id)!, id, resultMap);
-    allEdges.push(...result.moduleGraph.edges);
-    resultMap.set(id, result);
+  private resolveDecl(
+    decl: AstDeclNode,
+    scope: Scope,
+    modulePath: string,
+  ): void {
+    switch (decl.kind) {
+      case 'FnDecl':
+        this.resolveFnDecl(decl, scope, modulePath);
+        break;
+
+      case 'LetDecl':
+        this.resolveExpr(decl.value, scope, modulePath);
+        break;
+
+      case 'DataDecl':
+      case 'TypeAliasDecl':
+      case 'ExternDecl':
+      case 'UseDecl':
+        // No expressions to resolve.
+        break;
+
+      case 'ModuleDecl': {
+        const nestedPath = `${modulePath}.${decl.name}`;
+        const nestedScope = new Scope(scope);
+        this.bindDeclList(decl.decls, nestedScope, nestedPath);
+        break;
+      }
+    }
   }
 
-  // Produce final results with full graph info
-  const finalResults = new Map<string, BindResult>();
-  for (const [id, result] of resultMap) {
-    const moduleErrors: readonly BindError[] = inCycle.has(id)
-      ? [...result.errors, ...circularErrors]
-      : result.errors;
-    finalResults.set(id, {
-      ...result,
-      moduleGraph: { edges: allEdges, topologicalOrder: topOrder },
-      errors: moduleErrors,
-    });
+  private resolveFnDecl(
+    decl: AstFnDeclNode,
+    outerScope: Scope,
+    modulePath: string,
+  ): void {
+    const fnScope = new Scope(outerScope);
+    for (const tp of decl.typeParams) {
+      this.registerDecl(fnScope, tp, 'TypeParam', decl.span, null, false, modulePath);
+    }
+    for (const param of decl.params) {
+      this.registerDecl(fnScope, param.name, 'Param', param.span, param.type_, false, modulePath);
+    }
+    this.resolveExpr(decl.body, fnScope, modulePath);
   }
-  return finalResults;
+
+  // ---------------------------------------------------------------------------
+  // Expression resolver
+  // ---------------------------------------------------------------------------
+
+  private resolveExpr(
+    expr: AstExprNode,
+    scope: Scope,
+    modulePath: string,
+  ): void {
+    switch (expr.kind) {
+      case 'Ident': {
+        const id = scope.lookup(expr.name);
+        if (id === undefined) {
+          this.errors.push({
+            kind: 'UndefinedName',
+            message: `Undefined name '${expr.name}'`,
+            span: expr.span,
+          });
+        } else {
+          this.resolutionMap.set(spanKey(expr.span), id);
+        }
+        break;
+      }
+
+      case 'LiteralInt':
+      case 'LiteralFloat':
+      case 'LiteralBool':
+      case 'LiteralNull':
+        break;
+
+      case 'StringLit':
+        for (const part of expr.parts) {
+          if (part.kind === 'InterpPart') {
+            this.resolveExpr(part.expr, scope, modulePath);
+          }
+        }
+        break;
+
+      case 'BinopExpr':
+        this.resolveExpr(expr.left, scope, modulePath);
+        this.resolveExpr(expr.right, scope, modulePath);
+        break;
+
+      case 'UnaryExpr':
+        this.resolveExpr(expr.operand, scope, modulePath);
+        break;
+
+      case 'CallExpr':
+        this.resolveExpr(expr.callee, scope, modulePath);
+        for (const arg of expr.args) {
+          this.resolveExpr(arg.value, scope, modulePath);
+        }
+        break;
+
+      case 'LambdaExpr': {
+        const lambdaScope = new Scope(scope);
+        for (const param of expr.params) {
+          this.registerDecl(lambdaScope, param.name, 'Param', param.span, param.type_, false, modulePath);
+        }
+        this.resolveExpr(expr.body, lambdaScope, modulePath);
+        break;
+      }
+
+      case 'PipelineExpr':
+        this.resolveExpr(expr.left, scope, modulePath);
+        this.resolveExpr(expr.right, scope, modulePath);
+        break;
+
+      case 'IfElseExpr':
+        this.resolveExpr(expr.cond, scope, modulePath);
+        this.resolveExpr(expr.then, scope, modulePath);
+        this.resolveExpr(expr.else_, scope, modulePath);
+        break;
+
+      case 'MatchExpr': {
+        this.resolveExpr(expr.scrutinee, scope, modulePath);
+        for (const arm of expr.arms) {
+          this.resolveMatchArm(arm, scope, modulePath);
+        }
+        break;
+      }
+
+      case 'LetExpr': {
+        // Value is evaluated in the outer scope; body sees the new binding.
+        this.resolveExpr(expr.value, scope, modulePath);
+        const letScope = new Scope(scope);
+        this.registerDecl(letScope, expr.name, 'Let', expr.span, expr.type_, false, modulePath);
+        this.resolveExpr(expr.body, letScope, modulePath);
+        break;
+      }
+
+      case 'AccessorExpr':
+        this.resolveExpr(expr.receiver, scope, modulePath);
+        break;
+
+      case 'PropagateExpr':
+        this.resolveExpr(expr.inner, scope, modulePath);
+        break;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Match arm pattern binding
+  // ---------------------------------------------------------------------------
+
+  private resolveMatchArm(
+    arm: AstMatchArm,
+    outerScope: Scope,
+    modulePath: string,
+  ): void {
+    const armScope = new Scope(outerScope);
+    this.bindPattern(arm.pattern, armScope, outerScope, modulePath);
+    if (arm.guard !== null) {
+      this.resolveExpr(arm.guard, armScope, modulePath);
+    }
+    this.resolveExpr(arm.body, armScope, modulePath);
+  }
+
+  private bindPattern(
+    pattern: AstPatternNode,
+    armScope: Scope,
+    outerScope: Scope,
+    modulePath: string,
+  ): void {
+    switch (pattern.kind) {
+      case 'WildcardPat':
+        break;
+
+      case 'IdentPat':
+        this.registerDecl(armScope, pattern.name, 'PatternBinding', pattern.span, null, false, modulePath);
+        break;
+
+      case 'ConstructorPat': {
+        // Tag must be a known Data variant in the outer scope.
+        const id = outerScope.lookup(pattern.tag);
+        if (id === undefined) {
+          this.errors.push({
+            kind: 'UndefinedName',
+            message: `Undefined constructor '${pattern.tag}'`,
+            span: pattern.span,
+          });
+        } else {
+          this.resolutionMap.set(spanKey(pattern.span), id);
+        }
+        for (const field of pattern.fields) {
+          this.bindPattern(field, armScope, outerScope, modulePath);
+        }
+        break;
+      }
+
+      case 'LiteralPat':
+        break;
+
+      case 'TuplePat':
+        for (const el of pattern.elements) {
+          this.bindPattern(el, armScope, outerScope, modulePath);
+        }
+        break;
+    }
+  }
+}
+
+/** Bind a single module, resolving names and building the symbol table. */
+export function bindModule(module: AstModule, modulePath: string): BindResult {
+  return new Binder().bind(module, modulePath);
 }
