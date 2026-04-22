@@ -1,5 +1,6 @@
 import type { Span } from '../types.js';
 import type { TypeAnnotation, EffectTag } from './types.js';
+import type { BinopKind, UnaryKind, LiteralIntNode, LiteralFloatNode, LiteralBoolNode, LiteralNullNode } from '../parser/cst.js';
 
 export type { TypeAnnotation, EffectTag, Span };
 
@@ -7,32 +8,7 @@ export type { TypeAnnotation, EffectTag, Span };
 // Re-exported from parser/cst (no trivia fields — shared between CST and AST)
 // ---------------------------------------------------------------------------
 
-export type { BinopKind, UnaryKind } from '../parser/cst.js';
-
-export interface LiteralIntNode {
-  readonly kind: 'LiteralInt';
-  readonly value: bigint;
-  readonly raw: string;
-  readonly span: Span;
-}
-
-export interface LiteralFloatNode {
-  readonly kind: 'LiteralFloat';
-  readonly value: number;
-  readonly raw: string;
-  readonly span: Span;
-}
-
-export interface LiteralBoolNode {
-  readonly kind: 'LiteralBool';
-  readonly value: boolean;
-  readonly span: Span;
-}
-
-export interface LiteralNullNode {
-  readonly kind: 'LiteralNull';
-  readonly span: Span;
-}
+export type { BinopKind, UnaryKind, LiteralIntNode, LiteralFloatNode, LiteralBoolNode, LiteralNullNode } from '../parser/cst.js';
 
 // ---------------------------------------------------------------------------
 // String interpolation
@@ -108,7 +84,7 @@ export interface AstIdentNode {
 
 export interface AstBinopExprNode {
   readonly kind: 'BinopExpr';
-  readonly op: import('../parser/cst.js').BinopKind;
+  readonly op: BinopKind;
   readonly left: AstExprNode;
   readonly right: AstExprNode;
   readonly span: Span;
@@ -116,7 +92,7 @@ export interface AstBinopExprNode {
 
 export interface AstUnaryExprNode {
   readonly kind: 'UnaryExpr';
-  readonly op: import('../parser/cst.js').UnaryKind;
+  readonly op: UnaryKind;
   readonly operand: AstExprNode;
   readonly span: Span;
 }
