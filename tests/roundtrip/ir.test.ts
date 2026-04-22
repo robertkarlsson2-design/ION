@@ -276,6 +276,8 @@ const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRN
     fc.string({ minLength: 1, maxLength: 8 }).map<IonType>(id => ({ kind: 'TypeVar', id })),
     tie('ionTypeArb').map<IonType>(elem => ({ kind: 'List', elem })),
     tie('ionTypeArb').map<IonType>(inner => ({ kind: 'Option', inner })),
+    fc.record({ key: tie('ionTypeArb'), value: tie('ionTypeArb') })
+      .map<IonType>(({ key, value }) => ({ kind: 'Map', key, value })),
     fc.record({ ok: tie('ionTypeArb'), err: tie('ionTypeArb') }).map<IonType>(({ ok, err }) => ({ kind: 'Result', ok, err })),
     fc.record({
       params: fc.array(tie('ionTypeArb'), { maxLength: 2 }),
@@ -296,7 +298,7 @@ const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRN
     // Leaf: Literal
     fc.oneof(
       fc.integer().map(v => ({ kind: 'Int' as const, value: v })),
-      fc.double({ noNaN: true }).map(v => ({ kind: 'Float' as const, value: v })),
+      fc.double({ noNaN: true, noDefaultInfinity: true }).map(v => ({ kind: 'Float' as const, value: v })),
       fc.string({ maxLength: 20 }).map(v => ({ kind: 'Str' as const, value: v })),
       fc.boolean().map(v => ({ kind: 'Bool' as const, value: v })),
       fc.constant({ kind: 'Null' as const }),
