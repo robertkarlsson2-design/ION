@@ -211,7 +211,6 @@ class DeclarationParser {
       decls.push(this.parseDecl());
     }
 
-    const endTok = this.peek();
     const endSpan = decls[decls.length - 1]?.span ?? startTok.span;
     return {
       kind: 'Module',
