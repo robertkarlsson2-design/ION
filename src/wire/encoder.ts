@@ -45,6 +45,23 @@ function assertNever(x: never): never {
 }
 
 // ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+/** Thrown by encodeModule when an identifier name contains illegal newline characters. */
+export class WireEncodeError extends Error {
+  override readonly name = 'WireEncodeError';
+}
+
+function assertValidName(name: string): void {
+  if (name.includes('\n') || name.includes('\r')) {
+    throw new WireEncodeError(
+      `Identifier name contains illegal newline character: ${JSON.stringify(name)}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 1a: name collection
 // ---------------------------------------------------------------------------
 
@@ -781,7 +798,10 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
 
 /** Encodes an IonIRModule to wire-format text. Deterministic and byte-stable. */
 export function encodeModule(module: IonIRModule): string {
+  assertValidName(module.module);
+  for (const dialect of module.dialects) assertValidName(dialect);
   const names = collectNames(module);
+  for (const name of names.keys()) assertValidName(name);
   const types = collectTypes(module);
 
   const sym = buildSymbolPool(names);
