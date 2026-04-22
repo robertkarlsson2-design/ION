@@ -54,6 +54,8 @@ export type {
   ForeignSignature,
 } from './nodes.js';
 
+export { serialize, deserialize, IonIRSerdeError } from './serde.js';
+
 export type {
   IonType,
   IntType,
