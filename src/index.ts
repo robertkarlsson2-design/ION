@@ -75,3 +75,4 @@ export { prettyPrintModule, prettyPrintNode, prettyPrintType } from './wire/inde
 export type { PrettyOptions } from './wire/index.js';
 
 export * as ast from './ast/index.js';
+export * from './grammar/index.js';
