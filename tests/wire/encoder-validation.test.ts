@@ -165,6 +165,30 @@ describe('Suite V — newline validation', () => {
     };
     expect(() => encodeModule(mod)).not.toThrow();
   });
+
+  it('V13: module version with \\n throws WireEncodeError', () => {
+    expect(() => encodeModule({ ...makeMinimal(), version: '1.0\nhijack' }))
+      .toThrow(WireEncodeError);
+  });
+
+  it('V14: Fn type effect tag with \\n throws WireEncodeError', () => {
+    const fnType: IonType = {
+      kind: 'Fn',
+      params: [{ kind: 'Int' }],
+      ret: { kind: 'Int' },
+      effects: new Set(['bad\neffect']),
+    };
+    const absNode: IonIRNode = {
+      kind: 'Abs',
+      params: [{ name: 'x', symbolId: sid, type: { kind: 'Int' }, span }],
+      body: varNode('x'),
+      captures: [],
+      span,
+      type: fnType,
+    };
+    expect(() => encodeModule({ ...makeMinimal(), decls: [absNode] }))
+      .toThrow(WireEncodeError);
+  });
 });
 
 // ---------------------------------------------------------------------------

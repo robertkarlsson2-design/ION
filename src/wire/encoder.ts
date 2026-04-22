@@ -111,6 +111,7 @@ function collectNamesFromType(t: IonType, c: NameCollector): void {
     case 'Fn':
       for (const p of t.params) collectNamesFromType(p, c);
       collectNamesFromType(t.ret, c);
+      for (const tag of t.effects) c.record(tag);
       break;
     case 'User':
       c.record(t.name);
@@ -799,6 +800,7 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
 /** Encodes an IonIRModule to wire-format text. Deterministic and byte-stable. */
 export function encodeModule(module: IonIRModule): string {
   assertValidName(module.module);
+  assertValidName(module.version);
   for (const dialect of module.dialects) assertValidName(dialect);
   const names = collectNames(module);
   for (const name of names.keys()) assertValidName(name);
