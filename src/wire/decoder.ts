@@ -49,7 +49,6 @@ interface DecoderContext {
   readonly typPool: ReadonlyMap<string, string>;
 }
 
-const EMPTY_CTX: DecoderContext = { symPool: new Map(), typPool: new Map() };
 
 // ---------------------------------------------------------------------------
 // Parser
@@ -283,7 +282,7 @@ class WireParser {
     }
     const name = s.slice(0, ltIdx);
     const argsStr = s.slice(ltIdx + 1, -1);
-    const argStrs = this.splitCommaBalancedMulti(argsStr, errPos);
+    const argStrs = this.splitCommaBalancedMulti(argsStr);
     const args = argStrs.map(a => this.resolveType(a, ctx, new Set([...visiting, a]), errPos));
     return { kind: 'User', name, symbolId: this.freshSym(), args };
   }
@@ -317,7 +316,7 @@ class WireParser {
       effectPart = retAndEffects.slice(bangIdx);
     }
     const params = paramsStr.length === 0 ? [] :
-      this.splitCommaBalancedMulti(paramsStr, errPos).map(p => this.resolveType(p, ctx, new Set([...visiting, p]), errPos));
+      this.splitCommaBalancedMulti(paramsStr).map(p => this.resolveType(p, ctx, new Set([...visiting, p]), errPos));
     const ret = this.resolveType(retStr, ctx, new Set([...visiting, retStr]), errPos);
     const effects = new Set<string>(
       effectPart.split('!').filter(e => e.length > 0)
@@ -326,7 +325,7 @@ class WireParser {
   }
 
   /** Split `a,b<c,d>,e` into ['a', 'b<c,d>', 'e'] - handles balanced <> */
-  private splitCommaBalancedMulti(s: string, errPos: number): string[] {
+  private splitCommaBalancedMulti(s: string): string[] {
     if (s.length === 0) return [];
     const parts: string[] = [];
     let depth = 0;
@@ -1014,7 +1013,7 @@ class WireParser {
     return pool;
   }
 
-  parseImportLine(ctx: DecoderContext): ModuleRefNode[] {
+  parseImportLine(): ModuleRefNode[] {
     const imports: ModuleRefNode[] = [];
     if (!this.input.startsWith('X ', this.pos)) return imports;
     this.pos += 2;
@@ -1120,7 +1119,7 @@ export function decodeModule(wire: string): IonIRModule {
   }
   const ctx: DecoderContext = { symPool, typPool };
   if (parser.input.startsWith('X ', parser.pos)) {
-    imports = parser.parseImportLine(ctx);
+    imports = parser.parseImportLine();
   }
   if (parser.input.startsWith('D ', parser.pos)) {
     data = parser.parseDataLine(ctx);
