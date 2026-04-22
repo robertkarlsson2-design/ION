@@ -561,24 +561,37 @@ class DeclarationParser {
 
   /** `[pub] module Name { decls... }` */
   private parseModuleDecl(pub: boolean, leadingTrivia: readonly TriviaNode[]): ModuleDeclNode {
-    const kwTok = this.expect(TokenKind.KW_MODULE);
-    const nameTok = this.expect(TokenKind.IDENT);
-    this.expect(TokenKind.LBRACE);
-
-    const decls: DeclNode[] = [];
-    while (this.peekKind() !== TokenKind.RBRACE && this.peekKind() !== TokenKind.EOF) {
-      decls.push(this.parseDecl());
+    this.depth++;
+    if (this.depth > MAX_PARSE_DEPTH) {
+      const tok = this.peek();
+      this.depth--;
+      throw new ParseError(
+        `module nesting exceeds maximum depth of ${MAX_PARSE_DEPTH}`,
+        tok.span,
+      );
     }
+    try {
+      const kwTok = this.expect(TokenKind.KW_MODULE);
+      const nameTok = this.expect(TokenKind.IDENT);
+      this.expect(TokenKind.LBRACE);
 
-    const closeTok = this.expect(TokenKind.RBRACE);
-    return {
-      kind: 'ModuleDecl',
-      pub,
-      name: nameTok.text,
-      decls,
-      span: spanMerge(kwTok.span, closeTok.span),
-      leadingTrivia,
-    };
+      const decls: DeclNode[] = [];
+      while (this.peekKind() !== TokenKind.RBRACE && this.peekKind() !== TokenKind.EOF) {
+        decls.push(this.parseDecl());
+      }
+
+      const closeTok = this.expect(TokenKind.RBRACE);
+      return {
+        kind: 'ModuleDecl',
+        pub,
+        name: nameTok.text,
+        decls,
+        span: spanMerge(kwTok.span, closeTok.span),
+        leadingTrivia,
+      };
+    } finally {
+      this.depth--;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -651,32 +664,45 @@ class DeclarationParser {
    * In declaration context, `<` after a name is always a generic bracket, never a comparison.
    */
   parseTypeAnnotation(): TypeAnnotation {
-    const tok = this.peek();
-
-    // Fn type: `fn(T1, T2) !io -> R`
-    if (tok.kind === TokenKind.KW_FN) {
-      return this.parseFnTypeAnnotation();
+    this.depth++;
+    if (this.depth > MAX_PARSE_DEPTH) {
+      const tok = this.peek();
+      this.depth--;
+      throw new ParseError(
+        `type annotation nesting exceeds maximum depth of ${MAX_PARSE_DEPTH}`,
+        tok.span,
+      );
     }
+    try {
+      const tok = this.peek();
 
-    // Tuple type: `(T1, T2)`
-    if (tok.kind === TokenKind.LPAREN) {
-      return this.parseTupleTypeAnnotation();
-    }
-
-    // Named or Generic
-    const nameTok = this.expect(TokenKind.IDENT);
-    if (this.peekKind() === TokenKind.LT) {
-      this.consume(); // <
-      const args: TypeAnnotation[] = [this.parseTypeAnnotation()];
-      while (this.peekKind() === TokenKind.COMMA) {
-        this.consume();
-        if (this.peekKind() === TokenKind.GT) break;
-        args.push(this.parseTypeAnnotation());
+      // Fn type: `fn(T1, T2) !io -> R`
+      if (tok.kind === TokenKind.KW_FN) {
+        return this.parseFnTypeAnnotation();
       }
-      const closeTok = this.expect(TokenKind.GT);
-      return { kind: 'Generic', name: nameTok.text, args, span: spanMerge(nameTok.span, closeTok.span) };
+
+      // Tuple type: `(T1, T2)`
+      if (tok.kind === TokenKind.LPAREN) {
+        return this.parseTupleTypeAnnotation();
+      }
+
+      // Named or Generic
+      const nameTok = this.expect(TokenKind.IDENT);
+      if (this.peekKind() === TokenKind.LT) {
+        this.consume(); // <
+        const args: TypeAnnotation[] = [this.parseTypeAnnotation()];
+        while (this.peekKind() === TokenKind.COMMA) {
+          this.consume();
+          if (this.peekKind() === TokenKind.GT) break;
+          args.push(this.parseTypeAnnotation());
+        }
+        const closeTok = this.expect(TokenKind.GT);
+        return { kind: 'Generic', name: nameTok.text, args, span: spanMerge(nameTok.span, closeTok.span) };
+      }
+      return { kind: 'Named', name: nameTok.text, span: nameTok.span };
+    } finally {
+      this.depth--;
     }
-    return { kind: 'Named', name: nameTok.text, span: nameTok.span };
   }
 
   private parseFnTypeAnnotation(): TypeAnnotation {
