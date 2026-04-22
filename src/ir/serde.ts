@@ -307,7 +307,7 @@ function parseAdtArm(raw: unknown, path: string, depth: number): AdtArm {
 }
 
 // Exported for use by parseModule (validates kind === 'AdtDecl')
-function parseAdtDeclNode(raw: unknown, path: string): AdtDeclNode {
+function parseAdtDeclNode(raw: unknown, path: string, depth = 0): AdtDeclNode {
   const r = assertRecord(raw, path);
   if (r['kind'] !== 'AdtDecl') {
     throw new IonIRSerdeError(`expected kind 'AdtDecl', got '${String(r['kind'])}'`, `${path}.kind`);
@@ -316,9 +316,9 @@ function parseAdtDeclNode(raw: unknown, path: string): AdtDeclNode {
     kind: 'AdtDecl',
     name: assertString(r['name'], `${path}.name`),
     symbolId: makeSymbolId(assertString(r['symbolId'], `${path}.symbolId`)),
-    variants: assertArray(r['variants'], `${path}.variants`).map((v, i) => parseAdtVariant(v, `${path}.variants[${i}]`)),
+    variants: assertArray(r['variants'], `${path}.variants`).map((v, i) => parseAdtVariant(v, `${path}.variants[${i}]`, depth)),
     span: parseSpan(r['span'], `${path}.span`),
-    type: parseType(r['type'], `${path}.type`),
+    type: parseType(r['type'], `${path}.type`, depth),
   };
 }
 
@@ -535,7 +535,7 @@ function parseNode(raw: unknown, path: string, depth = 0): IonIRNode {
     }
     // ADT
     case 'AdtDecl':
-      return parseAdtDeclNode(raw, path);
+      return parseAdtDeclNode(raw, path, depth);
     case 'AdtMatch': {
       const node: AdtMatchNode = {
         kind: 'AdtMatch',
