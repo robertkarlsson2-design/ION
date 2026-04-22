@@ -269,6 +269,7 @@ function collectNamesModule(module: IonIRModule): {
       case 'Resume': walkNode(node.value); break;
       default: {
         const _exhaustive: never = node;
+        void _exhaustive;
         throw new WireEncodeError(`Unexpected node kind during name collection`, []);
       }
     }
@@ -394,6 +395,7 @@ function collectTypesModule(module: IonIRModule, symPool: SymbolPool): {
       case 'Resume': walkNode(node.value); break;
       default: {
         const _exhaustive: never = node;
+        void _exhaustive;
         throw new WireEncodeError(`Unexpected node kind during type collection`, []);
       }
     }
@@ -559,6 +561,7 @@ function encodeNode(node: IonIRNode, ctx: WireContext): string {
     case 'Resume': return `resume(${encodeNode(node.value, ctx)})`;
     default: {
       const _exhaustive: never = node;
+      void _exhaustive;
       throw new WireEncodeError(`Unexpected node kind`, []);
     }
   }
