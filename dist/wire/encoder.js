@@ -542,7 +542,7 @@ function encodeTypeLine(pool) {
     return `T ${pool.entries.map(e => `${e.alias}=${e.value}`).join(' ')}`;
 }
 /** Returns "X <sid> from <module>:<sid> [; ...]" or "" when no imports. */
-function encodeImportLines(imports, ctx) {
+function encodeImportLines(imports) {
     if (imports.length === 0)
         return '';
     const parts = imports.map(imp => {
@@ -740,7 +740,7 @@ export function encodeModule(module) {
     const typLine = encodeTypeLine(typ);
     if (typLine)
         lines.push(typLine);
-    const importLine = encodeImportLines(module.imports, ctx);
+    const importLine = encodeImportLines(module.imports);
     if (importLine)
         lines.push(importLine);
     const dataLine = encodeDataLines(module.data, ctx);
