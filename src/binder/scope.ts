@@ -1,0 +1,29 @@
+import type { SymbolId } from '../types.js';
+
+export class Scope {
+  private readonly bindings: Map<string, SymbolId> = new Map();
+  private readonly parent: Scope | null;
+
+  constructor(parent: Scope | null) {
+    this.parent = parent;
+  }
+
+  /** Define `name` at this scope level. Returns false if already defined here. */
+  define(name: string, id: SymbolId): boolean {
+    if (this.bindings.has(name)) return false;
+    this.bindings.set(name, id);
+    return true;
+  }
+
+  /** Walk the scope chain outward until found; returns undefined if not found. */
+  lookup(name: string): SymbolId | undefined {
+    const own = this.bindings.get(name);
+    if (own !== undefined) return own;
+    return this.parent?.lookup(name);
+  }
+
+  /** True if `name` is defined at this level (not parents). */
+  hasOwn(name: string): boolean {
+    return this.bindings.has(name);
+  }
+}
