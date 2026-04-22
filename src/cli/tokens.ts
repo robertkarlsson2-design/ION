@@ -184,7 +184,14 @@ export async function runTokens(args: string[]): Promise<RunResult> {
     return { exitCode: 1 };
   }
 
-  const report = computeReport(filePath, module, tokenizer);
+  let report: TokenReport;
+  try {
+    report = computeReport(filePath, module, tokenizer);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stdout.write(`error: failed to encode '${filePath}': ${msg}\n`);
+    return { exitCode: 1 };
+  }
 
   if (saveBaselinePath !== null) {
     try {
@@ -248,7 +255,11 @@ export async function runTokens(args: string[]): Promise<RunResult> {
 // ---------------------------------------------------------------------------
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  runTokens(process.argv.slice(2)).then(({ exitCode }) => {
-    process.exit(exitCode);
-  });
+  runTokens(process.argv.slice(2))
+    .then(({ exitCode }) => { process.exit(exitCode); })
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`fatal: ${msg}\n`);
+      process.exit(1);
+    });
 }
