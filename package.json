@@ -7,6 +7,9 @@
     "test": "vitest run",
     "lint": "eslint src"
   },
+  "dependencies": {
+    "@dqbd/tiktoken": "^1.0.15"
+  },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",

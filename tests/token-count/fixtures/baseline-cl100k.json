@@ -1,0 +1,7 @@
+{
+  "file": "tests/token-count/fixtures/users.ionir.json",
+  "tokenizer": "cl100k",
+  "wireTokens": 349,
+  "prettyTokens": 523,
+  "reductionPercent": 33.27
+}
