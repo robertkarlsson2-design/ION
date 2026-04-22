@@ -58,6 +58,8 @@ const EMPTY_CTX: DecoderContext = { symPool: new Map(), typPool: new Map() };
 class WireParser {
   pos = 0;
   private symCounter = 0;
+  private depth = 0;
+  private readonly MAX_DEPTH = 500;
   readonly input: string;
 
   constructor(input: string) {
@@ -235,10 +237,10 @@ class WireParser {
       if (visiting.has(pooled)) throw new WireDecodeError('circular type alias', errPos);
       return this.resolveType(pooled, ctx, new Set([...visiting, pooled]), errPos);
     }
-    return this.parseTypeString(expr, ctx, errPos);
+    return this.parseTypeString(expr, ctx, errPos, visiting);
   }
 
-  private parseTypeString(s: string, ctx: DecoderContext, errPos: number): IonType {
+  private parseTypeString(s: string, ctx: DecoderContext, errPos: number, visiting: ReadonlySet<string> = new Set()): IonType {
     if (s === 'int') return { kind: 'Int' };
     if (s === 'flt') return { kind: 'Float' };
     if (s === 'str') return { kind: 'Str' };
@@ -250,28 +252,28 @@ class WireParser {
 
     if (s.startsWith('list<') && s.endsWith('>')) {
       const inner = s.slice(5, -1);
-      return { kind: 'List', elem: this.resolveType(inner, ctx, new Set([inner]), errPos) };
+      return { kind: 'List', elem: this.resolveType(inner, ctx, new Set([...visiting, inner]), errPos) };
     }
     if (s.startsWith('opt<') && s.endsWith('>')) {
       const inner = s.slice(4, -1);
-      return { kind: 'Option', inner: this.resolveType(inner, ctx, new Set([inner]), errPos) };
+      return { kind: 'Option', inner: this.resolveType(inner, ctx, new Set([...visiting, inner]), errPos) };
     }
     if (s.startsWith('map<') && s.endsWith('>')) {
       const [key, val] = this.splitCommaBalanced(s.slice(4, -1), errPos);
-      return { kind: 'Map', key: this.resolveType(key, ctx, new Set([key]), errPos), value: this.resolveType(val, ctx, new Set([val]), errPos) };
+      return { kind: 'Map', key: this.resolveType(key, ctx, new Set([...visiting, key]), errPos), value: this.resolveType(val, ctx, new Set([...visiting, val]), errPos) };
     }
     if (s.startsWith('res<') && s.endsWith('>')) {
       const [ok, err] = this.splitCommaBalanced(s.slice(4, -1), errPos);
-      return { kind: 'Result', ok: this.resolveType(ok, ctx, new Set([ok]), errPos), err: this.resolveType(err, ctx, new Set([err]), errPos) };
+      return { kind: 'Result', ok: this.resolveType(ok, ctx, new Set([...visiting, ok]), errPos), err: this.resolveType(err, ctx, new Set([...visiting, err]), errPos) };
     }
     if (s.startsWith('fn(')) {
-      return this.parseFnTypeString(s, ctx, errPos);
+      return this.parseFnTypeString(s, ctx, errPos, visiting);
     }
 
     // User type or alias in type pool
     const pooled = ctx.typPool.get(s);
     if (pooled !== undefined) {
-      return this.resolveType(pooled, ctx, new Set([pooled]), errPos);
+      return this.resolveType(pooled, ctx, new Set([...visiting, pooled]), errPos);
     }
 
     // User type: name or name<args>
@@ -282,11 +284,11 @@ class WireParser {
     const name = s.slice(0, ltIdx);
     const argsStr = s.slice(ltIdx + 1, -1);
     const argStrs = this.splitCommaBalancedMulti(argsStr, errPos);
-    const args = argStrs.map(a => this.resolveType(a, ctx, new Set([a]), errPos));
+    const args = argStrs.map(a => this.resolveType(a, ctx, new Set([...visiting, a]), errPos));
     return { kind: 'User', name, symbolId: this.freshSym(), args };
   }
 
-  private parseFnTypeString(s: string, ctx: DecoderContext, errPos: number): IonType {
+  private parseFnTypeString(s: string, ctx: DecoderContext, errPos: number, visiting: ReadonlySet<string> = new Set()): IonType {
     // s: fn(p1,p2)->ret!eff1!eff2
     // find closing ) of params
     let depth = 0;
@@ -315,8 +317,8 @@ class WireParser {
       effectPart = retAndEffects.slice(bangIdx);
     }
     const params = paramsStr.length === 0 ? [] :
-      this.splitCommaBalancedMulti(paramsStr, errPos).map(p => this.resolveType(p, ctx, new Set([p]), errPos));
-    const ret = this.resolveType(retStr, ctx, new Set([retStr]), errPos);
+      this.splitCommaBalancedMulti(paramsStr, errPos).map(p => this.resolveType(p, ctx, new Set([...visiting, p]), errPos));
+    const ret = this.resolveType(retStr, ctx, new Set([...visiting, retStr]), errPos);
     const effects = new Set<string>(
       effectPart.split('!').filter(e => e.length > 0)
     );
@@ -392,6 +394,18 @@ class WireParser {
   // -------------------------------------------------------------------------
 
   parseNode(ctx: DecoderContext): IonIRNode {
+    if (++this.depth > this.MAX_DEPTH) {
+      this.depth--;
+      this.error('node nesting too deep');
+    }
+    try {
+      return this.parseNodeInner(ctx);
+    } finally {
+      this.depth--;
+    }
+  }
+
+  private parseNodeInner(ctx: DecoderContext): IonIRNode {
     const p = this.peek();
 
     // Abs: (params)->body
