@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { encodeModule } from '../../src/wire/encoder.js';
 import { makeSymbolId } from '../../src/types.js';
-import type { IonIRModule, IonIRNode, IonIRDialect, AdtDeclNode } from '../../src/ir/nodes.js';
+import type { IonIRModule, IonIRNode, IonIRDialect, AdtDeclNode, CasePattern } from '../../src/ir/nodes.js';
 import type { IonType, EffectSet } from '../../src/ir/types.js';
 import type { Span } from '../../src/types.js';
 import type { EffectTag } from '../../src/ast/types.js';
@@ -310,7 +310,7 @@ const effectSetArb: fc.Arbitrary<EffectSet> = fc
   .array(effectTagArb, { maxLength: 3 })
   .map(tags => new Set(tags));
 
-const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRNode }>(tie => ({
+const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRNode; casePatternArb: CasePattern }>(tie => ({
   ionTypeArb: fc.oneof(
     { depthFactor: 0.5 },
     fc.constant<IonType>({ kind: 'Int' }),
@@ -337,6 +337,27 @@ const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRN
       symbolId: symbolIdArb,
       args: fc.array(tie('ionTypeArb'), { maxLength: 2 }),
     }).map<IonType>(({ name, symbolId, args }) => ({ kind: 'User', name, symbolId, args })),
+  ),
+  casePatternArb: fc.oneof(
+    { depthFactor: 0.5 },
+    spanArb.map<CasePattern>(s => ({ kind: 'Wildcard', span: s })),
+    fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, span: spanArb })
+      .map<CasePattern>(({ name, symbolId, span: s }) => ({ kind: 'Var', name, symbolId, span: s })),
+    fc.record({
+      ctorName: fc.string({ minLength: 1, maxLength: 10 }),
+      symbolId: symbolIdArb,
+      fields: fc.array(tie('casePatternArb'), { maxLength: 2 }),
+      span: spanArb,
+    }).map<CasePattern>(({ ctorName, symbolId, fields, span: s }) => ({
+      kind: 'Constructor', ctorName, symbolId, fields, span: s,
+    })),
+    fc.oneof(
+      fc.integer().map(v => ({ kind: 'Int' as const, value: v })),
+      fc.double({ noNaN: true, noDefaultInfinity: true }).map(v => ({ kind: 'Float' as const, value: v })),
+      fc.string({ maxLength: 20 }).map(v => ({ kind: 'Str' as const, value: v })),
+      fc.boolean().map(v => ({ kind: 'Bool' as const, value: v })),
+      fc.constant({ kind: 'Null' as const }),
+    ).chain(value => spanArb.map<CasePattern>(s => ({ kind: 'Literal', value, span: s }))),
   ),
   nodeArb: fc.oneof(
     { depthFactor: 0.5 },
@@ -378,6 +399,259 @@ const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRN
       span: spanArb,
       type: tie('ionTypeArb'),
     }).map<IonIRNode>(({ value, span: s, type }) => ({ kind: 'Resume', value, span: s, type })),
+    fc.record({
+      name: fc.string({ minLength: 1, maxLength: 10 }),
+      symbolId: symbolIdArb,
+      bindingType: tie('ionTypeArb'),
+      value: tie('nodeArb'),
+      body: tie('nodeArb'),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ name, symbolId, bindingType, value, body, span: s, type }) => ({
+      kind: 'Let', name, symbolId, bindingType, value, body, span: s, type,
+    })),
+    fc.record({ expr: tie('nodeArb'), span: spanArb, type: tie('ionTypeArb') })
+      .map<IonIRNode>(({ expr, span: s, type }) => ({ kind: 'Await', expr, span: s, type })),
+    fc.record({
+      params: fc.array(
+        fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, type: tie('ionTypeArb'), span: spanArb }),
+        { maxLength: 2 },
+      ),
+      captures: fc.array(symbolIdArb, { maxLength: 2 }),
+      body: tie('nodeArb'),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ params, captures, body, span: s, type }) => ({
+      kind: 'Abs', params, captures, body, span: s, type,
+    })),
+    fc.record({
+      scrutinee: tie('nodeArb'),
+      arms: fc.array(
+        fc.record({
+          pattern: tie('casePatternArb'),
+          guard: fc.option(tie('nodeArb'), { nil: undefined }),
+          body: tie('nodeArb'),
+          span: spanArb,
+        }).map(({ pattern, guard, body, span: s }) => ({
+          pattern, body, span: s, ...(guard !== undefined ? { guard } : {}),
+        })),
+        { maxLength: 2 },
+      ),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ scrutinee, arms, span: s, type }) => ({
+      kind: 'Case', scrutinee, arms, span: s, type,
+    })),
+    fc.record({
+      ctorName: fc.string({ minLength: 1, maxLength: 10 }),
+      symbolId: symbolIdArb,
+      args: fc.array(tie('nodeArb'), { maxLength: 2 }),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ ctorName, symbolId, args, span: s, type }) => ({
+      kind: 'Constructor', ctorName, symbolId, args, span: s, type,
+    })),
+    fc.record({
+      receiver: tie('nodeArb'),
+      member: fc.string({ minLength: 1, maxLength: 10 }),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ receiver, member, span: s, type }) => ({
+      kind: 'Accessor', receiver, member, span: s, type,
+    })),
+    fc.record({
+      modulePath: fc.array(fc.string({ minLength: 1, maxLength: 10 }), { minLength: 1, maxLength: 4 }),
+      symbolId: symbolIdArb,
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ modulePath, symbolId, span: s, type }) => ({
+      kind: 'ModuleRef', modulePath, symbolId, span: s, type,
+    })),
+    fc.record({
+      target: fc.string({ minLength: 1, maxLength: 10 }),
+      module: fc.string({ minLength: 1, maxLength: 10 }),
+      symbol: fc.string({ minLength: 1, maxLength: 10 }),
+      sig: fc.record({
+        params: fc.array(tie('ionTypeArb'), { maxLength: 2 }),
+        ret: tie('ionTypeArb'),
+        template: fc.string({ maxLength: 20 }),
+      }),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ target, module: mod, symbol, sig, span: s, type }) => ({
+      kind: 'ForeignRef', target, module: mod, symbol, sig, span: s, type,
+    })),
+    fc.record({
+      effectTag: effectTagArb,
+      body: tie('nodeArb'),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ effectTag, body, span: s, type }) => ({
+      kind: 'Effect', effectTag, body, span: s, type,
+    })),
+    fc.record({
+      name: fc.string({ minLength: 1, maxLength: 10 }),
+      symbolId: symbolIdArb,
+      superClass: fc.option(symbolIdArb, { nil: undefined }),
+      interfaces: fc.array(symbolIdArb, { maxLength: 2 }),
+      fields: fc.array(
+        fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, type: tie('ionTypeArb'), span: spanArb }),
+        { maxLength: 2 },
+      ),
+      methods: fc.array(
+        fc.record({
+          name: fc.string({ minLength: 1, maxLength: 10 }),
+          symbolId: symbolIdArb,
+          params: fc.array(
+            fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, type: tie('ionTypeArb'), span: spanArb }),
+            { maxLength: 1 },
+          ),
+          retType: tie('ionTypeArb'),
+          body: fc.option(tie('nodeArb'), { nil: undefined }),
+          isAbstract: fc.boolean(),
+          isStatic: fc.boolean(),
+          span: spanArb,
+        }).map(({ name: mName, symbolId: mSid, params, retType, body, isAbstract, isStatic, span: ms }) => ({
+          name: mName, symbolId: mSid, params, retType, isAbstract, isStatic, span: ms,
+          ...(body !== undefined ? { body } : {}),
+        })),
+        { maxLength: 1 },
+      ),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ name, symbolId, superClass, interfaces, fields, methods, span: s, type }) => ({
+      kind: 'OopClass',
+      name,
+      symbolId,
+      ...(superClass !== undefined ? { superClass } : {}),
+      interfaces,
+      fields,
+      methods,
+      span: s,
+      type,
+    })),
+    fc.record({
+      name: fc.string({ minLength: 1, maxLength: 10 }),
+      symbolId: symbolIdArb,
+      members: fc.array(
+        fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, type: tie('ionTypeArb'), span: spanArb }),
+        { maxLength: 2 },
+      ),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ name, symbolId, members, span: s, type }) => ({
+      kind: 'OopInterface', name, symbolId, members, span: s, type,
+    })),
+    fc.record({
+      ctorSymbolId: symbolIdArb,
+      args: fc.array(tie('nodeArb'), { maxLength: 2 }),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ ctorSymbolId, args, span: s, type }) => ({
+      kind: 'OopNew', ctorSymbolId, args, span: s, type,
+    })),
+    fc.record({
+      receiver: tie('nodeArb'),
+      method: fc.string({ minLength: 1, maxLength: 10 }),
+      args: fc.array(tie('nodeArb'), { maxLength: 2 }),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ receiver, method, args, span: s, type }) => ({
+      kind: 'OopVirtualCall', receiver, method, args, span: s, type,
+    })),
+    fc.record({
+      name: fc.string({ minLength: 1, maxLength: 10 }),
+      symbolId: symbolIdArb,
+      variants: fc.array(
+        fc.record({
+          tag: fc.string({ minLength: 1, maxLength: 10 }),
+          symbolId: symbolIdArb,
+          fields: fc.array(
+            fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, type: tie('ionTypeArb'), span: spanArb }),
+            { maxLength: 2 },
+          ),
+          span: spanArb,
+        }),
+        { maxLength: 2 },
+      ),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ name, symbolId, variants, span: s, type }) => ({
+      kind: 'AdtDecl', name, symbolId, variants, span: s, type,
+    })),
+    fc.record({
+      scrutinee: tie('nodeArb'),
+      arms: fc.array(
+        fc.record({
+          tag: fc.string({ minLength: 1, maxLength: 10 }),
+          bindings: fc.array(
+            fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, type: tie('ionTypeArb'), span: spanArb }),
+            { maxLength: 2 },
+          ),
+          body: tie('nodeArb'),
+          span: spanArb,
+        }),
+        { maxLength: 2 },
+      ),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ scrutinee, arms, span: s, type }) => ({
+      kind: 'AdtMatch', scrutinee, arms, span: s, type,
+    })),
+    fc.record({
+      name: fc.string({ minLength: 1, maxLength: 10 }),
+      symbolId: symbolIdArb,
+      operations: fc.array(
+        fc.record({
+          name: fc.string({ minLength: 1, maxLength: 10 }),
+          params: fc.array(
+            fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, type: tie('ionTypeArb'), span: spanArb }),
+            { maxLength: 2 },
+          ),
+          retType: tie('ionTypeArb'),
+          span: spanArb,
+        }),
+        { maxLength: 2 },
+      ),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ name, symbolId, operations, span: s, type }) => ({
+      kind: 'EffectDecl', name, symbolId, operations, span: s, type,
+    })),
+    fc.record({
+      effectSymbolId: symbolIdArb,
+      operation: fc.string({ minLength: 1, maxLength: 10 }),
+      args: fc.array(tie('nodeArb'), { maxLength: 2 }),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ effectSymbolId, operation, args, span: s, type }) => ({
+      kind: 'Perform', effectSymbolId, operation, args, span: s, type,
+    })),
+    fc.record({
+      body: tie('nodeArb'),
+      handlers: fc.array(
+        fc.record({
+          operation: fc.string({ minLength: 1, maxLength: 10 }),
+          params: fc.array(
+            fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, type: tie('ionTypeArb'), span: spanArb }),
+            { maxLength: 2 },
+          ),
+          body: tie('nodeArb'),
+          span: spanArb,
+        }),
+        { maxLength: 2 },
+      ),
+      returnClause: fc.option(tie('nodeArb'), { nil: undefined }),
+      span: spanArb,
+      type: tie('ionTypeArb'),
+    }).map<IonIRNode>(({ body, handlers, returnClause, span: s, type }) => ({
+      kind: 'Handle',
+      body,
+      handlers,
+      ...(returnClause !== undefined ? { returnClause } : {}),
+      span: s,
+      type,
+    })),
   ),
 }));
 
