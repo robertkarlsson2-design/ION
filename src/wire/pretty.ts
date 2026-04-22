@@ -30,7 +30,7 @@ function ind(depth: number, size: number): string {
 function printLiteral(v: LiteralValue): string {
   switch (v.kind) {
     case 'Int': return String(v.value);
-    case 'Float': return String(v.value);
+    case 'Float': return Number.isInteger(v.value) ? `${v.value}.0` : String(v.value);
     case 'Str': {
       const escaped = v.value
         .replace(/\\/g, '\\\\')
