@@ -1,231 +1,243 @@
 import type { Span } from '../types.js';
 import type { TypeAnnotation, EffectTag } from './types.js';
+import type { BinopKind, UnaryKind, LiteralIntNode, LiteralFloatNode, LiteralBoolNode, LiteralNullNode } from '../parser/cst.js';
 
-export type { TypeAnnotation, EffectTag } from './types.js';
-
-// Re-export trivia-free, expression-free types from CST unchanged
-export type {
-  LiteralIntNode,
-  LiteralFloatNode,
-  LiteralBoolNode,
-  LiteralNullNode,
-  LambdaParam,
-  FnParam,
-  RecordField,
-  DeclAttribute,
-  DataVariant,
-  BinopKind,
-  UnaryKind,
-} from '../parser/cst.js';
-
-import type {
-  LiteralIntNode,
-  LiteralFloatNode,
-  LiteralBoolNode,
-  LiteralNullNode,
-  LambdaParam,
-  FnParam,
-  DeclAttribute,
-  DataVariant,
-  BinopKind,
-  UnaryKind,
-} from '../parser/cst.js';
+export type { TypeAnnotation, EffectTag, Span };
 
 // ---------------------------------------------------------------------------
-// String interpolation (redefined to reference AST ExprNode)
+// Re-exported from parser/cst (no trivia fields — shared between CST and AST)
 // ---------------------------------------------------------------------------
 
-export type StringPart =
-  | { readonly kind: 'TextPart'; readonly text: string; readonly span: Span }
-  | { readonly kind: 'InterpPart'; readonly expr: ExprNode; readonly span: Span };
+export type { BinopKind, UnaryKind, LiteralIntNode, LiteralFloatNode, LiteralBoolNode, LiteralNullNode } from '../parser/cst.js';
 
-export interface StringLitNode {
-  readonly kind: 'StringLit';
-  readonly parts: readonly StringPart[];
+// ---------------------------------------------------------------------------
+// String interpolation
+// ---------------------------------------------------------------------------
+
+export interface AstTextPart {
+  readonly kind: 'TextPart';
+  readonly text: string;
   readonly span: Span;
 }
 
-export type LiteralNode =
-  | LiteralIntNode
-  | LiteralFloatNode
-  | LiteralBoolNode
-  | LiteralNullNode
-  | StringLitNode;
+export interface AstInterpPart {
+  readonly kind: 'InterpPart';
+  readonly expr: AstExprNode;
+  readonly span: Span;
+}
+
+export type AstStringPart = AstTextPart | AstInterpPart;
+
+export interface AstStringLitNode {
+  readonly kind: 'StringLit';
+  readonly parts: readonly AstStringPart[];
+  readonly span: Span;
+}
 
 // ---------------------------------------------------------------------------
-// Patterns (redefined to reference AST LiteralNode)
+// Call arguments & lambda params
 // ---------------------------------------------------------------------------
 
-export type PatternNode =
+export interface AstCallArg {
+  readonly label: string | null;
+  readonly value: AstExprNode;
+  readonly span: Span;
+}
+
+export interface AstLambdaParam {
+  readonly name: string;
+  readonly type_: TypeAnnotation | null;
+  readonly span: Span;
+}
+
+// ---------------------------------------------------------------------------
+// Patterns
+// ---------------------------------------------------------------------------
+
+export type AstPatternNode =
   | { readonly kind: 'WildcardPat'; readonly span: Span }
   | { readonly kind: 'IdentPat'; readonly name: string; readonly span: Span }
-  | { readonly kind: 'ConstructorPat'; readonly tag: string; readonly fields: readonly PatternNode[]; readonly span: Span }
-  | { readonly kind: 'LiteralPat'; readonly value: LiteralNode; readonly span: Span }
-  | { readonly kind: 'TuplePat'; readonly elements: readonly PatternNode[]; readonly span: Span };
+  | { readonly kind: 'ConstructorPat'; readonly tag: string; readonly fields: readonly AstPatternNode[]; readonly span: Span }
+  | { readonly kind: 'LiteralPat'; readonly value: LiteralIntNode | LiteralFloatNode | LiteralBoolNode | LiteralNullNode | AstStringLitNode; readonly span: Span }
+  | { readonly kind: 'TuplePat'; readonly elements: readonly AstPatternNode[]; readonly span: Span };
 
 // ---------------------------------------------------------------------------
-// Call arguments (redefined to reference AST ExprNode)
+// Match arms
 // ---------------------------------------------------------------------------
 
-export interface CallArg {
-  readonly label: string | null;
-  readonly value: ExprNode;
+export interface AstMatchArm {
+  readonly pattern: AstPatternNode;
+  readonly guard: AstExprNode | null;
+  readonly body: AstExprNode;
   readonly span: Span;
 }
 
 // ---------------------------------------------------------------------------
-// Match arms (redefined to reference AST ExprNode/PatternNode)
+// Expression nodes
 // ---------------------------------------------------------------------------
 
-export interface MatchArm {
-  readonly pattern: PatternNode;
-  readonly guard: ExprNode | null;
-  readonly body: ExprNode;
-  readonly span: Span;
-}
-
-// ---------------------------------------------------------------------------
-// IdentNode (no leadingTrivia)
-// ---------------------------------------------------------------------------
-
-export interface IdentNode {
+export interface AstIdentNode {
   readonly kind: 'Ident';
   readonly name: string;
   readonly span: Span;
 }
 
-// ---------------------------------------------------------------------------
-// Expression nodes (all reference AST ExprNode; no GroupExprNode)
-// ---------------------------------------------------------------------------
-
-export interface BinopExprNode {
+export interface AstBinopExprNode {
   readonly kind: 'BinopExpr';
   readonly op: BinopKind;
-  readonly left: ExprNode;
-  readonly right: ExprNode;
+  readonly left: AstExprNode;
+  readonly right: AstExprNode;
   readonly span: Span;
 }
 
-export interface UnaryExprNode {
+export interface AstUnaryExprNode {
   readonly kind: 'UnaryExpr';
   readonly op: UnaryKind;
-  readonly operand: ExprNode;
+  readonly operand: AstExprNode;
   readonly span: Span;
 }
 
-export interface CallExprNode {
+export interface AstCallExprNode {
   readonly kind: 'CallExpr';
-  readonly callee: ExprNode;
-  readonly args: readonly CallArg[];
+  readonly callee: AstExprNode;
+  readonly args: readonly AstCallArg[];
   readonly span: Span;
 }
 
-export interface LambdaExprNode {
+export interface AstLambdaExprNode {
   readonly kind: 'LambdaExpr';
-  readonly params: readonly LambdaParam[];
-  readonly body: ExprNode;
+  readonly params: readonly AstLambdaParam[];
+  readonly body: AstExprNode;
   readonly span: Span;
 }
 
-export interface PipelineExprNode {
+export interface AstPipelineExprNode {
   readonly kind: 'PipelineExpr';
-  readonly left: ExprNode;
-  readonly right: ExprNode;
+  readonly left: AstExprNode;
+  readonly right: AstExprNode;
   readonly span: Span;
 }
 
-export interface IfElseExprNode {
+export interface AstIfElseExprNode {
   readonly kind: 'IfElseExpr';
-  readonly cond: ExprNode;
-  readonly then: ExprNode;
-  readonly else_: ExprNode;
+  readonly cond: AstExprNode;
+  readonly then: AstExprNode;
+  readonly else_: AstExprNode;
   readonly span: Span;
 }
 
-export interface MatchExprNode {
+export interface AstMatchExprNode {
   readonly kind: 'MatchExpr';
-  readonly scrutinee: ExprNode;
-  readonly arms: readonly MatchArm[];
+  readonly scrutinee: AstExprNode;
+  readonly arms: readonly AstMatchArm[];
   readonly span: Span;
 }
 
-export interface LetExprNode {
+export interface AstLetExprNode {
   readonly kind: 'LetExpr';
   readonly name: string;
   readonly type_: TypeAnnotation | null;
-  readonly value: ExprNode;
-  readonly body: ExprNode;
+  readonly value: AstExprNode;
+  readonly body: AstExprNode;
   readonly span: Span;
 }
 
-export interface AccessorExprNode {
+export interface AstAccessorExprNode {
   readonly kind: 'AccessorExpr';
-  readonly receiver: ExprNode;
+  readonly receiver: AstExprNode;
   readonly field: string;
   readonly span: Span;
 }
 
-export interface PropagateExprNode {
+export interface AstPropagateExprNode {
   readonly kind: 'PropagateExpr';
-  readonly inner: ExprNode;
+  readonly inner: AstExprNode;
   readonly span: Span;
 }
 
-/** GroupExprNode is intentionally absent — collapsed to inner during AST build. */
-export type ExprNode =
+// GroupExprNode is intentionally absent — elided by the builder.
+
+export type AstExprNode =
   | LiteralIntNode
   | LiteralFloatNode
   | LiteralBoolNode
   | LiteralNullNode
-  | StringLitNode
-  | IdentNode
-  | BinopExprNode
-  | UnaryExprNode
-  | CallExprNode
-  | LambdaExprNode
-  | PipelineExprNode
-  | IfElseExprNode
-  | MatchExprNode
-  | LetExprNode
-  | AccessorExprNode
-  | PropagateExprNode;
+  | AstStringLitNode
+  | AstIdentNode
+  | AstBinopExprNode
+  | AstUnaryExprNode
+  | AstCallExprNode
+  | AstLambdaExprNode
+  | AstPipelineExprNode
+  | AstIfElseExprNode
+  | AstMatchExprNode
+  | AstLetExprNode
+  | AstAccessorExprNode
+  | AstPropagateExprNode;
 
 // ---------------------------------------------------------------------------
-// Declaration nodes (no leadingTrivia)
+// Declaration helpers
 // ---------------------------------------------------------------------------
 
-export interface FnDeclNode {
+export interface AstFnParam {
+  readonly name: string;
+  readonly type_: TypeAnnotation | null;
+  readonly span: Span;
+}
+
+export interface AstDeclAttribute {
+  readonly name: string;
+  readonly args: readonly string[];
+  readonly span: Span;
+}
+
+export interface AstRecordField {
+  readonly name: string;
+  readonly type_: TypeAnnotation;
+  readonly span: Span;
+}
+
+export type AstDataVariant =
+  | { readonly kind: 'UnitVariant'; readonly name: string; readonly span: Span }
+  | { readonly kind: 'TupleVariant'; readonly name: string; readonly fields: readonly TypeAnnotation[]; readonly span: Span }
+  | { readonly kind: 'RecordVariant'; readonly name: string; readonly fields: readonly AstRecordField[]; readonly span: Span };
+
+// ---------------------------------------------------------------------------
+// Declaration nodes
+// ---------------------------------------------------------------------------
+
+export interface AstFnDeclNode {
   readonly kind: 'FnDecl';
   readonly pub: boolean;
   readonly name: string;
   readonly typeParams: readonly string[];
-  readonly params: readonly FnParam[];
+  readonly params: readonly AstFnParam[];
   readonly effects: readonly EffectTag[];
   readonly returnType: TypeAnnotation | null;
-  readonly body: ExprNode;
-  readonly attributes: readonly DeclAttribute[];
+  readonly body: AstExprNode;
+  readonly attributes: readonly AstDeclAttribute[];
   readonly span: Span;
 }
 
-export interface LetDeclNode {
+export interface AstLetDeclNode {
   readonly kind: 'LetDecl';
   readonly pub: boolean;
   readonly name: string;
   readonly type_: TypeAnnotation | null;
-  readonly value: ExprNode;
+  readonly value: AstExprNode;
   readonly span: Span;
 }
 
-export interface DataDeclNode {
+export interface AstDataDeclNode {
   readonly kind: 'DataDecl';
   readonly pub: boolean;
   readonly name: string;
   readonly typeParams: readonly string[];
-  readonly variants: readonly DataVariant[];
+  readonly variants: readonly AstDataVariant[];
   readonly span: Span;
 }
 
-export interface TypeAliasDeclNode {
+export interface AstTypeAliasDeclNode {
   readonly kind: 'TypeAliasDecl';
   readonly pub: boolean;
   readonly name: string;
@@ -234,43 +246,43 @@ export interface TypeAliasDeclNode {
   readonly span: Span;
 }
 
-export interface UseDeclNode {
+export interface AstUseDeclNode {
   readonly kind: 'UseDecl';
   readonly path: readonly string[];
   readonly items: readonly string[] | null;
   readonly span: Span;
 }
 
-export interface ExternDeclNode {
+export interface AstExternDeclNode {
   readonly kind: 'ExternDecl';
   readonly pub: boolean;
   readonly name: string;
-  readonly params: readonly FnParam[];
+  readonly params: readonly AstFnParam[];
   readonly effects: readonly EffectTag[];
   readonly returnType: TypeAnnotation | null;
-  readonly attributes: readonly DeclAttribute[];
+  readonly attributes: readonly AstDeclAttribute[];
   readonly span: Span;
 }
 
-export interface ModuleDeclNode {
+export interface AstModuleDeclNode {
   readonly kind: 'ModuleDecl';
   readonly pub: boolean;
   readonly name: string;
-  readonly decls: readonly DeclNode[];
+  readonly decls: readonly AstDeclNode[];
   readonly span: Span;
 }
 
-export type DeclNode =
-  | FnDeclNode
-  | LetDeclNode
-  | DataDeclNode
-  | TypeAliasDeclNode
-  | UseDeclNode
-  | ExternDeclNode
-  | ModuleDeclNode;
+export type AstDeclNode =
+  | AstFnDeclNode
+  | AstLetDeclNode
+  | AstDataDeclNode
+  | AstTypeAliasDeclNode
+  | AstUseDeclNode
+  | AstExternDeclNode
+  | AstModuleDeclNode;
 
-export interface ModuleNode {
+export interface AstModule {
   readonly kind: 'Module';
-  readonly decls: readonly DeclNode[];
+  readonly decls: readonly AstDeclNode[];
   readonly span: Span;
 }

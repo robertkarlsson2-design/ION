@@ -1,3 +1,43 @@
-export * from './types.js';
-export * from './nodes.js';
-export { buildModule } from './builder.js';
+export type { TypeAnnotation, EffectTag } from './types.js';
+
+export type {
+  LiteralIntNode,
+  LiteralFloatNode,
+  LiteralBoolNode,
+  LiteralNullNode,
+  AstTextPart,
+  AstInterpPart,
+  AstStringPart,
+  AstStringLitNode,
+  AstCallArg,
+  AstLambdaParam,
+  AstPatternNode,
+  AstMatchArm,
+  AstIdentNode,
+  AstBinopExprNode,
+  AstUnaryExprNode,
+  AstCallExprNode,
+  AstLambdaExprNode,
+  AstPipelineExprNode,
+  AstIfElseExprNode,
+  AstMatchExprNode,
+  AstLetExprNode,
+  AstAccessorExprNode,
+  AstPropagateExprNode,
+  AstExprNode,
+  AstFnParam,
+  AstDeclAttribute,
+  AstRecordField,
+  AstDataVariant,
+  AstFnDeclNode,
+  AstLetDeclNode,
+  AstDataDeclNode,
+  AstTypeAliasDeclNode,
+  AstUseDeclNode,
+  AstExternDeclNode,
+  AstModuleDeclNode,
+  AstDeclNode,
+  AstModule,
+} from './nodes.js';
+
+export { buildModule, buildDecl, buildExpr, buildPattern } from './builder.js';
