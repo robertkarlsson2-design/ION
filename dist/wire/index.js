@@ -1,1 +1,1 @@
-export { encodeModule, WireEncodeError } from './encoder.js';
+export { prettyPrintModule, prettyPrintNode, prettyPrintType } from './pretty.js';
