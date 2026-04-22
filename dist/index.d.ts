@@ -3,3 +3,5 @@ export { serializeModule, deserializeModule, IonIRSerdeError } from './ir/index.
 export type { Span, SymbolId } from './types.js';
 export { makeSymbolId } from './types.js';
 export type { TypeAnnotation, EffectTag } from './ast/types.js';
+export { prettyPrintModule, prettyPrintNode, prettyPrintType } from './wire/index.js';
+export type { PrettyOptions } from './wire/index.js';
