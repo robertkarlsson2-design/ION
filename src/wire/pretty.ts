@@ -27,19 +27,21 @@ function ind(depth: number, size: number): string {
   return ' '.repeat(depth * size);
 }
 
+function escapeString(s: string): string {
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+}
+
 function printLiteral(v: LiteralValue): string {
   switch (v.kind) {
     case 'Int': return String(v.value);
     case 'Float': return Number.isInteger(v.value) ? `${v.value}.0` : String(v.value);
-    case 'Str': {
-      const escaped = v.value
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, '\\n')
-        .replace(/\r/g, '\\r')
-        .replace(/\t/g, '\\t');
-      return `"${escaped}"`;
-    }
+    case 'Str': return `"${escapeString(v.value)}"`;
+
     case 'Bool': return v.value ? 'true' : 'false';
     case 'Null': return 'null';
     default: return assertNever(v);
@@ -199,7 +201,7 @@ export function prettyPrintNode(node: IonIRNode, depth = 0, opts?: PrettyOptions
     }
     case 'Accessor': return `${prettyPrintNode(node.receiver, depth, opts)}.${node.member}`;
     case 'ModuleRef': return node.modulePath.join('.');
-    case 'ForeignRef': return `@foreign("${node.module}::${node.symbol}")`;
+    case 'ForeignRef': return `@foreign("${escapeString(node.module)}::${escapeString(node.symbol)}")`;
     case 'Effect': {
       const prefix = ind(depth, size);
       const inner = ind(depth + 1, size);
