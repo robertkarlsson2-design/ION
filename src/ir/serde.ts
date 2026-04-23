@@ -61,6 +61,7 @@ export class IonIRSerdeError extends Error {
 // ---------------------------------------------------------------------------
 
 function setReplacer(_key: string, value: unknown): unknown {
+  if (Object.is(value, -0)) return '-0';
   if (value instanceof Set) {
     return [...(value as Set<unknown>)].sort();
   }
@@ -197,7 +198,11 @@ function parseLiteralValue(raw: unknown, path: string): LiteralValue {
   const kind = assertString(r['kind'], `${path}.kind`);
   switch (kind) {
     case 'Int': return { kind: 'Int', value: assertNumber(r['value'], `${path}.value`) };
-    case 'Float': return { kind: 'Float', value: assertNumber(r['value'], `${path}.value`) };
+    case 'Float': {
+      const raw = r['value'];
+      if (raw === '-0') return { kind: 'Float', value: -0 };
+      return { kind: 'Float', value: assertNumber(raw, `${path}.value`) };
+    }
     case 'Str': return { kind: 'Str', value: assertString(r['value'], `${path}.value`) };
     case 'Bool': return { kind: 'Bool', value: assertBoolean(r['value'], `${path}.value`) };
     case 'Null': return { kind: 'Null' };
