@@ -92,7 +92,9 @@ function collectNamesFromType(t: IonType, c: NameCollector): void {
     case 'Null':
     case 'Unit':
     case 'Never':
+      break;
     case 'TypeVar':
+      c.record(t.id);
       break;
     case 'List':
       collectNamesFromType(t.elem, c);

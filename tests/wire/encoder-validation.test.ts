@@ -189,6 +189,24 @@ describe('Suite V — newline validation', () => {
     expect(() => encodeModule({ ...makeMinimal(), decls: [absNode] }))
       .toThrow(WireEncodeError);
   });
+  it('V-TypeVar: TypeVar id with \\n throws WireEncodeError', () => {
+    const fnType: IonType = {
+      kind: 'Fn',
+      params: [],
+      ret: { kind: 'TypeVar', id: 'T\nbad' },
+      effects: new Set(),
+    };
+    const absNode: IonIRNode = {
+      kind: 'Abs',
+      params: [],
+      body: varNode('x'),
+      captures: [],
+      span,
+      type: fnType,
+    };
+    expect(() => encodeModule({ ...makeMinimal(), decls: [absNode] }))
+      .toThrow(WireEncodeError);
+  });
 });
 
 // ---------------------------------------------------------------------------
