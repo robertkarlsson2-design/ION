@@ -2,9 +2,7 @@ import type {
   AstExprNode,
   AstDeclNode,
   AstPatternNode,
-  AstMatchArm,
   AstFnDeclNode,
-  AstDeclNode as DeclNode,
   AstDataVariant,
 } from '../ast/nodes.js';
 import type { IonType, TypeVar, FnType } from '../ir/types.js';
