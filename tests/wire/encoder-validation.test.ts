@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { encodeModule, WireEncodeError } from '../../src/wire/encoder.js';
+import { encodeModule, WireEncodeError, MAX_ENCODE_DEPTH } from '../../src/wire/encoder.js';
 import { makeSymbolId } from '../../src/types.js';
 import type {
   IonIRModule,
@@ -245,6 +245,101 @@ describe('Suite W — property tests', () => {
         expect(() => encodeModule(mod)).not.toThrow();
       }),
       { numRuns: 200 },
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite D — depth limit tests
+// ---------------------------------------------------------------------------
+
+function buildLetChain(depth: number, base: IonIRNode): IonIRNode {
+  let node = base;
+  for (let i = 0; i < depth; i++) {
+    node = {
+      kind: 'Let',
+      name: 'x',
+      symbolId: sid,
+      bindingType: intType,
+      value: base,
+      body: node,
+      span,
+      type: intType,
+    };
+  }
+  return node;
+}
+
+function buildNestedOption(depth: number): IonType {
+  let t: IonType = intType;
+  for (let i = 0; i < depth; i++) {
+    t = { kind: 'Option', inner: t };
+  }
+  return t;
+}
+
+function buildAppChain(depth: number, base: IonIRNode): IonIRNode {
+  let node = base;
+  for (let i = 0; i < depth; i++) {
+    node = {
+      kind: 'App',
+      callee: node,
+      args: [],
+      span,
+      type: intType,
+    };
+  }
+  return node;
+}
+
+describe('Suite D — depth limit tests', () => {
+  it('D1: Let chain of MAX_ENCODE_DEPTH + 2 throws WireEncodeError', () => {
+    const chain = buildLetChain(MAX_ENCODE_DEPTH + 2, varNode('x'));
+    expect(() => encodeModule({ ...makeMinimal(), decls: [chain] }))
+      .toThrow(WireEncodeError);
+  });
+
+  it('D2: Let chain of MAX_ENCODE_DEPTH does not throw', () => {
+    const chain = buildLetChain(MAX_ENCODE_DEPTH, varNode('x'));
+    expect(() => encodeModule({ ...makeMinimal(), decls: [chain] }))
+      .not.toThrow();
+  });
+
+  it('D3: deeply nested Option type (MAX_ENCODE_DEPTH + 2) on a node throws WireEncodeError', () => {
+    const deepType = buildNestedOption(MAX_ENCODE_DEPTH + 2);
+    const node: IonIRNode = { ...varNode('x'), type: deepType };
+    expect(() => encodeModule({ ...makeMinimal(), decls: [node] }))
+      .toThrow(WireEncodeError);
+  });
+
+  it('D4: App callee chain of MAX_ENCODE_DEPTH + 2 throws WireEncodeError', () => {
+    const chain = buildAppChain(MAX_ENCODE_DEPTH + 2, varNode('x'));
+    expect(() => encodeModule({ ...makeMinimal(), decls: [chain] }))
+      .toThrow(WireEncodeError);
+  });
+
+  it('D5: error thrown for deep Let is instanceof WireEncodeError', () => {
+    const chain = buildLetChain(MAX_ENCODE_DEPTH + 2, varNode('x'));
+    let caught: unknown;
+    try {
+      encodeModule({ ...makeMinimal(), decls: [chain] });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(WireEncodeError);
+  });
+
+  it('D6: any Let chain deeper than MAX_ENCODE_DEPTH + 1 always throws WireEncodeError', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: MAX_ENCODE_DEPTH + 2, max: MAX_ENCODE_DEPTH + 500 }),
+        (n) => {
+          const chain = buildLetChain(n, varNode('x'));
+          expect(() => encodeModule({ ...makeMinimal(), decls: [chain] }))
+            .toThrow(WireEncodeError);
+        },
+      ),
+      { numRuns: 100 },
     );
   });
 });

@@ -53,6 +53,9 @@ export class WireEncodeError extends Error {
   override readonly name = 'WireEncodeError';
 }
 
+/** Maximum allowed nesting depth for IonIR node and type trees in the encoder. */
+export const MAX_ENCODE_DEPTH = 1000;
+
 function assertValidName(name: string): void {
   if (name.includes('\n') || name.includes('\r')) {
     throw new WireEncodeError(
@@ -83,7 +86,8 @@ class NameCollector {
   }
 }
 
-function collectNamesFromType(t: IonType, c: NameCollector): void {
+function collectNamesFromType(t: IonType, c: NameCollector, depth = 0): void {
+  if (depth > MAX_ENCODE_DEPTH) throw new WireEncodeError(`IonIR nesting exceeds maximum depth (${MAX_ENCODE_DEPTH})`);
   switch (t.kind) {
     case 'Int':
     case 'Float':
@@ -95,34 +99,35 @@ function collectNamesFromType(t: IonType, c: NameCollector): void {
     case 'TypeVar':
       break;
     case 'List':
-      collectNamesFromType(t.elem, c);
+      collectNamesFromType(t.elem, c, depth + 1);
       break;
     case 'Option':
-      collectNamesFromType(t.inner, c);
+      collectNamesFromType(t.inner, c, depth + 1);
       break;
     case 'Map':
-      collectNamesFromType(t.key, c);
-      collectNamesFromType(t.value, c);
+      collectNamesFromType(t.key, c, depth + 1);
+      collectNamesFromType(t.value, c, depth + 1);
       break;
     case 'Result':
-      collectNamesFromType(t.ok, c);
-      collectNamesFromType(t.err, c);
+      collectNamesFromType(t.ok, c, depth + 1);
+      collectNamesFromType(t.err, c, depth + 1);
       break;
     case 'Fn':
-      for (const p of t.params) collectNamesFromType(p, c);
-      collectNamesFromType(t.ret, c);
+      for (const p of t.params) collectNamesFromType(p, c, depth + 1);
+      collectNamesFromType(t.ret, c, depth + 1);
       for (const tag of t.effects) c.record(tag);
       break;
     case 'User':
       c.record(t.name);
-      for (const a of t.args) collectNamesFromType(a, c);
+      for (const a of t.args) collectNamesFromType(a, c, depth + 1);
       break;
     default:
       assertNever(t);
   }
 }
 
-function collectNamesFromPattern(p: CasePattern, c: NameCollector): void {
+function collectNamesFromPattern(p: CasePattern, c: NameCollector, depth = 0): void {
+  if (depth > MAX_ENCODE_DEPTH) throw new WireEncodeError(`IonIR nesting exceeds maximum depth (${MAX_ENCODE_DEPTH})`);
   switch (p.kind) {
     case 'Wildcard':
     case 'Literal':
@@ -132,15 +137,16 @@ function collectNamesFromPattern(p: CasePattern, c: NameCollector): void {
       break;
     case 'Constructor':
       c.record(p.ctorName);
-      for (const f of p.fields) collectNamesFromPattern(f, c);
+      for (const f of p.fields) collectNamesFromPattern(f, c, depth + 1);
       break;
     default:
       assertNever(p);
   }
 }
 
-function collectNamesFromNode(node: IonIRNode, c: NameCollector): void {
-  collectNamesFromType(node.type, c);
+function collectNamesFromNode(node: IonIRNode, c: NameCollector, depth = 0): void {
+  if (depth > MAX_ENCODE_DEPTH) throw new WireEncodeError(`IonIR nesting exceeds maximum depth (${MAX_ENCODE_DEPTH})`);
+  collectNamesFromType(node.type, c, depth);
 
   switch (node.kind) {
     case 'Var':
@@ -149,36 +155,36 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector): void {
     case 'Literal':
       break;
     case 'App':
-      collectNamesFromNode(node.callee, c);
-      for (const a of node.args) collectNamesFromNode(a, c);
+      collectNamesFromNode(node.callee, c, depth + 1);
+      for (const a of node.args) collectNamesFromNode(a, c, depth + 1);
       break;
     case 'Abs':
       for (const p of node.params) {
         c.record(p.name);
-        collectNamesFromType(p.type, c);
+        collectNamesFromType(p.type, c, depth);
       }
-      collectNamesFromNode(node.body, c);
+      collectNamesFromNode(node.body, c, depth + 1);
       break;
     case 'Let':
       c.record(node.name);
-      collectNamesFromType(node.bindingType, c);
-      collectNamesFromNode(node.value, c);
-      collectNamesFromNode(node.body, c);
+      collectNamesFromType(node.bindingType, c, depth);
+      collectNamesFromNode(node.value, c, depth + 1);
+      collectNamesFromNode(node.body, c, depth + 1);
       break;
     case 'Case':
-      collectNamesFromNode(node.scrutinee, c);
+      collectNamesFromNode(node.scrutinee, c, depth + 1);
       for (const arm of node.arms) {
-        collectNamesFromPattern(arm.pattern, c);
-        if (arm.guard !== undefined) collectNamesFromNode(arm.guard, c);
-        collectNamesFromNode(arm.body, c);
+        collectNamesFromPattern(arm.pattern, c, depth);
+        if (arm.guard !== undefined) collectNamesFromNode(arm.guard, c, depth + 1);
+        collectNamesFromNode(arm.body, c, depth + 1);
       }
       break;
     case 'Constructor':
       c.record(node.ctorName);
-      for (const a of node.args) collectNamesFromNode(a, c);
+      for (const a of node.args) collectNamesFromNode(a, c, depth + 1);
       break;
     case 'Accessor':
-      collectNamesFromNode(node.receiver, c);
+      collectNamesFromNode(node.receiver, c, depth + 1);
       c.record(node.member);
       break;
     case 'ModuleRef':
@@ -191,46 +197,46 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector): void {
       break;
     case 'Effect':
       c.record(node.effectTag);
-      collectNamesFromNode(node.body, c);
+      collectNamesFromNode(node.body, c, depth + 1);
       break;
     case 'OopClass':
       c.record(node.name);
       for (const f of node.fields) {
         c.record(f.name);
-        collectNamesFromType(f.type, c);
+        collectNamesFromType(f.type, c, depth);
       }
       for (const m of node.methods) {
         c.record(m.name);
         for (const p of m.params) {
           c.record(p.name);
-          collectNamesFromType(p.type, c);
+          collectNamesFromType(p.type, c, depth);
         }
-        collectNamesFromType(m.retType, c);
-        if (m.body !== undefined) collectNamesFromNode(m.body, c);
+        collectNamesFromType(m.retType, c, depth);
+        if (m.body !== undefined) collectNamesFromNode(m.body, c, depth + 1);
       }
       break;
     case 'OopInterface':
       c.record(node.name);
       for (const mem of node.members) {
         c.record(mem.name);
-        collectNamesFromType(mem.type, c);
+        collectNamesFromType(mem.type, c, depth);
       }
       break;
     case 'OopNew':
-      for (const a of node.args) collectNamesFromNode(a, c);
+      for (const a of node.args) collectNamesFromNode(a, c, depth + 1);
       break;
     case 'OopVirtualCall':
-      collectNamesFromNode(node.receiver, c);
+      collectNamesFromNode(node.receiver, c, depth + 1);
       c.record(node.method);
-      for (const a of node.args) collectNamesFromNode(a, c);
+      for (const a of node.args) collectNamesFromNode(a, c, depth + 1);
       break;
     case 'OopThis':
       break;
     case 'AsyncBlock':
-      collectNamesFromNode(node.body, c);
+      collectNamesFromNode(node.body, c, depth + 1);
       break;
     case 'Await':
-      collectNamesFromNode(node.expr, c);
+      collectNamesFromNode(node.expr, c, depth + 1);
       break;
     case 'AdtDecl':
       c.record(node.name);
@@ -238,19 +244,19 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector): void {
         c.record(v.tag);
         for (const f of v.fields) {
           c.record(f.name);
-          collectNamesFromType(f.type, c);
+          collectNamesFromType(f.type, c, depth);
         }
       }
       break;
     case 'AdtMatch':
-      collectNamesFromNode(node.scrutinee, c);
+      collectNamesFromNode(node.scrutinee, c, depth + 1);
       for (const arm of node.arms) {
         c.record(arm.tag);
         for (const b of arm.bindings) {
           c.record(b.name);
-          collectNamesFromType(b.type, c);
+          collectNamesFromType(b.type, c, depth);
         }
-        collectNamesFromNode(arm.body, c);
+        collectNamesFromNode(arm.body, c, depth + 1);
       }
       break;
     case 'EffectDecl':
@@ -259,29 +265,29 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector): void {
         c.record(op.name);
         for (const p of op.params) {
           c.record(p.name);
-          collectNamesFromType(p.type, c);
+          collectNamesFromType(p.type, c, depth);
         }
-        collectNamesFromType(op.retType, c);
+        collectNamesFromType(op.retType, c, depth);
       }
       break;
     case 'Perform':
       c.record(node.operation);
-      for (const a of node.args) collectNamesFromNode(a, c);
+      for (const a of node.args) collectNamesFromNode(a, c, depth + 1);
       break;
     case 'Handle':
-      collectNamesFromNode(node.body, c);
+      collectNamesFromNode(node.body, c, depth + 1);
       for (const h of node.handlers) {
         c.record(h.operation);
         for (const p of h.params) {
           c.record(p.name);
-          collectNamesFromType(p.type, c);
+          collectNamesFromType(p.type, c, depth);
         }
-        collectNamesFromNode(h.body, c);
+        collectNamesFromNode(h.body, c, depth + 1);
       }
-      if (node.returnClause !== undefined) collectNamesFromNode(node.returnClause, c);
+      if (node.returnClause !== undefined) collectNamesFromNode(node.returnClause, c, depth + 1);
       break;
     case 'Resume':
-      collectNamesFromNode(node.value, c);
+      collectNamesFromNode(node.value, c, depth + 1);
       break;
     default:
       assertNever(node);
@@ -305,7 +311,8 @@ function collectNames(module: IonIRModule): Map<string, NameRecord> {
 // ---------------------------------------------------------------------------
 
 /** Serialises an IonType to its canonical wire string without pool aliasing. */
-function serializeTypeRaw(t: IonType): string {
+function serializeTypeRaw(t: IonType, depth = 0): string {
+  if (depth > MAX_ENCODE_DEPTH) throw new WireEncodeError(`IonIR nesting exceeds maximum depth (${MAX_ENCODE_DEPTH})`);
   switch (t.kind) {
     case 'Int':   return 'int';
     case 'Float': return 'flt';
@@ -315,19 +322,19 @@ function serializeTypeRaw(t: IonType): string {
     case 'Unit':  return 'unit';
     case 'Never': return 'never';
     case 'TypeVar': return `$${t.id}`;
-    case 'List':  return `list<${serializeTypeRaw(t.elem)}>`;
-    case 'Option': return `opt<${serializeTypeRaw(t.inner)}>`;
-    case 'Map':   return `map<${serializeTypeRaw(t.key)},${serializeTypeRaw(t.value)}>`;
-    case 'Result': return `res<${serializeTypeRaw(t.ok)},${serializeTypeRaw(t.err)}>`;
+    case 'List':  return `list<${serializeTypeRaw(t.elem, depth + 1)}>`;
+    case 'Option': return `opt<${serializeTypeRaw(t.inner, depth + 1)}>`;
+    case 'Map':   return `map<${serializeTypeRaw(t.key, depth + 1)},${serializeTypeRaw(t.value, depth + 1)}>`;
+    case 'Result': return `res<${serializeTypeRaw(t.ok, depth + 1)},${serializeTypeRaw(t.err, depth + 1)}>`;
     case 'Fn': {
-      const params = t.params.map(serializeTypeRaw).join(',');
+      const params = t.params.map(p => serializeTypeRaw(p, depth + 1)).join(',');
       const effects = t.effects.size > 0 ? '!' + [...t.effects].sort().join(',') : '';
-      return `fn(${params})->${serializeTypeRaw(t.ret)}${effects}`;
+      return `fn(${params})->${serializeTypeRaw(t.ret, depth + 1)}${effects}`;
     }
     case 'User':
       return t.args.length === 0
         ? t.name
-        : `${t.name}<${t.args.map(serializeTypeRaw).join(',')}>`;
+        : `${t.name}<${t.args.map(a => serializeTypeRaw(a, depth + 1)).join(',')}>`;
     default:
       return assertNever(t);
   }
@@ -345,7 +352,8 @@ function isPrimitiveType(t: IonType): boolean {
 // Phase 1c: type expression collection
 // ---------------------------------------------------------------------------
 
-function collectTypesFromType(t: IonType, out: Map<string, number>): void {
+function collectTypesFromType(t: IonType, out: Map<string, number>, depth = 0): void {
+  if (depth > MAX_ENCODE_DEPTH) throw new WireEncodeError(`IonIR nesting exceeds maximum depth (${MAX_ENCODE_DEPTH})`);
   if (!isPrimitiveType(t)) {
     const expr = serializeTypeRaw(t);
     out.set(expr, (out.get(expr) ?? 0) + 1);
@@ -354,111 +362,112 @@ function collectTypesFromType(t: IonType, out: Map<string, number>): void {
     case 'Int': case 'Float': case 'Str': case 'Bool':
     case 'Null': case 'Unit': case 'Never': case 'TypeVar':
       break;
-    case 'List':   collectTypesFromType(t.elem, out); break;
-    case 'Option': collectTypesFromType(t.inner, out); break;
+    case 'List':   collectTypesFromType(t.elem, out, depth + 1); break;
+    case 'Option': collectTypesFromType(t.inner, out, depth + 1); break;
     case 'Map':
-      collectTypesFromType(t.key, out);
-      collectTypesFromType(t.value, out);
+      collectTypesFromType(t.key, out, depth + 1);
+      collectTypesFromType(t.value, out, depth + 1);
       break;
     case 'Result':
-      collectTypesFromType(t.ok, out);
-      collectTypesFromType(t.err, out);
+      collectTypesFromType(t.ok, out, depth + 1);
+      collectTypesFromType(t.err, out, depth + 1);
       break;
     case 'Fn':
-      for (const p of t.params) collectTypesFromType(p, out);
-      collectTypesFromType(t.ret, out);
+      for (const p of t.params) collectTypesFromType(p, out, depth + 1);
+      collectTypesFromType(t.ret, out, depth + 1);
       break;
     case 'User':
-      for (const a of t.args) collectTypesFromType(a, out);
+      for (const a of t.args) collectTypesFromType(a, out, depth + 1);
       break;
     default:
       assertNever(t);
   }
 }
 
-function collectTypesFromNode(node: IonIRNode, out: Map<string, number>): void {
-  collectTypesFromType(node.type, out);
+function collectTypesFromNode(node: IonIRNode, out: Map<string, number>, depth = 0): void {
+  if (depth > MAX_ENCODE_DEPTH) throw new WireEncodeError(`IonIR nesting exceeds maximum depth (${MAX_ENCODE_DEPTH})`);
+  collectTypesFromType(node.type, out, depth);
   switch (node.kind) {
     case 'Var': case 'Literal': case 'ModuleRef': case 'OopThis': break;
     case 'App':
-      collectTypesFromNode(node.callee, out);
-      for (const a of node.args) collectTypesFromNode(a, out);
+      collectTypesFromNode(node.callee, out, depth + 1);
+      for (const a of node.args) collectTypesFromNode(a, out, depth + 1);
       break;
     case 'Abs':
-      for (const p of node.params) collectTypesFromType(p.type, out);
-      collectTypesFromNode(node.body, out);
+      for (const p of node.params) collectTypesFromType(p.type, out, depth);
+      collectTypesFromNode(node.body, out, depth + 1);
       break;
     case 'Let':
-      collectTypesFromType(node.bindingType, out);
-      collectTypesFromNode(node.value, out);
-      collectTypesFromNode(node.body, out);
+      collectTypesFromType(node.bindingType, out, depth);
+      collectTypesFromNode(node.value, out, depth + 1);
+      collectTypesFromNode(node.body, out, depth + 1);
       break;
     case 'Case':
-      collectTypesFromNode(node.scrutinee, out);
+      collectTypesFromNode(node.scrutinee, out, depth + 1);
       for (const arm of node.arms) {
-        if (arm.guard !== undefined) collectTypesFromNode(arm.guard, out);
-        collectTypesFromNode(arm.body, out);
+        if (arm.guard !== undefined) collectTypesFromNode(arm.guard, out, depth + 1);
+        collectTypesFromNode(arm.body, out, depth + 1);
       }
       break;
     case 'Constructor':
-      for (const a of node.args) collectTypesFromNode(a, out);
+      for (const a of node.args) collectTypesFromNode(a, out, depth + 1);
       break;
-    case 'Accessor': collectTypesFromNode(node.receiver, out); break;
+    case 'Accessor': collectTypesFromNode(node.receiver, out, depth + 1); break;
     case 'ForeignRef':
-      for (const p of node.sig.params) collectTypesFromType(p, out);
-      collectTypesFromType(node.sig.ret, out);
+      for (const p of node.sig.params) collectTypesFromType(p, out, depth);
+      collectTypesFromType(node.sig.ret, out, depth);
       break;
-    case 'Effect': collectTypesFromNode(node.body, out); break;
+    case 'Effect': collectTypesFromNode(node.body, out, depth + 1); break;
     case 'OopClass':
-      for (const f of node.fields) collectTypesFromType(f.type, out);
+      for (const f of node.fields) collectTypesFromType(f.type, out, depth);
       for (const m of node.methods) {
-        for (const p of m.params) collectTypesFromType(p.type, out);
-        collectTypesFromType(m.retType, out);
-        if (m.body !== undefined) collectTypesFromNode(m.body, out);
+        for (const p of m.params) collectTypesFromType(p.type, out, depth);
+        collectTypesFromType(m.retType, out, depth);
+        if (m.body !== undefined) collectTypesFromNode(m.body, out, depth + 1);
       }
       break;
     case 'OopInterface':
-      for (const mem of node.members) collectTypesFromType(mem.type, out);
+      for (const mem of node.members) collectTypesFromType(mem.type, out, depth);
       break;
     case 'OopNew':
-      for (const a of node.args) collectTypesFromNode(a, out);
+      for (const a of node.args) collectTypesFromNode(a, out, depth + 1);
       break;
     case 'OopVirtualCall':
-      collectTypesFromNode(node.receiver, out);
-      for (const a of node.args) collectTypesFromNode(a, out);
+      collectTypesFromNode(node.receiver, out, depth + 1);
+      for (const a of node.args) collectTypesFromNode(a, out, depth + 1);
       break;
-    case 'AsyncBlock': collectTypesFromNode(node.body, out); break;
-    case 'Await':      collectTypesFromNode(node.expr, out); break;
+    case 'AsyncBlock': collectTypesFromNode(node.body, out, depth + 1); break;
+    case 'Await':      collectTypesFromNode(node.expr, out, depth + 1); break;
     case 'AdtDecl':
       for (const v of node.variants) {
-        for (const f of v.fields) collectTypesFromType(f.type, out);
+        for (const f of v.fields) collectTypesFromType(f.type, out, depth);
       }
       break;
     case 'AdtMatch':
-      collectTypesFromNode(node.scrutinee, out);
+      collectTypesFromNode(node.scrutinee, out, depth + 1);
       for (const arm of node.arms) {
-        for (const b of arm.bindings) collectTypesFromType(b.type, out);
-        collectTypesFromNode(arm.body, out);
+        for (const b of arm.bindings) collectTypesFromType(b.type, out, depth);
+        collectTypesFromNode(arm.body, out, depth + 1);
       }
       break;
     case 'EffectDecl':
       for (const op of node.operations) {
-        for (const p of op.params) collectTypesFromType(p.type, out);
-        collectTypesFromType(op.retType, out);
+        for (const p of op.params) collectTypesFromType(p.type, out, depth);
+        collectTypesFromType(op.retType, out, depth);
       }
       break;
     case 'Perform':
-      for (const a of node.args) collectTypesFromNode(a, out);
+      for (const a of node.args) collectTypesFromNode(a, out, depth + 1);
       break;
     case 'Handle':
-      collectTypesFromNode(node.body, out);
+      collectTypesFromNode(node.body, out, depth + 1);
       for (const h of node.handlers) {
-        for (const p of h.params) collectTypesFromType(p.type, out);
-        collectTypesFromNode(h.body, out);
+        for (const p of h.params) collectTypesFromType(p.type, out, depth);
+        collectTypesFromNode(h.body, out, depth + 1);
       }
-      if (node.returnClause !== undefined) collectTypesFromNode(node.returnClause, out);
+      if (node.returnClause !== undefined) collectTypesFromNode(node.returnClause, out, depth + 1);
       break;
-    case 'Resume': collectTypesFromNode(node.value, out); break;
+    case 'Resume': collectTypesFromNode(node.value, out, depth + 1); break;
     default: assertNever(node);
   }
 }
@@ -635,12 +644,13 @@ function encodeLiteral(v: LiteralValue): string {
   }
 }
 
-function encodePattern(p: CasePattern, ctx: EncoderContext): string {
+function encodePattern(p: CasePattern, ctx: EncoderContext, depth = 0): string {
+  if (depth > MAX_ENCODE_DEPTH) throw new WireEncodeError(`IonIR nesting exceeds maximum depth (${MAX_ENCODE_DEPTH})`);
   switch (p.kind) {
     case 'Wildcard': return '_';
     case 'Var':      return encodeName(p.name, ctx.sym);
     case 'Constructor': {
-      const fields = p.fields.map(f => encodePattern(f, ctx)).join(',');
+      const fields = p.fields.map(f => encodePattern(f, ctx, depth + 1)).join(',');
       return `${encodeName(p.ctorName, ctx.sym)}(${fields})`;
     }
     case 'Literal': return encodeLiteral(p.value);
@@ -653,7 +663,8 @@ function encodeParam(p: Param, ctx: EncoderContext): string {
 }
 
 /** Encodes an IonIRNode to its compact wire representation. */
-function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
+function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
+  if (depth > MAX_ENCODE_DEPTH) throw new WireEncodeError(`IonIR nesting exceeds maximum depth (${MAX_ENCODE_DEPTH})`);
   switch (node.kind) {
     case 'Var':
       return encodeName(node.name, ctx.sym);
@@ -662,36 +673,36 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
       return encodeLiteral(node.value);
 
     case 'App': {
-      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
-      return `${encodeNode(node.callee, ctx)}(${args})`;
+      const args = node.args.map(a => encodeNode(a, ctx, depth + 1)).join(',');
+      return `${encodeNode(node.callee, ctx, depth + 1)}(${args})`;
     }
 
     case 'Abs': {
       const params = node.params.map(p => encodeParam(p, ctx)).join(',');
-      return `(${params})->${encodeNode(node.body, ctx)}`;
+      return `(${params})->${encodeNode(node.body, ctx, depth + 1)}`;
     }
 
     case 'Let': {
       const n = encodeName(node.name, ctx.sym);
       const t = encodeType(node.bindingType, ctx);
-      return `let ${n}:${t}=${encodeNode(node.value, ctx)};${encodeNode(node.body, ctx)}`;
+      return `let ${n}:${t}=${encodeNode(node.value, ctx, depth + 1)};${encodeNode(node.body, ctx, depth + 1)}`;
     }
 
     case 'Case': {
       const arms = node.arms.map(arm => {
-        const guard = arm.guard !== undefined ? ` if ${encodeNode(arm.guard, ctx)}` : '';
-        return `${encodePattern(arm.pattern, ctx)}${guard}->${encodeNode(arm.body, ctx)}`;
+        const guard = arm.guard !== undefined ? ` if ${encodeNode(arm.guard, ctx, depth + 1)}` : '';
+        return `${encodePattern(arm.pattern, ctx, depth)}${guard}->${encodeNode(arm.body, ctx, depth + 1)}`;
       }).join(';');
-      return `match(${encodeNode(node.scrutinee, ctx)}){${arms}}`;
+      return `match(${encodeNode(node.scrutinee, ctx, depth + 1)}){${arms}}`;
     }
 
     case 'Constructor': {
-      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
+      const args = node.args.map(a => encodeNode(a, ctx, depth + 1)).join(',');
       return `${encodeName(node.ctorName, ctx.sym)}(${args})`;
     }
 
     case 'Accessor':
-      return `${encodeNode(node.receiver, ctx)}.${encodeName(node.member, ctx.sym)}`;
+      return `${encodeNode(node.receiver, ctx, depth + 1)}.${encodeName(node.member, ctx.sym)}`;
 
     case 'ModuleRef':
       return `${node.modulePath.map(p => encodeName(p, ctx.sym)).join('.')}::${String(node.symbolId)}`;
@@ -700,14 +711,14 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
       return `ffi:${node.target}:${node.module}:${node.symbol}`;
 
     case 'Effect':
-      return `eff!${node.effectTag}(${encodeNode(node.body, ctx)})`;
+      return `eff!${node.effectTag}(${encodeNode(node.body, ctx, depth + 1)})`;
 
     // OOP dialect — provisional: awaiting decoder validation (TASK-004)
     case 'OopClass': {
       const fields = node.fields.map(f => encodeParam(f, ctx)).join(',');
       const methods = node.methods.map(m => {
         const ps = m.params.map(p => encodeParam(p, ctx)).join(',');
-        const body = m.body !== undefined ? encodeNode(m.body, ctx) : '';
+        const body = m.body !== undefined ? encodeNode(m.body, ctx, depth + 1) : '';
         return `${encodeName(m.name, ctx.sym)}(${ps})->${encodeType(m.retType, ctx)}{${body}}`;
       }).join(';');
       const sup = node.superClass !== undefined ? `:${String(node.superClass)}` : '';
@@ -722,13 +733,13 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
     }
 
     case 'OopNew': {
-      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
+      const args = node.args.map(a => encodeNode(a, ctx, depth + 1)).join(',');
       return `new ${String(node.ctorSymbolId)}(${args})`;
     }
 
     case 'OopVirtualCall': {
-      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
-      return `${encodeNode(node.receiver, ctx)}->${encodeName(node.method, ctx.sym)}(${args})`;
+      const args = node.args.map(a => encodeNode(a, ctx, depth + 1)).join(',');
+      return `${encodeNode(node.receiver, ctx, depth + 1)}->${encodeName(node.method, ctx.sym)}(${args})`;
     }
 
     case 'OopThis':
@@ -736,10 +747,10 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
 
     // Async dialect
     case 'AsyncBlock':
-      return `async{${encodeNode(node.body, ctx)}}`;
+      return `async{${encodeNode(node.body, ctx, depth + 1)}}`;
 
     case 'Await':
-      return `await(${encodeNode(node.expr, ctx)})`;
+      return `await(${encodeNode(node.expr, ctx, depth + 1)})`;
 
     // ADT dialect
     case 'AdtDecl': {
@@ -755,9 +766,9 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
     case 'AdtMatch': {
       const arms = node.arms.map(arm => {
         const bindings = arm.bindings.map(b => encodeParam(b, ctx)).join(',');
-        return `${encodeName(arm.tag, ctx.sym)}(${bindings})->${encodeNode(arm.body, ctx)}`;
+        return `${encodeName(arm.tag, ctx.sym)}(${bindings})->${encodeNode(arm.body, ctx, depth + 1)}`;
       }).join(';');
-      return `adt(${encodeNode(node.scrutinee, ctx)}){${arms}}`;
+      return `adt(${encodeNode(node.scrutinee, ctx, depth + 1)}){${arms}}`;
     }
 
     // Effects dialect — provisional: awaiting decoder validation (TASK-004)
@@ -770,23 +781,23 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
     }
 
     case 'Perform': {
-      const args = node.args.map(a => encodeNode(a, ctx)).join(',');
+      const args = node.args.map(a => encodeNode(a, ctx, depth + 1)).join(',');
       return `perf!${String(node.effectSymbolId)}:${encodeName(node.operation, ctx.sym)}(${args})`;
     }
 
     case 'Handle': {
       const handlers = node.handlers.map(h => {
         const ps = h.params.map(p => encodeParam(p, ctx)).join(',');
-        return `${encodeName(h.operation, ctx.sym)}(${ps})->${encodeNode(h.body, ctx)}`;
+        return `${encodeName(h.operation, ctx.sym)}(${ps})->${encodeNode(h.body, ctx, depth + 1)}`;
       }).join(';');
       const ret = node.returnClause !== undefined
-        ? `;ret:${encodeNode(node.returnClause, ctx)}`
+        ? `;ret:${encodeNode(node.returnClause, ctx, depth + 1)}`
         : '';
-      return `handle(${encodeNode(node.body, ctx)}){${handlers}}${ret}`;
+      return `handle(${encodeNode(node.body, ctx, depth + 1)}){${handlers}}${ret}`;
     }
 
     case 'Resume':
-      return `resume(${encodeNode(node.value, ctx)})`;
+      return `resume(${encodeNode(node.value, ctx, depth + 1)})`;
 
     default:
       return assertNever(node);
