@@ -7,9 +7,15 @@ import type {
 } from '../ast/nodes.js';
 import type { IonType, TypeVar, FnType } from '../ir/types.js';
 import type { SymbolId, Span } from '../types.js';
-import type { SymbolTable } from '../binder/symbol-table.js';
-import type { ResolutionMap } from '../binder/index.js';
 import type { CheckError } from './types.js';
+
+/** Minimal structural type for the old binder symbol table API used by this module. */
+interface SymbolTable {
+  all(): Iterable<{ readonly id: SymbolId; readonly name: string; readonly declKind: string; readonly span: Span; readonly pub: boolean }>;
+}
+
+/** Span-key → SymbolId mapping produced by the binder. */
+type ResolutionMap = ReadonlyMap<string, SymbolId>;
 import { resolveAnnotation } from './annotation.js';
 import { applySubst, applySubstEnv, composeSubst, emptySubst, unify, typeStr } from './unifier.js';
 import { checkExhaustiveness } from './exhaust.js';
