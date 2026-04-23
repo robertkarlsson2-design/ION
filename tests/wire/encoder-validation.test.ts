@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { encodeModule, WireEncodeError } from '../../src/wire/encoder.js';
+import { encodeModule, WireEncodeError, MAX_ENCODE_DEPTH } from '../../src/wire/encoder.js';
 import { makeSymbolId } from '../../src/types.js';
 import type {
   IonIRModule,
@@ -8,6 +8,7 @@ import type {
   IonIRDialect,
   AdtDeclNode,
   ModuleRefNode,
+  CasePattern,
 } from '../../src/ir/nodes.js';
 import type { IonType } from '../../src/ir/types.js';
 import type { Span } from '../../src/types.js';
@@ -245,6 +246,158 @@ describe('Suite W — property tests', () => {
         expect(() => encodeModule(mod)).not.toThrow();
       }),
       { numRuns: 200 },
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Depth limit fixture helpers
+// ---------------------------------------------------------------------------
+
+function makeLetChain(depth: number): IonIRNode {
+  let node: IonIRNode = varNode('x');
+  for (let i = 0; i < depth; i++) {
+    node = {
+      kind: 'Let',
+      name: 'x',
+      symbolId: sid,
+      bindingType: intType,
+      value: varNode('x'),
+      body: node,
+      span,
+      type: intType,
+    };
+  }
+  return node;
+}
+
+function makeListType(depth: number): IonType {
+  let t: IonType = intType;
+  for (let i = 0; i < depth; i++) {
+    t = { kind: 'List', elem: t };
+  }
+  return t;
+}
+
+function makeAppChain(depth: number): IonIRNode {
+  let node: IonIRNode = varNode('f');
+  for (let i = 0; i < depth; i++) {
+    node = {
+      kind: 'App',
+      callee: node,
+      args: [],
+      span,
+      type: intType,
+    };
+  }
+  return node;
+}
+
+function makeConstructorPattern(depth: number): CasePattern {
+  let p: CasePattern = { kind: 'Wildcard', span };
+  for (let i = 0; i < depth; i++) {
+    p = { kind: 'Constructor', ctorName: 'C', symbolId: sid, fields: [p], span };
+  }
+  return p;
+}
+
+// ---------------------------------------------------------------------------
+// Suite X — depth limit unit tests
+// ---------------------------------------------------------------------------
+
+describe('Suite X — depth limit unit tests', () => {
+  it('X1: Let-chain of depth MAX_ENCODE_DEPTH+1 throws WireEncodeError', () => {
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      decls: [makeLetChain(MAX_ENCODE_DEPTH + 1)],
+    };
+    expect(() => encodeModule(mod)).toThrow(WireEncodeError);
+  });
+
+  it('X2: nested List type of depth MAX_ENCODE_DEPTH+1 throws WireEncodeError', () => {
+    const deepType = makeListType(MAX_ENCODE_DEPTH + 1);
+    const node: IonIRNode = { kind: 'Var', name: 'x', symbolId: sid, span, type: deepType };
+    const mod: IonIRModule = { ...makeMinimal(), decls: [node] };
+    expect(() => encodeModule(mod)).toThrow(WireEncodeError);
+  });
+
+  it('X3: deeply nested App callee of depth MAX_ENCODE_DEPTH+1 throws WireEncodeError', () => {
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      decls: [makeAppChain(MAX_ENCODE_DEPTH + 1)],
+    };
+    expect(() => encodeModule(mod)).toThrow(WireEncodeError);
+  });
+
+  it('X4: nested Constructor pattern of depth MAX_ENCODE_DEPTH+1 in Case arm throws WireEncodeError', () => {
+    const caseNode: IonIRNode = {
+      kind: 'Case',
+      scrutinee: varNode('x'),
+      arms: [{
+        pattern: makeConstructorPattern(MAX_ENCODE_DEPTH + 1),
+        body: varNode('x'),
+        span,
+      }],
+      span,
+      type: intType,
+    };
+    const mod: IonIRModule = { ...makeMinimal(), decls: [caseNode] };
+    expect(() => encodeModule(mod)).toThrow(WireEncodeError);
+  });
+
+  it('X5: Let-chain of depth exactly MAX_ENCODE_DEPTH does not throw', () => {
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      decls: [makeLetChain(MAX_ENCODE_DEPTH)],
+    };
+    expect(() => encodeModule(mod)).not.toThrow();
+  });
+
+  it('X6: thrown error is an instance of WireEncodeError', () => {
+    let caught: unknown;
+    try {
+      encodeModule({ ...makeMinimal(), decls: [makeLetChain(MAX_ENCODE_DEPTH + 1)] });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(WireEncodeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite Y — depth limit property tests
+// ---------------------------------------------------------------------------
+
+describe('Suite Y — depth limit property tests', () => {
+  it('Y1: Let-chain of depth MAX_ENCODE_DEPTH+n always throws WireEncodeError', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 5 }),
+        n => {
+          const mod: IonIRModule = {
+            ...makeMinimal(),
+            decls: [makeLetChain(MAX_ENCODE_DEPTH + n)],
+          };
+          expect(() => encodeModule(mod)).toThrow(WireEncodeError);
+        },
+      ),
+      { numRuns: 50 },
+    );
+  });
+
+  it('Y2: shallow modules (depth 1-3) do not throw due to depth', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 3 }),
+        depth => {
+          const mod: IonIRModule = {
+            ...makeMinimal(),
+            decls: [makeLetChain(depth)],
+          };
+          expect(() => encodeModule(mod)).not.toThrow();
+        },
+      ),
+      { numRuns: 50 },
     );
   });
 });
