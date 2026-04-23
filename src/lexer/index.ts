@@ -269,15 +269,8 @@ export function lex(source: string, file: string): Token[] {
     // braces — may close interpolations
     if (ch === '{') {
       advance();
-      if (inString) {
-        push(TokenKind.INTERP_OPEN, '{', sl, sc);
-        interpDepthStack.push(braceDepth);
-        braceDepth = 0;
-        inString = false;
-      } else {
-        braceDepth++;
-        push(TokenKind.LBRACE, '{', sl, sc);
-      }
+      braceDepth++;
+      push(TokenKind.LBRACE, '{', sl, sc);
       continue;
     }
 
