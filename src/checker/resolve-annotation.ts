@@ -47,7 +47,7 @@ export function resolveAnnotation(
       for (const entry of symbolTable.symbols.values()) {
         if (
           entry.name === ann.name &&
-          (entry.kind === 'data' || entry.kind === 'typeAlias')
+          (entry.declKind === 'Data' || entry.declKind === 'TypeAlias')
         ) {
           return { kind: 'User', name: ann.name, symbolId: entry.id, args: [] };
         }
@@ -83,7 +83,7 @@ export function resolveAnnotation(
           for (const entry of symbolTable.symbols.values()) {
             if (
               entry.name === ann.name &&
-              (entry.kind === 'data' || entry.kind === 'typeAlias')
+              (entry.declKind === 'Data' || entry.declKind === 'TypeAlias')
             ) {
               return { kind: 'User', name: ann.name, symbolId: entry.id, args };
             }
