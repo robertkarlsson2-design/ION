@@ -479,6 +479,7 @@ describe('IonIR serde — error cases', () => {
       decls: [{ kind: 'Literal', value: { kind: 'Float', value: Infinity }, span, type: intType }],
     };
     expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+    expect(() => serializeModule(mod)).toThrow('decls[0].value.value');
   });
 
   it('throws IonIRSerdeError when serializing Float(-Infinity)', () => {
@@ -492,6 +493,7 @@ describe('IonIR serde — error cases', () => {
       decls: [{ kind: 'Literal', value: { kind: 'Float', value: -Infinity }, span, type: intType }],
     };
     expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+    expect(() => serializeModule(mod)).toThrow('decls[0].value.value');
   });
 
   it('throws IonIRSerdeError when serializing Float(NaN)', () => {
@@ -505,6 +507,7 @@ describe('IonIR serde — error cases', () => {
       decls: [{ kind: 'Literal', value: { kind: 'Float', value: NaN }, span, type: intType }],
     };
     expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+    expect(() => serializeModule(mod)).toThrow('decls[0].value.value');
   });
 });
 
