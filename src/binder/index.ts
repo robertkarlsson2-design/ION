@@ -25,17 +25,86 @@ export { detectCircularImports } from './module-graph.js';
 /** Maps spanKey(span) → SymbolId for every resolved name reference. */
 export type ResolutionMap = Map<string, SymbolId>;
 
+export type ModuleDeclKind =
+  | 'fn'
+  | 'let'
+  | 'letExprBinding'
+  | 'data'
+  | 'typeAlias'
+  | 'extern'
+  | 'module'
+  | 'fnParam'
+  | 'typeParam'
+  | 'patternBinding';
+
+export interface SymbolView {
+  readonly id: SymbolId;
+  readonly name: string;
+  readonly kind: ModuleDeclKind;
+  readonly pub: boolean;
+}
+
+export interface PerModuleSymbolTable {
+  readonly symbols: ReadonlyMap<SymbolId, SymbolView>;
+  readonly exports: ReadonlyMap<string, SymbolId>;
+  readonly references: ReadonlyMap<string, SymbolId>;
+}
+
+export interface PerModuleResult {
+  readonly modulePath: string;
+  readonly symbolTable: PerModuleSymbolTable;
+}
+
+export interface MultiBindResult {
+  readonly modules: readonly PerModuleResult[];
+  readonly errors: readonly BindError[];
+}
+
 export interface BindResult {
   readonly symbolTable: SymbolTable;
   readonly resolutionMap: ResolutionMap;
   readonly moduleGraph: ModuleGraph;
   readonly errors: BindError[];
+  readonly modules: readonly PerModuleResult[];
 }
 
 // \0 is guaranteed absent from all OS file paths, making this key unambiguous.
 function spanKey(span: Span): string {
   return `${span.file}\0${span.startLine}\0${span.startCol}`;
 }
+
+function toDeclKindLower(dk: DeclKind): ModuleDeclKind {
+  switch (dk) {
+    case 'Fn':             return 'fn';
+    case 'Let':            return 'let';
+    case 'LetExpr':        return 'letExprBinding';
+    case 'Data':           return 'data';
+    case 'TypeAlias':      return 'typeAlias';
+    case 'Extern':         return 'extern';
+    case 'Module':         return 'module';
+    case 'Param':          return 'fnParam';
+    case 'TypeParam':      return 'typeParam';
+    case 'PatternBinding': return 'patternBinding';
+  }
+}
+
+function topoSort(graph: ModuleGraph, keys: string[]): string[] {
+  const visited = new Set<string>();
+  const result: string[] = [];
+  function visit(node: string): void {
+    if (visited.has(node)) return;
+    visited.add(node);
+    const deps = graph.get(node);
+    if (deps !== undefined) {
+      for (const dep of deps) visit(dep);
+    }
+    result.push(node);
+  }
+  for (const key of keys) visit(key);
+  return result;
+}
+
+type ImportResolver = (sourcePath: string, name: string) => SymbolId | undefined;
 
 class Binder {
   private readonly symbolTable: SymbolTable = new SymbolTable();
@@ -45,6 +114,8 @@ class Binder {
   private readonly moduleGraph: ModuleGraph = new Map();
   /** Maps "from→to" edge key to the UseDecl span for cycle reporting. */
   private readonly edgeSpans: Map<string, Span> = new Map();
+
+  constructor(private readonly importResolver: ImportResolver | null = null) {}
 
   private freshId(modulePath: string, name: string): SymbolId {
     return makeSymbolId(`${modulePath}$${name}$${this.counter++}`);
@@ -62,6 +133,7 @@ class Binder {
     if (scope.hasOwn(name)) {
       this.errors.push({
         kind: 'DuplicateBinding',
+        name,
         message: `Duplicate binding '${name}'`,
         span,
       });
@@ -98,11 +170,29 @@ class Binder {
     const circularErrors = detectCircularImports(this.moduleGraph, this.edgeSpans);
     this.errors.push(...circularErrors);
 
+    const symbols = new Map<SymbolId, SymbolView>();
+    const exports = new Map<string, SymbolId>();
+    for (const entry of this.symbolTable.all()) {
+      symbols.set(entry.id, {
+        id: entry.id,
+        name: entry.name,
+        kind: toDeclKindLower(entry.declKind),
+        pub: entry.isPublic,
+      });
+      if (entry.isPublic) exports.set(entry.name, entry.id);
+    }
+
+    const perModule: PerModuleResult = {
+      modulePath,
+      symbolTable: { symbols, exports, references: this.resolutionMap },
+    };
+
     return {
       symbolTable: this.symbolTable,
       resolutionMap: this.resolutionMap,
       moduleGraph: this.moduleGraph,
       errors: this.errors,
+      modules: [perModule],
     };
   }
 
@@ -178,7 +268,21 @@ class Binder {
         } else {
           // `use a.b.{x, y}` — each item imported by name.
           for (const item of decl.items) {
-            this.registerDecl(scope, item, 'Module', decl.span, null, false, modulePath);
+            if (this.importResolver !== null) {
+              const resolvedId = this.importResolver(importedPath, item);
+              if (resolvedId !== undefined) {
+                scope.define(item, resolvedId);
+              } else {
+                this.errors.push({
+                  kind: 'UndefinedName',
+                  name: item,
+                  message: `'${item}' is not exported by '${importedPath}'`,
+                  span: decl.span,
+                });
+              }
+            } else {
+              this.registerDecl(scope, item, 'Module', decl.span, null, false, modulePath);
+            }
           }
         }
         break;
@@ -250,6 +354,7 @@ class Binder {
         if (id === undefined) {
           this.errors.push({
             kind: 'UndefinedName',
+            name: expr.name,
             message: `Undefined name '${expr.name}'`,
             span: expr.span,
           });
@@ -321,7 +426,7 @@ class Binder {
         // Value is evaluated in the outer scope; body sees the new binding.
         this.resolveExpr(expr.value, scope, modulePath);
         const letScope = new Scope(scope);
-        this.registerDecl(letScope, expr.name, 'Let', expr.span, expr.type_, false, modulePath);
+        this.registerDecl(letScope, expr.name, 'LetExpr', expr.span, expr.type_, false, modulePath);
         this.resolveExpr(expr.body, letScope, modulePath);
         break;
       }
@@ -373,6 +478,7 @@ class Binder {
         if (id === undefined) {
           this.errors.push({
             kind: 'UndefinedName',
+            name: pattern.tag,
             message: `Undefined constructor '${pattern.tag}'`,
             span: pattern.span,
           });
@@ -400,4 +506,49 @@ class Binder {
 /** Bind a single module, resolving names and building the symbol table. */
 export function bindModule(module: AstModule, modulePath: string): BindResult {
   return new Binder().bind(module, modulePath);
+}
+
+/** Bind multiple modules together, resolving cross-module imports in topological order. */
+export function bindModules(modules: Map<string, AstModule>): MultiBindResult {
+  const graph: ModuleGraph = new Map();
+  const edgeSpans = new Map<string, Span>();
+
+  for (const [path, ast] of modules) {
+    const local = buildModuleGraph(path, ast.decls);
+    for (const [k, v] of local) graph.set(k, new Set(v));
+    for (const decl of ast.decls) {
+      if (decl.kind === 'UseDecl') {
+        edgeSpans.set(`${path}→${decl.path.join('.')}`, decl.span);
+      }
+    }
+  }
+
+  const circularErrors = detectCircularImports(graph, edgeSpans);
+  if (circularErrors.length > 0) {
+    return { modules: [], errors: circularErrors };
+  }
+
+  const sortedPaths = topoSort(graph, [...modules.keys()]);
+
+  const allErrors: BindError[] = [];
+  const perModuleResults: PerModuleResult[] = [];
+  const exportMaps = new Map<string, ReadonlyMap<string, SymbolId>>();
+
+  for (const modulePath of sortedPaths) {
+    const ast = modules.get(modulePath);
+    if (ast === undefined) continue;
+
+    const importResolver: ImportResolver = (srcPath, name) =>
+      exportMaps.get(srcPath)?.get(name);
+
+    const bindResult = new Binder(importResolver).bind(ast, modulePath);
+    allErrors.push(...bindResult.errors);
+
+    // Non-null: bind() always returns exactly one PerModuleResult in modules[0].
+    const perModule = bindResult.modules[0]!;
+    perModuleResults.push(perModule);
+    exportMaps.set(modulePath, perModule.symbolTable.exports);
+  }
+
+  return { modules: perModuleResults, errors: allErrors };
 }

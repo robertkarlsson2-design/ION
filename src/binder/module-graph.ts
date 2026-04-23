@@ -54,6 +54,7 @@ export function detectCircularImports(
           };
           errors.push({
             kind: 'CircularImport',
+            cycle: [...path, node, dep],
             message: `Circular import detected: ${[...path, node, dep].join(' → ')}`,
             span,
           });

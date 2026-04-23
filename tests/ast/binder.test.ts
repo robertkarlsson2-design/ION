@@ -162,7 +162,7 @@ describe('LetExpr scoping', () => {
     );
     expect(errors).toHaveLength(0);
     const letEntry = [...symbolTable.all()].find(
-      e => e.name === 'y' && e.declKind === 'Let',
+      e => e.name === 'y' && e.declKind === 'LetExpr',
     );
     expect(letEntry).toBeDefined();
     expect([...resolutionMap.values()]).toContain(letEntry?.id);

@@ -4,6 +4,7 @@ import type { TypeAnnotation } from '../ast/types.js';
 export type DeclKind =
   | 'Fn'
   | 'Let'
+  | 'LetExpr'
   | 'Data'
   | 'TypeAlias'
   | 'Extern'
