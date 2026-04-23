@@ -767,22 +767,23 @@ class DeclarationParser {
   }
 
   private nud(): ExprNode {
+    const trivia = this.leadingTrivia();
     const tok = this.peek();
     switch (tok.kind) {
-      case TokenKind.INT_LIT: return this.parseLiteralInt();
-      case TokenKind.FLOAT_LIT: return this.parseLiteralFloat();
-      case TokenKind.BOOL_LIT: return this.parseLiteralBool();
-      case TokenKind.NULL_LIT: return this.parseLiteralNull();
-      case TokenKind.STRING_START: return this.parseStringInterp();
+      case TokenKind.INT_LIT: return this.parseLiteralInt(trivia);
+      case TokenKind.FLOAT_LIT: return this.parseLiteralFloat(trivia);
+      case TokenKind.BOOL_LIT: return this.parseLiteralBool(trivia);
+      case TokenKind.NULL_LIT: return this.parseLiteralNull(trivia);
+      case TokenKind.STRING_START: return this.parseStringInterp(trivia);
       case TokenKind.IDENT:
-        if (this.peekAhead(1).kind === TokenKind.ARROW) return this.parseLambda();
-        return this.parseIdent();
-      case TokenKind.MINUS: return this.parseUnaryMinus();
-      case TokenKind.BANG: return this.parseUnaryNot();
-      case TokenKind.KW_IF: return this.parseIfElse();
-      case TokenKind.KW_MATCH: return this.parseMatch();
-      case TokenKind.KW_LET: return this.parseLetExpr();
-      case TokenKind.LPAREN: return this.parseGroupOrLambda();
+        if (this.peekAhead(1).kind === TokenKind.ARROW) return this.parseLambda(trivia);
+        return this.parseIdent(trivia);
+      case TokenKind.MINUS: return this.parseUnaryMinus(trivia);
+      case TokenKind.BANG: return this.parseUnaryNot(trivia);
+      case TokenKind.KW_IF: return this.parseIfElse(trivia);
+      case TokenKind.KW_MATCH: return this.parseMatch(trivia);
+      case TokenKind.KW_LET: return this.parseLetExpr(trivia);
+      case TokenKind.LPAREN: return this.parseGroupOrLambda(trivia);
       default:
         throw new ParseError(`unexpected token ${tok.kind} ('${tok.text}')`, tok.span);
     }
@@ -823,33 +824,32 @@ class DeclarationParser {
     throw new ParseError(`unexpected infix token ${tok.kind}`, tok.span);
   }
 
-  private parseLiteralInt(): LiteralIntNode {
+  private parseLiteralInt(trivia: readonly TriviaNode[]): LiteralIntNode {
     const tok = this.consume();
-    return { kind: 'LiteralInt', value: BigInt(tok.text), raw: tok.text, span: tok.span };
+    return { kind: 'LiteralInt', value: BigInt(tok.text), raw: tok.text, span: tok.span, leadingTrivia: trivia };
   }
 
-  private parseLiteralFloat(): LiteralFloatNode {
+  private parseLiteralFloat(trivia: readonly TriviaNode[]): LiteralFloatNode {
     const tok = this.consume();
-    return { kind: 'LiteralFloat', value: parseFloat(tok.text), raw: tok.text, span: tok.span };
+    return { kind: 'LiteralFloat', value: parseFloat(tok.text), raw: tok.text, span: tok.span, leadingTrivia: trivia };
   }
 
-  private parseLiteralBool(): LiteralBoolNode {
+  private parseLiteralBool(trivia: readonly TriviaNode[]): LiteralBoolNode {
     const tok = this.consume();
-    return { kind: 'LiteralBool', value: tok.text === 'true', span: tok.span };
+    return { kind: 'LiteralBool', value: tok.text === 'true', span: tok.span, leadingTrivia: trivia };
   }
 
-  private parseLiteralNull(): LiteralNullNode {
+  private parseLiteralNull(trivia: readonly TriviaNode[]): LiteralNullNode {
     const tok = this.consume();
-    return { kind: 'LiteralNull', span: tok.span };
+    return { kind: 'LiteralNull', span: tok.span, leadingTrivia: trivia };
   }
 
-  private parseIdent(): IdentNode {
-    const trivia = this.leadingTrivia();
+  private parseIdent(trivia: readonly TriviaNode[]): IdentNode {
     const tok = this.consume();
     return { kind: 'Ident', name: tok.text, span: tok.span, leadingTrivia: trivia };
   }
 
-  private parseStringInterp(): StringLitNode {
+  private parseStringInterp(trivia: readonly TriviaNode[]): StringLitNode {
     const startTok = this.expect(TokenKind.STRING_START);
     const parts: StringPart[] = [];
     while (this.peekKind() !== TokenKind.STRING_END && this.peekKind() !== TokenKind.EOF) {
@@ -866,24 +866,24 @@ class DeclarationParser {
       }
     }
     const endTok = this.expect(TokenKind.STRING_END);
-    return { kind: 'StringLit', parts, span: spanMerge(startTok.span, endTok.span) };
+    return { kind: 'StringLit', parts, span: spanMerge(startTok.span, endTok.span), leadingTrivia: trivia };
   }
 
-  private parseUnaryMinus(): UnaryExprNode {
+  private parseUnaryMinus(trivia: readonly TriviaNode[]): UnaryExprNode {
     const opTok = this.consume();
     const operand = this.parseExpr(8);
-    return { kind: 'UnaryExpr', op: 'Neg', operand, span: spanMerge(opTok.span, operand.span) };
+    return { kind: 'UnaryExpr', op: 'Neg', operand, span: spanMerge(opTok.span, operand.span), leadingTrivia: trivia };
   }
 
-  private parseUnaryNot(): UnaryExprNode {
+  private parseUnaryNot(trivia: readonly TriviaNode[]): UnaryExprNode {
     const opTok = this.consume();
     const operand = this.parseExpr(8);
-    return { kind: 'UnaryExpr', op: 'Not', operand, span: spanMerge(opTok.span, operand.span) };
+    return { kind: 'UnaryExpr', op: 'Not', operand, span: spanMerge(opTok.span, operand.span), leadingTrivia: trivia };
   }
 
-  private parseGroupOrLambda(): ExprNode {
-    if (this.isLambdaParamList()) return this.parseLambda();
-    return this.parseGroup();
+  private parseGroupOrLambda(trivia: readonly TriviaNode[]): ExprNode {
+    if (this.isLambdaParamList()) return this.parseLambda(trivia);
+    return this.parseGroup(trivia);
   }
 
   private isLambdaParamList(): boolean {
@@ -898,19 +898,19 @@ class DeclarationParser {
     return this.nonTrivia[i]?.kind === TokenKind.ARROW;
   }
 
-  private parseGroup(): GroupExprNode {
+  private parseGroup(trivia: readonly TriviaNode[]): GroupExprNode {
     const open = this.expect(TokenKind.LPAREN);
     const inner = this.parseExpr();
     const close = this.expect(TokenKind.RPAREN);
-    return { kind: 'GroupExpr', inner, span: spanMerge(open.span, close.span) };
+    return { kind: 'GroupExpr', inner, span: spanMerge(open.span, close.span), leadingTrivia: trivia };
   }
 
-  private parseLambda(): LambdaExprNode {
+  private parseLambda(trivia: readonly TriviaNode[]): LambdaExprNode {
     const params = this.parseLambdaParams();
     this.expect(TokenKind.ARROW);
     const body = this.parseExpr();
     const startSpan = params[0]?.span ?? body.span;
-    return { kind: 'LambdaExpr', params, body, span: spanMerge(startSpan, body.span) };
+    return { kind: 'LambdaExpr', params, body, span: spanMerge(startSpan, body.span), leadingTrivia: trivia };
   }
 
   private parseLambdaParams(): LambdaParam[] {
@@ -971,17 +971,17 @@ class DeclarationParser {
     return { label: null, value, span: value.span };
   }
 
-  private parseIfElse(): IfElseExprNode {
+  private parseIfElse(trivia: readonly TriviaNode[]): IfElseExprNode {
     const kwTok = this.expect(TokenKind.KW_IF);
     const cond = this.parseExpr();
     this.expect(TokenKind.KW_THEN);
     const then = this.parseExpr();
     this.expect(TokenKind.KW_ELSE);
     const else_ = this.parseExpr();
-    return { kind: 'IfElseExpr', cond, then, else_, span: spanMerge(kwTok.span, else_.span) };
+    return { kind: 'IfElseExpr', cond, then, else_, span: spanMerge(kwTok.span, else_.span), leadingTrivia: trivia };
   }
 
-  private parseMatch(): MatchExprNode {
+  private parseMatch(trivia: readonly TriviaNode[]): MatchExprNode {
     const kwTok = this.expect(TokenKind.KW_MATCH);
     const scrutinee = this.parseExpr();
     const arms: MatchArm[] = [];
@@ -990,7 +990,7 @@ class DeclarationParser {
     }
     const lastArm = arms[arms.length - 1];
     const endSpan = lastArm?.span ?? scrutinee.span;
-    return { kind: 'MatchExpr', scrutinee, arms, span: spanMerge(kwTok.span, endSpan) };
+    return { kind: 'MatchExpr', scrutinee, arms, span: spanMerge(kwTok.span, endSpan), leadingTrivia: trivia };
   }
 
   private parseMatchArm(): MatchArm {
@@ -1032,10 +1032,10 @@ class DeclarationParser {
       return { kind: 'IdentPat', name: nameTok.text, span: nameTok.span };
     }
 
-    if (tok.kind === TokenKind.INT_LIT) { const lit = this.parseLiteralInt(); return { kind: 'LiteralPat', value: lit, span: lit.span }; }
-    if (tok.kind === TokenKind.FLOAT_LIT) { const lit = this.parseLiteralFloat(); return { kind: 'LiteralPat', value: lit, span: lit.span }; }
-    if (tok.kind === TokenKind.BOOL_LIT) { const lit = this.parseLiteralBool(); return { kind: 'LiteralPat', value: lit, span: lit.span }; }
-    if (tok.kind === TokenKind.NULL_LIT) { const lit = this.parseLiteralNull(); return { kind: 'LiteralPat', value: lit, span: lit.span }; }
+    if (tok.kind === TokenKind.INT_LIT) { const lit = this.parseLiteralInt([]); return { kind: 'LiteralPat', value: lit, span: lit.span }; }
+    if (tok.kind === TokenKind.FLOAT_LIT) { const lit = this.parseLiteralFloat([]); return { kind: 'LiteralPat', value: lit, span: lit.span }; }
+    if (tok.kind === TokenKind.BOOL_LIT) { const lit = this.parseLiteralBool([]); return { kind: 'LiteralPat', value: lit, span: lit.span }; }
+    if (tok.kind === TokenKind.NULL_LIT) { const lit = this.parseLiteralNull([]); return { kind: 'LiteralPat', value: lit, span: lit.span }; }
 
     if (tok.kind === TokenKind.LPAREN) {
       const open = this.consume();
@@ -1055,7 +1055,7 @@ class DeclarationParser {
     throw new ParseError(`expected pattern, got ${tok.kind} ('${tok.text}')`, tok.span);
   }
 
-  private parseLetExpr(): LetExprNode {
+  private parseLetExpr(trivia: readonly TriviaNode[]): LetExprNode {
     const kwTok = this.expect(TokenKind.KW_LET);
     const nameTok = this.expect(TokenKind.IDENT);
     let type_: TypeAnnotation | null = null;
@@ -1067,7 +1067,7 @@ class DeclarationParser {
     const value = this.parseExpr();
     this.expect(TokenKind.SEMICOLON);
     const body = this.parseExpr();
-    return { kind: 'LetExpr', name: nameTok.text, type_, value, body, span: spanMerge(kwTok.span, body.span) };
+    return { kind: 'LetExpr', name: nameTok.text, type_, value, body, span: spanMerge(kwTok.span, body.span), leadingTrivia: trivia };
   }
 }
 
