@@ -1,14 +1,25 @@
 import type { Span } from '../types.js';
 import type { TypeAnnotation, EffectTag } from './types.js';
-import type { BinopKind, UnaryKind, LiteralIntNode, LiteralFloatNode, LiteralBoolNode, LiteralNullNode } from '../parser/cst.js';
+import type {
+  BinopKind,
+  UnaryKind,
+  LiteralIntNode as CstLiteralIntNode,
+  LiteralFloatNode as CstLiteralFloatNode,
+  LiteralBoolNode as CstLiteralBoolNode,
+  LiteralNullNode as CstLiteralNullNode,
+} from '../parser/cst.js';
 
 export type { TypeAnnotation, EffectTag, Span };
 
 // ---------------------------------------------------------------------------
-// Re-exported from parser/cst (no trivia fields — shared between CST and AST)
+// Re-exported from parser/cst — trivia stripped at the AST boundary
 // ---------------------------------------------------------------------------
 
-export type { BinopKind, UnaryKind, LiteralIntNode, LiteralFloatNode, LiteralBoolNode, LiteralNullNode } from '../parser/cst.js';
+export type { BinopKind, UnaryKind };
+export type LiteralIntNode = Omit<CstLiteralIntNode, 'leadingTrivia'>;
+export type LiteralFloatNode = Omit<CstLiteralFloatNode, 'leadingTrivia'>;
+export type LiteralBoolNode = Omit<CstLiteralBoolNode, 'leadingTrivia'>;
+export type LiteralNullNode = Omit<CstLiteralNullNode, 'leadingTrivia'>;
 
 // ---------------------------------------------------------------------------
 // String interpolation

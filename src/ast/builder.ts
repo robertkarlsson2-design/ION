@@ -58,14 +58,18 @@ function buildMatchArm(arm: MatchArm): AstMatchArm {
 function buildLiteral(
   node: LiteralNode,
 ): LiteralIntNode | LiteralFloatNode | LiteralBoolNode | LiteralNullNode | AstStringLitNode {
-  if (node.kind === 'StringLit') {
-    return {
-      kind: 'StringLit',
-      parts: node.parts.map(buildStringPart),
-      span: node.span,
-    };
+  switch (node.kind) {
+    case 'LiteralInt':
+      return { kind: 'LiteralInt', value: node.value, raw: node.raw, span: node.span };
+    case 'LiteralFloat':
+      return { kind: 'LiteralFloat', value: node.value, raw: node.raw, span: node.span };
+    case 'LiteralBool':
+      return { kind: 'LiteralBool', value: node.value, span: node.span };
+    case 'LiteralNull':
+      return { kind: 'LiteralNull', span: node.span };
+    case 'StringLit':
+      return { kind: 'StringLit', parts: node.parts.map(buildStringPart), span: node.span };
   }
-  return node;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,10 +101,13 @@ export function buildPattern(cst: PatternNode): AstPatternNode {
 export function buildExpr(cst: ExprNode): AstExprNode {
   switch (cst.kind) {
     case 'LiteralInt':
+      return { kind: 'LiteralInt', value: cst.value, raw: cst.raw, span: cst.span };
     case 'LiteralFloat':
+      return { kind: 'LiteralFloat', value: cst.value, raw: cst.raw, span: cst.span };
     case 'LiteralBool':
+      return { kind: 'LiteralBool', value: cst.value, span: cst.span };
     case 'LiteralNull':
-      return cst;
+      return { kind: 'LiteralNull', span: cst.span };
 
     case 'StringLit':
       return {

@@ -29,6 +29,7 @@ export interface LiteralIntNode {
   readonly value: bigint;
   readonly raw: string;
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 export interface LiteralFloatNode {
@@ -36,17 +37,20 @@ export interface LiteralFloatNode {
   readonly value: number;
   readonly raw: string;
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 export interface LiteralBoolNode {
   readonly kind: 'LiteralBool';
   readonly value: boolean;
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 export interface LiteralNullNode {
   readonly kind: 'LiteralNull';
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +65,7 @@ export interface StringLitNode {
   readonly kind: 'StringLit';
   readonly parts: readonly StringPart[];
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +141,7 @@ export interface UnaryExprNode {
   readonly op: UnaryKind;
   readonly operand: ExprNode;
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 export interface CallExprNode {
@@ -150,6 +156,7 @@ export interface LambdaExprNode {
   readonly params: readonly LambdaParam[];
   readonly body: ExprNode;
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 export interface PipelineExprNode {
@@ -165,6 +172,7 @@ export interface IfElseExprNode {
   readonly then: ExprNode;
   readonly else_: ExprNode;
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 export interface MatchExprNode {
@@ -172,6 +180,7 @@ export interface MatchExprNode {
   readonly scrutinee: ExprNode;
   readonly arms: readonly MatchArm[];
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 export interface LetExprNode {
@@ -181,6 +190,7 @@ export interface LetExprNode {
   readonly value: ExprNode;
   readonly body: ExprNode;
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 export interface AccessorExprNode {
@@ -200,6 +210,7 @@ export interface GroupExprNode {
   readonly kind: 'GroupExpr';
   readonly inner: ExprNode;
   readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
 }
 
 export type ExprNode =

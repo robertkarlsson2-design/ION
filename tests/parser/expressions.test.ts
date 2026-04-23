@@ -362,6 +362,60 @@ describe('trivia preservation', () => {
     expect(node.leadingTrivia.length).toBeGreaterThan(0);
     expect(node.leadingTrivia[0]?.kind).toBe('Whitespace');
   });
+
+  it('line comment before int literal is attached', () => {
+    const tokens = lex('// hello\n42', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'LiteralInt') as LiteralIntNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'LineComment')).toBe(true);
+  });
+
+  it('block comment before float literal is attached', () => {
+    const tokens = lex('/* x */3.14', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'LiteralFloat') as LiteralFloatNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'BlockComment')).toBe(true);
+  });
+
+  it('whitespace before if is attached', () => {
+    const tokens = lex('  if c then 1 else 2', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'IfElseExpr') as IfElseExprNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'Whitespace')).toBe(true);
+  });
+
+  it('line comment before let is attached', () => {
+    const tokens = lex('// note\nlet x = 1; x', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'LetExpr') as LetExprNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'LineComment')).toBe(true);
+  });
+
+  it('whitespace before unary minus is attached', () => {
+    const tokens = lex(' -x', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'UnaryExpr') as UnaryExprNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'Whitespace')).toBe(true);
+  });
+
+  it('line comment before match is attached', () => {
+    const tokens = lex('// m\nmatch x | _ -> 0', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'MatchExpr') as MatchExprNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'LineComment')).toBe(true);
+  });
+
+  it('whitespace before group expr is attached', () => {
+    const tokens = lex(' (1 + 2)', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'GroupExpr') as GroupExprNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'Whitespace')).toBe(true);
+  });
+
+  it('whitespace before lambda is attached', () => {
+    const tokens = lex(' x -> x', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'LambdaExpr') as LambdaExprNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'Whitespace')).toBe(true);
+  });
+
+  it('line comment before bool literal is attached', () => {
+    const tokens = lex('// b\ntrue', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'LiteralBool') as LiteralBoolNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'LineComment')).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
