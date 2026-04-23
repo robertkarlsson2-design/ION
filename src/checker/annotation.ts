@@ -1,7 +1,6 @@
 import type { TypeAnnotation } from '../ast/types.js';
 import type { IonType, TypeVar } from '../ir/types.js';
 import type { SymbolId } from '../types.js';
-import { makeSymbolId } from '../types.js';
 import type { CheckError } from './types.js';
 
 /**
@@ -87,12 +86,9 @@ export function resolveAnnotation(
       };
 
     case 'Tuple':
-      // TupleType has no IonType variant; represent as UserType with synthetic __Tuple name.
       return {
-        kind: 'User',
-        name: '__Tuple',
-        symbolId: makeSymbolId('__tuple'),
-        args: ann.elements.map(e => resolveAnnotation(e, nameIndex, typeParamEnv, errors)),
+        kind: 'Tuple',
+        elements: ann.elements.map(e => resolveAnnotation(e, nameIndex, typeParamEnv, errors)),
       };
   }
 }

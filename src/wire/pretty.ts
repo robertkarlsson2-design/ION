@@ -156,6 +156,8 @@ export function prettyPrintType(type: IonType): string {
       }
       return `(${paramsStr}) -[${effects.join(', ')}]-> ${retStr}`;
     }
+    case 'Tuple':
+      return `(${type.elements.map(prettyPrintType).join(', ')})`;
     case 'User': {
       if (type.args.length === 0) return type.name;
       return `${type.name}<${type.args.map(prettyPrintType).join(', ')}>`;

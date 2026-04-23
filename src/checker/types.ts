@@ -11,6 +11,7 @@ export type {
   OptionType,
   ResultType,
   FnType,
+  TupleType,
   UserType,
   TypeVar,
   NeverType,
@@ -25,6 +26,7 @@ import type {
   OptionType,
   ResultType,
   FnType,
+  TupleType,
   UserType,
 } from '../ir/types.js';
 
@@ -67,6 +69,8 @@ export function applySubst(s: Substitution, t: IonType): IonType {
         ret: applySubst(s, t.ret),
         effects: t.effects,
       };
+    case 'Tuple':
+      return { kind: 'Tuple', elements: t.elements.map(e => applySubst(s, e)) };
     case 'User':
       return {
         kind: 'User',
@@ -97,6 +101,8 @@ export function typeToString(t: IonType): string {
       const effs = t.effects.size > 0 ? ` !${[...t.effects].join(' !')}` : '';
       return `(${ps}) -> ${typeToString(t.ret)}${effs}`;
     }
+    case 'Tuple':
+      return `(${t.elements.map(typeToString).join(', ')})`;
     case 'User':
       if (t.args.length === 0) return t.name;
       return `${t.name}<${t.args.map(typeToString).join(', ')}>`;
@@ -138,6 +144,16 @@ export function typesEqual(a: IonType, b: IonType): boolean {
         if (!typesEqual(a.params[i]!, bf.params[i]!)) return false;
       }
       return typesEqual(a.ret, bf.ret);
+    }
+    case 'Tuple': {
+      const bt = b as TupleType;
+      if (a.elements.length !== bt.elements.length) return false;
+      for (let i = 0; i < a.elements.length; i++) {
+        // Array bounds are checked by the length guard above.
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        if (!typesEqual(a.elements[i]!, bt.elements[i]!)) return false;
+      }
+      return true;
     }
     case 'User': {
       const bu = b as UserType;

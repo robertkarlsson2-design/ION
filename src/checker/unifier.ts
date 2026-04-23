@@ -48,6 +48,8 @@ export function applySubst(subst: Substitution, type: IonType): IonType {
       return { kind: 'Option', inner: applySubst(subst, type.inner) };
     case 'Result':
       return { kind: 'Result', ok: applySubst(subst, type.ok), err: applySubst(subst, type.err) };
+    case 'Tuple':
+      return { kind: 'Tuple', elements: type.elements.map(e => applySubst(subst, e)) };
     case 'User':
       return { ...type, args: type.args.map(a => applySubst(subst, a)) };
     default:
@@ -76,6 +78,7 @@ export function occursIn(id: string, type: IonType): boolean {
     case 'Map': return occursIn(id, type.key) || occursIn(id, type.value);
     case 'Option': return occursIn(id, type.inner);
     case 'Result': return occursIn(id, type.ok) || occursIn(id, type.err);
+    case 'Tuple': return type.elements.some(e => occursIn(id, e));
     case 'User': return type.args.some(a => occursIn(id, a));
     default: return false;
   }
@@ -146,6 +149,19 @@ export function unify(
     return unify(a.err, b.err, s, span, errors);
   }
 
+  if (a.kind === 'Tuple' && b.kind === 'Tuple') {
+    if (a.elements.length !== b.elements.length) {
+      errors.push(makeMismatch(t1, t2, span));
+      return subst;
+    }
+    let s = subst;
+    for (let i = 0; i < a.elements.length; i++) {
+      // Non-null: both arrays have length a.elements.length.
+      s = unify(a.elements[i]!, b.elements[i]!, s, span, errors);
+    }
+    return s;
+  }
+
   if (a.kind === 'User' && b.kind === 'User' && a.name === b.name) {
     if (a.args.length !== b.args.length) {
       errors.push(makeMismatch(t1, t2, span));
@@ -186,6 +202,12 @@ export function typesEqual(a: IonType, b: IonType): boolean {
       typesEqual(a.ret, b.ret)
     );
   }
+  if (a.kind === 'Tuple' && b.kind === 'Tuple') {
+    return (
+      a.elements.length === b.elements.length &&
+      a.elements.every((e, i) => typesEqual(e, b.elements[i]!))
+    );
+  }
   if (a.kind === 'User' && b.kind === 'User') {
     return (
       a.name === b.name &&
@@ -213,6 +235,8 @@ export function typeStr(type: IonType): string {
     case 'Result': return `Result<${typeStr(type.ok)}, ${typeStr(type.err)}>`;
     case 'Fn':
       return `(${type.params.map(typeStr).join(', ')}) -> ${typeStr(type.ret)}`;
+    case 'Tuple':
+      return `(${type.elements.map(typeStr).join(', ')})`;
     case 'User':
       if (type.args.length === 0) return type.name;
       return `${type.name}<${type.args.map(typeStr).join(', ')}>`;

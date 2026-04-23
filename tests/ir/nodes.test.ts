@@ -1,4 +1,7 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
+import { serializeModule, deserializeModule } from '../../src/ir/serde.js';
+import { makeSymbolId } from '../../src/types.js';
+import type { IonIRModule } from '../../src/ir/nodes.js';
 import type {
   IonIRNode,
   CoreNode,
@@ -177,5 +180,42 @@ describe('IonIR node type definitions', () => {
     expectTypeOf<AsyncNode>().toMatchTypeOf<IonIRNode>();
     expectTypeOf<AdtNode>().toMatchTypeOf<IonIRNode>();
     expectTypeOf<EffectsNode>().toMatchTypeOf<IonIRNode>();
+  });
+});
+
+describe('IonIR serde — TupleType round-trip', () => {
+  it('round-trips a VarNode carrying TupleType', () => {
+    const span: Span = { file: 'test.ion', startLine: 1, startCol: 0, endLine: 1, endCol: 1 };
+    const sid: SymbolId = makeSymbolId('mod:x:0');
+    const tupleType: IonType = { kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'Str' }] };
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'test.tuple',
+      version: '1.0.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Var', name: 'x', symbolId: sid, span, type: tupleType }],
+    };
+    const out = deserializeModule(serializeModule(mod));
+    expect(out).toEqual(mod);
+    expect((out.decls[0] as { type: IonType }).type).toEqual(tupleType);
+  });
+
+  it('round-trips an empty TupleType', () => {
+    const span: Span = { file: 'test.ion', startLine: 1, startCol: 0, endLine: 1, endCol: 1 };
+    const sid: SymbolId = makeSymbolId('mod:y:0');
+    const emptyTuple: IonType = { kind: 'Tuple', elements: [] };
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'test.empty-tuple',
+      version: '1.0.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Var', name: 'y', symbolId: sid, span, type: emptyTuple }],
+    };
+    const out = deserializeModule(serializeModule(mod));
+    expect(out).toEqual(mod);
   });
 });

@@ -182,6 +182,11 @@ function parseType(raw: unknown, path: string, depth = 0): IonType {
       ret: parseType(r['ret'], `${path}.ret`, depth + 1),
       effects: parseEffectSet(r['effects'], `${path}.effects`),
     };
+    case 'Tuple': return {
+      kind: 'Tuple',
+      elements: assertArray(r['elements'], `${path}.elements`)
+        .map((e, i) => parseType(e, `${path}.elements[${i}]`, depth + 1)),
+    };
     case 'User': return {
       kind: 'User',
       name: assertString(r['name'], `${path}.name`),

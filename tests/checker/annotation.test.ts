@@ -140,4 +140,20 @@ describe('resolveAnnotation', () => {
     });
     expect(errors).toHaveLength(0);
   });
+
+  it('Tuple (Int, Str) → TupleType { elements: [Int, Str] }', () => {
+    const errors: CheckError[] = [];
+    const ann: TypeAnnotation = { kind: 'Tuple', elements: [named('Int'), named('Str')], span: SPAN };
+    const result = resolveAnnotation(ann, new Map(), new Map(), errors);
+    expect(result).toEqual({ kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'Str' }] });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('empty Tuple () → TupleType { elements: [] }', () => {
+    const errors: CheckError[] = [];
+    const ann: TypeAnnotation = { kind: 'Tuple', elements: [], span: SPAN };
+    const result = resolveAnnotation(ann, new Map(), new Map(), errors);
+    expect(result).toEqual({ kind: 'Tuple', elements: [] });
+    expect(errors).toHaveLength(0);
+  });
 });

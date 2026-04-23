@@ -447,3 +447,43 @@ describe('Suite Y — depth limit property tests', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite T — TupleType wire encoding
+// ---------------------------------------------------------------------------
+
+describe('Suite T — TupleType wire encoding', () => {
+  function makeLetNode(bindingType: IonType): IonIRNode {
+    const body = varNode('x');
+    const value = varNode('x');
+    return {
+      kind: 'Let',
+      name: 'x',
+      symbolId: sid,
+      bindingType,
+      value,
+      body,
+      span,
+      type: bindingType,
+    };
+  }
+
+  it('T1: LetNode with TupleType(Int, Str) binding emits tup<int,str> in wire', () => {
+    const tupleType: IonType = { kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'Str' }] };
+    const wire = encodeModule({ ...makeMinimal(), decls: [makeLetNode(tupleType)] });
+    expect(wire).toContain('tup<int,str>');
+  });
+
+  it('T2: LetNode with nested TupleType emits correct wire token', () => {
+    const inner: IonType = { kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'Bool' }] };
+    const outer: IonType = { kind: 'Tuple', elements: [inner, { kind: 'Str' }] };
+    const wire = encodeModule({ ...makeMinimal(), decls: [makeLetNode(outer)] });
+    expect(wire).toContain('tup<tup<int,bool>,str>');
+  });
+
+  it('T3: LetNode with empty TupleType emits tup<> in wire', () => {
+    const emptyTuple: IonType = { kind: 'Tuple', elements: [] };
+    const wire = encodeModule({ ...makeMinimal(), decls: [makeLetNode(emptyTuple)] });
+    expect(wire).toContain('tup<>');
+  });
+});

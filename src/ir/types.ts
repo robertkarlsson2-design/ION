@@ -14,6 +14,7 @@ export type IonType =
   | OptionType
   | ResultType
   | FnType
+  | TupleType
   | UserType
   | TypeVar
   | NeverType;
@@ -72,6 +73,11 @@ export interface FnType {
   readonly params: readonly IonType[];
   readonly ret: IonType;
   readonly effects: EffectSet;
+}
+
+export interface TupleType {
+  readonly kind: 'Tuple';
+  readonly elements: readonly IonType[];
 }
 
 export interface UserType {

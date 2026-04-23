@@ -27,6 +27,8 @@ function occursIn(varId: string, t: IonType, s: Substitution): boolean {
         resolved.params.some(p => occursIn(varId, p, s)) ||
         occursIn(varId, resolved.ret, s)
       );
+    case 'Tuple':
+      return resolved.elements.some(e => occursIn(varId, e, s));
     case 'User':
       return resolved.args.some(a => occursIn(varId, a, s));
   }
@@ -141,6 +143,19 @@ export function unify(
       return unify(a.ret, bf.ret, subst, span);
     }
 
+    case 'Tuple': {
+      const bt = b as typeof a;
+      if (a.elements.length !== bt.elements.length) {
+        return mismatch(a, b, span);
+      }
+      for (let i = 0; i < a.elements.length; i++) {
+        // Array bounds are guarded by the length check above.
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const err = unify(a.elements[i]!, bt.elements[i]!, subst, span);
+        if (err !== null) return err;
+      }
+      return null;
+    }
     case 'User': {
       const bu = b as UserType;
       if (a.name !== bu.name || a.args.length !== bu.args.length) {

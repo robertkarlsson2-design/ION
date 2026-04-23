@@ -130,3 +130,63 @@ describe('typesEqual', () => {
     expect(typesEqual(tv('a'), tv('b'))).toBe(false);
   });
 });
+
+describe('Tuple unification', () => {
+  it('unifies (Int, Str) with (Int, Str)', () => {
+    const errors: CheckError[] = [];
+    const t1: IonType = { kind: 'Tuple', elements: [INT, STR] };
+    const t2: IonType = { kind: 'Tuple', elements: [INT, STR] };
+    const s = unify(t1, t2, emptySubst(), SPAN, errors);
+    expect(errors).toHaveLength(0);
+    expect(applySubst(s, t1)).toEqual(t1);
+  });
+
+  it('fails to unify (Int, Str) with (Int, Bool)', () => {
+    const errors: CheckError[] = [];
+    const t1: IonType = { kind: 'Tuple', elements: [INT, STR] };
+    const t2: IonType = { kind: 'Tuple', elements: [INT, BOOL] };
+    unify(t1, t2, emptySubst(), SPAN, errors);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.kind).toBe('TypeMismatch');
+  });
+
+  it('fails to unify arity-mismatch tuples', () => {
+    const errors: CheckError[] = [];
+    const t1: IonType = { kind: 'Tuple', elements: [INT, STR] };
+    const t2: IonType = { kind: 'Tuple', elements: [INT] };
+    unify(t1, t2, emptySubst(), SPAN, errors);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.kind).toBe('TypeMismatch');
+  });
+
+  it('unifies (TypeVar a, Str) with (Int, Str) → binds a to Int', () => {
+    const errors: CheckError[] = [];
+    const t1: IonType = { kind: 'Tuple', elements: [tv('a'), STR] };
+    const t2: IonType = { kind: 'Tuple', elements: [INT, STR] };
+    const s = unify(t1, t2, emptySubst(), SPAN, errors);
+    expect(errors).toHaveLength(0);
+    expect(applySubst(s, tv('a'))).toEqual(INT);
+  });
+
+  it('occursIn a in Tuple<TypeVar a, Int> → true', () => {
+    const tup: IonType = { kind: 'Tuple', elements: [tv('a'), INT] };
+    expect(occursIn('a', tup)).toBe(true);
+  });
+
+  it('occursIn a in Tuple<Int, Str> → false', () => {
+    const tup: IonType = { kind: 'Tuple', elements: [INT, STR] };
+    expect(occursIn('a', tup)).toBe(false);
+  });
+
+  it('typesEqual (Int, Str) equals (Int, Str)', () => {
+    const t1: IonType = { kind: 'Tuple', elements: [INT, STR] };
+    const t2: IonType = { kind: 'Tuple', elements: [INT, STR] };
+    expect(typesEqual(t1, t2)).toBe(true);
+  });
+
+  it('typesEqual (Int, Str) does not equal (Int, Bool)', () => {
+    const t1: IonType = { kind: 'Tuple', elements: [INT, STR] };
+    const t2: IonType = { kind: 'Tuple', elements: [INT, BOOL] };
+    expect(typesEqual(t1, t2)).toBe(false);
+  });
+});

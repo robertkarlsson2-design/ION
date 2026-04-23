@@ -561,10 +561,10 @@ function walkPattern(
       break;
 
     case 'TuplePat': {
-      if (type.kind === 'User' && type.name === '__Tuple') {
-        for (let i = 0; i < pattern.elements.length && i < type.args.length; i++) {
+      if (type.kind === 'Tuple') {
+        for (let i = 0; i < pattern.elements.length && i < type.elements.length; i++) {
           // Non-null: both arrays checked by loop bounds.
-          walkPattern(pattern.elements[i]!, type.args[i]!, ctx, out);
+          walkPattern(pattern.elements[i]!, type.elements[i]!, ctx, out);
         }
       }
       break;

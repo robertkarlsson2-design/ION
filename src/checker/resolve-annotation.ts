@@ -102,10 +102,10 @@ export function resolveAnnotation(
     }
 
     case 'Tuple': {
-      const args = ann.elements.map(e =>
+      const elements = ann.elements.map(e =>
         resolveAnnotation(e, typeParams, symbolTable, errors, span),
       );
-      return { kind: 'User', name: `Tuple${ann.elements.length}`, symbolId: SYNTHETIC_ID, args };
+      return { kind: 'Tuple', elements };
     }
   }
 }
