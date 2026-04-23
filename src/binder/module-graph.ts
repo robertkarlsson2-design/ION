@@ -1,5 +1,5 @@
 import type { AstDeclNode } from '../ast/nodes.js';
-import type { Span } from '../types.js';
+import { nullSpan, type Span } from '../types.js';
 import type { BindError } from './errors.js';
 
 /** Directed graph: modulePath → set of imported module paths. */
@@ -27,8 +27,6 @@ export function buildModuleGraph(
 type StackFrame =
   | { type: 'enter'; node: string; path: string[] }
   | { type: 'exit'; node: string };
-
-const nullSpan: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
 
 /**
  * Iterative three-color DFS cycle detection across a merged module graph.

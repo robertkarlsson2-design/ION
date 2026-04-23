@@ -8,7 +8,7 @@ import type {
 } from '../ast/nodes.js';
 import type { TypeAnnotation } from '../ast/types.js';
 import type { Span, SymbolId } from '../types.js';
-import { makeSymbolId } from '../types.js';
+import { makeSymbolId, nullSpan } from '../types.js';
 
 import { Scope } from './scope.js';
 import { SymbolTableBuilder } from './symbol-table.js';
@@ -30,8 +30,6 @@ export interface BindProgramResult {
   readonly modules: readonly ModuleBindResult[];
   readonly errors: readonly BindError[];
 }
-
-const nullSpan: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
 
 // \0 is guaranteed absent from all OS file paths, making this key unambiguous.
 function spanKey(span: Span): string {

@@ -12,6 +12,9 @@ export interface Span {
   endCol: number;
 }
 
+/** Zero-value Span sentinel for errors that lack a concrete source location. */
+export const nullSpan: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
+
 /** Opaque identifier produced by the Binder; all other stages treat it as a black box. */
 export type SymbolId = string & { readonly __brand: 'SymbolId' };
 
