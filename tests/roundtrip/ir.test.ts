@@ -551,6 +551,37 @@ describe('IonIR serde — depth limit guards', () => {
     return type;
   }
 
+  function makeDeepLetWithAdtDeclJson(depth: number): unknown {
+    const leaf = {
+      kind: 'Var',
+      name: 'x',
+      symbolId: testSid,
+      span: testSpan,
+      type: { kind: 'Int' },
+    };
+    let node: unknown = {
+      kind: 'AdtDecl',
+      name: 'T',
+      symbolId: testSid,
+      variants: [],
+      span: testSpan,
+      type: { kind: 'List', elem: { kind: 'List', elem: { kind: 'List', elem: { kind: 'Int' } } } },
+    };
+    for (let i = 0; i < depth; i++) {
+      node = {
+        kind: 'Let',
+        name: 'x',
+        symbolId: testSid,
+        bindingType: { kind: 'Int' },
+        value: leaf,
+        body: node,
+        span: testSpan,
+        type: { kind: 'Int' },
+      };
+    }
+    return node;
+  }
+
   function wrapInModule(decl: unknown): string {
     return JSON.stringify({
       ionir: '1.0',
@@ -623,5 +654,17 @@ describe('IonIR serde — depth limit guards', () => {
       caught = e;
     }
     expect(caught).toBeInstanceOf(IonIRSerdeError);
+  });
+
+  it('node depth: AdtDecl inside Let-chain at exactly the limit does not throw', () => {
+    // 997 Lets + AdtDecl with 3-deep List type: peak type depth = 997 + 3 = 1000, within limit
+    const json = wrapInModule(makeDeepLetWithAdtDeclJson(MAX_NESTING_DEPTH - 3));
+    expect(() => deserializeModule(json)).not.toThrow();
+  });
+
+  it('node depth: AdtDecl inside Let-chain inherits outer depth', () => {
+    // 998 Lets + AdtDecl with 3-deep List type: peak type depth = 998 + 3 = 1001 > 1000, throws
+    const json = wrapInModule(makeDeepLetWithAdtDeclJson(MAX_NESTING_DEPTH - 2));
+    expect(() => deserializeModule(json)).toThrow(IonIRSerdeError);
   });
 });
