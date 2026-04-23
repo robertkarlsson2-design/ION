@@ -1,7 +1,7 @@
 import type { TypeAnnotation } from '../ast/types.js';
 import type { IonType, TypeVar } from '../ir/types.js';
 import type { SymbolId, Span } from '../types.js';
-import type { SymbolTable } from '../binder/symbol-table.js';
+import type { ModuleSymbolTable } from '../binder/symbol-table.js';
 import type { CheckError } from './errors.js';
 import { makeSymbolId } from '../types.js';
 
@@ -32,7 +32,7 @@ const SYNTHETIC_ID: SymbolId = makeSymbolId('__synthetic__');
 export function resolveAnnotation(
   ann: TypeAnnotation,
   typeParams: ReadonlyMap<string, TypeVar>,
-  symbolTable: SymbolTable,
+  symbolTable: ModuleSymbolTable,
   errors: CheckError[],
   span: Span,
 ): IonType {
@@ -44,10 +44,10 @@ export function resolveAnnotation(
       const tv = typeParams.get(ann.name);
       if (tv !== undefined) return tv;
 
-      for (const entry of symbolTable.all()) {
+      for (const entry of symbolTable.symbols.values()) {
         if (
           entry.name === ann.name &&
-          (entry.declKind === 'Data' || entry.declKind === 'TypeAlias')
+          (entry.kind === 'data' || entry.kind === 'typeAlias')
         ) {
           return { kind: 'User', name: ann.name, symbolId: entry.id, args: [] };
         }
@@ -80,10 +80,10 @@ export function resolveAnnotation(
         case 'Result':
           return { kind: 'Result', ok: args[0] ?? NEVER, err: args[1] ?? NEVER };
         default: {
-          for (const entry of symbolTable.all()) {
+          for (const entry of symbolTable.symbols.values()) {
             if (
               entry.name === ann.name &&
-              (entry.declKind === 'Data' || entry.declKind === 'TypeAlias')
+              (entry.kind === 'data' || entry.kind === 'typeAlias')
             ) {
               return { kind: 'User', name: ann.name, symbolId: entry.id, args };
             }

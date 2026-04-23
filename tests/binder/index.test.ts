@@ -15,9 +15,10 @@ describe('bindModule', () => {
     const ast = parse('fn add(a: Int, b: Int) -> Int = a + b');
     const result = bindModule(ast, 'test');
     expect(result.errors).toHaveLength(0);
+    const refs = result.modules[0]!.symbolTable.references;
     // 'a' and 'b' each appear once in body
-    expect(result.resolutionMap.size).toBe(2);
-    for (const id of result.resolutionMap.values()) {
+    expect(refs.size).toBe(2);
+    for (const id of refs.values()) {
       expect(typeof id).toBe('string');
     }
   });
@@ -85,32 +86,31 @@ describe('bindModule', () => {
     expect(undef).toHaveLength(1);
     expect(undef[0]?.message).toContain('bar');
     // Foo itself is in the symbol table
-    const fooSymbol = [...result.symbolTable.all()].find(s => s.name === 'Foo');
+    const symbols = result.modules[0]!.symbolTable.symbols;
+    const fooSymbol = Array.from(symbols.values()).find(s => s.name === 'Foo');
     expect(fooSymbol).toBeDefined();
-    expect(fooSymbol?.declKind).toBe('Module');
+    expect(fooSymbol?.kind).toBe('module');
   });
 
-  it('use declaration — module graph dependency recorded', () => {
+  it('use declaration — no errors for single module use', () => {
     const ast = parse('use std.http\nfn foo() = 1');
     const result = bindModule(ast, 'myModule');
-    const deps = result.moduleGraph.get('myModule');
-    expect(deps).toBeDefined();
-    expect(deps?.has('std.http')).toBe(true);
+    expect(result.modules).toHaveLength(1);
+    expect(result.errors).toHaveLength(0);
   });
 
-  it('use declaration with named imports — dependency path recorded', () => {
+  it('use declaration with named imports — no errors when module is unknown', () => {
     const ast = parse('use std.http.{get, post}\nfn foo() = 1');
     const result = bindModule(ast, 'myModule');
-    const deps = result.moduleGraph.get('myModule');
-    expect(deps).toBeDefined();
-    expect(deps?.has('std.http')).toBe(true);
+    expect(result.modules).toHaveLength(1);
+    expect(result.errors).toHaveLength(0);
   });
 
   it('let decl value references declared fn — resolves correctly', () => {
     const ast = parse('fn compute() = 42\nlet result = compute()');
     const result = bindModule(ast, 'test');
     expect(result.errors).toHaveLength(0);
-    expect(result.resolutionMap.size).toBeGreaterThan(0);
+    expect(result.modules[0]!.symbolTable.references.size).toBeGreaterThan(0);
   });
 
   it('type params in fn are phantom — do not pollute outer scope', () => {
@@ -124,16 +124,17 @@ describe('bindModule', () => {
   it('symbol table contains all declared symbols', () => {
     const ast = parse('fn foo(a: Int) -> Int = a\nlet x = 1');
     const result = bindModule(ast, 'test');
-    const names = [...result.symbolTable.all()].map(s => s.name);
+    const names = Array.from(result.modules[0]!.symbolTable.symbols.values()).map(s => s.name);
     expect(names).toContain('foo');
     expect(names).toContain('x');
     expect(names).toContain('a');
   });
 
-  it('module graph recorded for single module', () => {
+  it('single module is returned', () => {
     const ast = parse('fn foo() = 1');
     const result = bindModule(ast, 'myMod');
-    expect(result.moduleGraph.has('myMod')).toBe(true);
+    expect(result.modules).toHaveLength(1);
+    expect(result.modules[0]?.modulePath).toBe('myMod');
   });
 
   it('file path containing colon (Windows-style) — resolution map is correct', () => {
@@ -143,14 +144,15 @@ describe('bindModule', () => {
     const result = bindModule(ast, 'C:/project/src/main.ion');
     expect(result.errors).toHaveLength(0);
     // 'a' and 'b' each appear once in the body
-    expect(result.resolutionMap.size).toBe(2);
+    const refs = result.modules[0]!.symbolTable.references;
+    expect(refs.size).toBe(2);
     // Each resolved id must be a non-empty string
-    for (const id of result.resolutionMap.values()) {
+    for (const id of refs.values()) {
       expect(typeof id).toBe('string');
       expect((id as string).length).toBeGreaterThan(0);
     }
     // All keys use \0 as separator — none should collide across colon-containing paths
-    for (const key of result.resolutionMap.keys()) {
+    for (const key of refs.keys()) {
       expect(key).toContain('\0');
       expect(key.startsWith('C:/project/src/main.ion\0')).toBe(true);
     }

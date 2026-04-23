@@ -13,8 +13,8 @@ import type {
 import type { EffectTag } from '../ast/types.js';
 import type { IonType, FnType, TypeVar } from '../ir/types.js';
 import type { Span, SymbolId } from '../types.js';
-import type { BindResult } from '../binder/index.js';
-import type { SymbolEntry } from '../binder/symbol-table.js';
+import type { BindProgramResult } from '../binder/index.js';
+import type { SymbolKind, ModuleSymbolTable } from '../binder/symbol-table.js';
 
 import { resolveAnnotation } from './resolve-annotation.js';
 import { TypeEnv } from './type-env.js';
@@ -35,9 +35,9 @@ export interface CheckResult {
   readonly errors: readonly CheckError[];
 }
 
-/** Compute `file:startLine:startCol` key — mirrors the binder's internal span key format. */
+/** Compute span key — matches the binder's internal format exactly. */
 export function spanKey(span: Span): string {
-  return `${span.file}:${span.startLine}:${span.startCol}`;
+  return `${span.file}\0${span.startLine}\0${span.startCol}`;
 }
 
 const INT: IonType = { kind: 'Int' };
@@ -51,10 +51,14 @@ const BOOL: IonType = { kind: 'Bool' };
  */
 export function checkModule(
   module: AstModule,
-  bindResult: BindResult,
+  bindResult: BindProgramResult,
   modulePath: string,
 ): CheckResult {
-  return new Checker(module, bindResult, modulePath).check();
+  const symbolTable =
+    bindResult.modules.find(m => m.modulePath === modulePath)?.symbolTable ??
+    bindResult.modules[0]?.symbolTable;
+  if (symbolTable === undefined) return { typeMap: new Map(), errors: [] };
+  return new Checker(module, symbolTable, modulePath).check();
 }
 
 class Checker {
@@ -66,8 +70,7 @@ class Checker {
 
   constructor(
     private readonly module: AstModule,
-    private readonly bindResult: BindResult,
-    // stored for potential future diagnostics
+    private readonly symbolTable: ModuleSymbolTable,
     private readonly _modulePath: string,
   ) {}
 
@@ -97,12 +100,12 @@ class Checker {
     for (const decl of this.module.decls) {
       switch (decl.kind) {
         case 'FnDecl': {
-          const id = this.findSymbolIdByName(decl.name, 'Fn');
+          const id = this.findSymbolIdByName(decl.name, 'fn');
           if (id !== undefined) env = env.extend(id, this.buildFnDeclType(decl));
           break;
         }
         case 'LetDecl': {
-          const id = this.findSymbolIdByName(decl.name, 'Let');
+          const id = this.findSymbolIdByName(decl.name, 'let');
           if (id !== undefined) {
             if (decl.type_ !== null) {
               env = env.extend(
@@ -110,7 +113,7 @@ class Checker {
                 resolveAnnotation(
                   decl.type_,
                   new Map(),
-                  this.bindResult.symbolTable,
+                  this.symbolTable,
                   this.errors,
                   decl.span,
                 ),
@@ -130,14 +133,14 @@ class Checker {
           break;
         }
         case 'ExternDecl': {
-          const id = this.findSymbolIdByName(decl.name, 'Extern');
+          const id = this.findSymbolIdByName(decl.name, 'extern');
           if (id !== undefined) {
             const paramTypes = decl.params.map(p =>
               p.type_ !== null
                 ? resolveAnnotation(
                     p.type_,
                     new Map(),
-                    this.bindResult.symbolTable,
+                    this.symbolTable,
                     this.errors,
                     p.span,
                   )
@@ -148,7 +151,7 @@ class Checker {
                 ? resolveAnnotation(
                     decl.returnType,
                     new Map(),
-                    this.bindResult.symbolTable,
+                    this.symbolTable,
                     this.errors,
                     decl.span,
                   )
@@ -175,7 +178,7 @@ class Checker {
     const tp = this.buildTypeParamsMap(decl.typeParams);
     const paramTypes = decl.params.map(p =>
       p.type_ !== null
-        ? resolveAnnotation(p.type_, tp, this.bindResult.symbolTable, this.errors, p.span)
+        ? resolveAnnotation(p.type_, tp, this.symbolTable, this.errors, p.span)
         : freshVar(this.counter),
     );
     const retType =
@@ -183,7 +186,7 @@ class Checker {
         ? resolveAnnotation(
             decl.returnType,
             tp,
-            this.bindResult.symbolTable,
+            this.symbolTable,
             this.errors,
             decl.span,
           )
@@ -204,7 +207,7 @@ class Checker {
   private checkDecl(decl: AstDeclNode, moduleEnv: TypeEnv): void {
     switch (decl.kind) {
       case 'FnDecl': {
-        const id = this.findSymbolIdByName(decl.name, 'Fn');
+        const id = this.findSymbolIdByName(decl.name, 'fn');
         if (id === undefined) break;
 
         const envType = moduleEnv.lookup(id);
@@ -233,7 +236,7 @@ class Checker {
       }
 
       case 'LetDecl': {
-        const id = this.findSymbolIdByName(decl.name, 'Let');
+        const id = this.findSymbolIdByName(decl.name, 'let');
         if (id === undefined) break;
 
         const declaredType = moduleEnv.lookup(id);
@@ -284,7 +287,7 @@ class Checker {
       }
 
       case 'Ident': {
-        const symbolId = this.bindResult.resolutionMap.get(spanKey(expr.span));
+        const symbolId = this.symbolTable.references.get(spanKey(expr.span));
         if (symbolId === undefined) return freshVar(this.counter);
         return env.lookup(symbolId) ?? freshVar(this.counter);
       }
@@ -478,7 +481,7 @@ class Checker {
                     return resolveAnnotation(
                       field.type_,
                       new Map(),
-                      this.bindResult.symbolTable,
+                      this.symbolTable,
                       this.errors,
                       expr.span,
                     );
@@ -521,7 +524,7 @@ class Checker {
       const annType = resolveAnnotation(
         expr.type_,
         new Map(),
-        this.bindResult.symbolTable,
+        this.symbolTable,
         this.errors,
         expr.span,
       );
@@ -779,24 +782,21 @@ class Checker {
   // Symbol table helpers
   // ---------------------------------------------------------------------------
 
-  private findSymbolIdByName(
-    name: string,
-    kind: SymbolEntry['declKind'],
-  ): SymbolId | undefined {
-    for (const entry of this.bindResult.symbolTable.all()) {
-      if (entry.name === name && entry.declKind === kind) return entry.id;
+  private findSymbolIdByName(name: string, kind: SymbolKind): SymbolId | undefined {
+    for (const info of this.symbolTable.symbols.values()) {
+      if (info.name === name && info.kind === kind) return info.id;
     }
     return undefined;
   }
 
   private findSymbolBySpan(span: Span): SymbolId | undefined {
-    for (const entry of this.bindResult.symbolTable.all()) {
+    for (const info of this.symbolTable.symbols.values()) {
       if (
-        entry.span.file === span.file &&
-        entry.span.startLine === span.startLine &&
-        entry.span.startCol === span.startCol
+        info.span.file === span.file &&
+        info.span.startLine === span.startLine &&
+        info.span.startCol === span.startCol
       ) {
-        return entry.id;
+        return info.id;
       }
     }
     return undefined;
@@ -807,7 +807,7 @@ class Checker {
       return resolveAnnotation(
         param.type_,
         new Map(),
-        this.bindResult.symbolTable,
+        this.symbolTable,
         this.errors,
         param.span,
       );
