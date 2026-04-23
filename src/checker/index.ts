@@ -13,7 +13,7 @@ import type {
 import type { EffectTag } from '../ast/types.js';
 import type { IonType, FnType, TypeVar } from '../ir/types.js';
 import type { Span, SymbolId } from '../types.js';
-import type { BindProgramResult } from '../binder/index.js';
+import type { BindResult } from '../binder/index.js';
 import type { SymbolKind, ModuleSymbolTable } from '../binder/symbol-table.js';
 
 import { resolveAnnotation } from './resolve-annotation.js';
@@ -51,14 +51,10 @@ const BOOL: IonType = { kind: 'Bool' };
  */
 export function checkModule(
   module: AstModule,
-  bindResult: BindProgramResult,
+  bindResult: BindResult,
   modulePath: string,
 ): CheckResult {
-  const symbolTable =
-    bindResult.modules.find(m => m.modulePath === modulePath)?.symbolTable ??
-    bindResult.modules[0]?.symbolTable;
-  if (symbolTable === undefined) return { typeMap: new Map(), errors: [] };
-  return new Checker(module, symbolTable, modulePath).check();
+  return new Checker(module, bindResult.symbolTable, modulePath).check();
 }
 
 class Checker {
@@ -100,12 +96,12 @@ class Checker {
     for (const decl of this.module.decls) {
       switch (decl.kind) {
         case 'FnDecl': {
-          const id = this.findSymbolIdByName(decl.name, 'fn');
+          const id = this.findSymbolIdByName(decl.name, 'Fn');
           if (id !== undefined) env = env.extend(id, this.buildFnDeclType(decl));
           break;
         }
         case 'LetDecl': {
-          const id = this.findSymbolIdByName(decl.name, 'let');
+          const id = this.findSymbolIdByName(decl.name, 'Let');
           if (id !== undefined) {
             if (decl.type_ !== null) {
               env = env.extend(
@@ -133,7 +129,7 @@ class Checker {
           break;
         }
         case 'ExternDecl': {
-          const id = this.findSymbolIdByName(decl.name, 'extern');
+          const id = this.findSymbolIdByName(decl.name, 'Extern');
           if (id !== undefined) {
             const paramTypes = decl.params.map(p =>
               p.type_ !== null
@@ -207,7 +203,7 @@ class Checker {
   private checkDecl(decl: AstDeclNode, moduleEnv: TypeEnv): void {
     switch (decl.kind) {
       case 'FnDecl': {
-        const id = this.findSymbolIdByName(decl.name, 'fn');
+        const id = this.findSymbolIdByName(decl.name, 'Fn');
         if (id === undefined) break;
 
         const envType = moduleEnv.lookup(id);
@@ -236,7 +232,7 @@ class Checker {
       }
 
       case 'LetDecl': {
-        const id = this.findSymbolIdByName(decl.name, 'let');
+        const id = this.findSymbolIdByName(decl.name, 'Let');
         if (id === undefined) break;
 
         const declaredType = moduleEnv.lookup(id);
@@ -784,7 +780,7 @@ class Checker {
 
   private findSymbolIdByName(name: string, kind: SymbolKind): SymbolId | undefined {
     for (const info of this.symbolTable.symbols.values()) {
-      if (info.name === name && info.kind === kind) return info.id;
+      if (info.name === name && info.declKind === kind) return info.id;
     }
     return undefined;
   }

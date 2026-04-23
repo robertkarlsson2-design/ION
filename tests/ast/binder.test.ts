@@ -16,11 +16,11 @@ function bind(src: string, modulePath = 'test') {
 }
 
 function symbols(src: string, modulePath = 'test') {
-  return Array.from(bind(src, modulePath).modules[0]!.symbolTable.symbols.values());
+  return Array.from(bind(src, modulePath).symbolTable.symbols.values());
 }
 
 function refs(src: string, modulePath = 'test') {
-  return bind(src, modulePath).modules[0]!.symbolTable.references;
+  return bind(src, modulePath).resolutionMap;
 }
 
 // ---------------------------------------------------------------------------
@@ -31,26 +31,26 @@ describe('basic top-level resolution', () => {
   it('fn declaration registers a symbol with no errors', () => {
     const result = bind('fn foo() = 42');
     expect(result.errors).toHaveLength(0);
-    const syms = Array.from(result.modules[0]!.symbolTable.symbols.values());
+    const syms = Array.from(result.symbolTable.symbols.values());
     expect(syms).toHaveLength(1);
     const [entry] = syms;
     expect(entry?.name).toBe('foo');
-    expect(entry?.kind).toBe('fn');
-    expect(entry?.pub).toBe(false);
+    expect(entry?.declKind).toBe('Fn');
+    expect(entry?.isPublic).toBe(false);
   });
 
   it('let declaration registers a symbol', () => {
     const result = bind('let answer = 42');
     expect(result.errors).toHaveLength(0);
-    const syms = Array.from(result.modules[0]!.symbolTable.symbols.values());
+    const syms = Array.from(result.symbolTable.symbols.values());
     const [entry] = syms;
     expect(entry?.name).toBe('answer');
-    expect(entry?.kind).toBe('let');
+    expect(entry?.declKind).toBe('Let');
   });
 
   it('fn body can reference a top-level let', () => {
     const result = bind('let x = 1\nfn bar() = x');
-    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    const { symbols: syms, references } = result.symbolTable;
     expect(result.errors).toHaveLength(0);
     expect(syms.size).toBe(2);
     expect(references.size).toBeGreaterThan(0);
@@ -67,7 +67,7 @@ describe('mutual recursion', () => {
   it('fn a calls b and fn b calls a — both resolve without errors', () => {
     const result = bind('fn a() = b()\nfn b() = a()');
     expect(result.errors).toHaveLength(0);
-    expect(result.modules[0]!.symbolTable.references.size).toBe(2);
+    expect(result.resolutionMap.size).toBe(2);
   });
 });
 
@@ -115,10 +115,10 @@ describe('duplicate binding', () => {
 describe('parameter scoping', () => {
   it('param x in body resolves to the fn param, not an outer let x', () => {
     const result = bind('let x = 99\nfn double(x: Int) = x * 2');
-    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    const { symbols: syms, references } = result.symbolTable;
     expect(result.errors).toHaveLength(0);
     const paramEntry = Array.from(syms.values()).find(
-      e => e.name === 'x' && e.kind === 'fnParam',
+      e => e.name === 'x' && e.declKind === 'Param',
     );
     expect(paramEntry).toBeDefined();
     expect(Array.from(references.values())).toContain(paramEntry?.id);
@@ -137,10 +137,10 @@ describe('parameter scoping', () => {
 describe('lambda scoping', () => {
   it('lambda param x resolves within lambda body', () => {
     const result = bind('fn f() = let n = 5; (x -> x + 1)(n)');
-    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    const { symbols: syms, references } = result.symbolTable;
     expect(result.errors).toHaveLength(0);
     const lambdaParam = Array.from(syms.values()).find(
-      e => e.name === 'x' && e.kind === 'fnParam',
+      e => e.name === 'x' && e.declKind === 'Param',
     );
     expect(lambdaParam).toBeDefined();
     expect(Array.from(references.values())).toContain(lambdaParam?.id);
@@ -160,10 +160,10 @@ describe('lambda scoping', () => {
 describe('LetExpr scoping', () => {
   it('let y = 10; y + 1 — y in body resolves correctly', () => {
     const result = bind('fn f() = let y = 10; y + 1');
-    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    const { symbols: syms, references } = result.symbolTable;
     expect(result.errors).toHaveLength(0);
     const letEntry = Array.from(syms.values()).find(
-      e => e.name === 'y' && e.kind === 'letExprBinding',
+      e => e.name === 'y' && e.declKind === 'Let',
     );
     expect(letEntry).toBeDefined();
     expect(Array.from(references.values())).toContain(letEntry?.id);
@@ -207,10 +207,10 @@ describe('nested module', () => {
   it('fn inside nested module gets a SymbolId', () => {
     const result = bind('module Inner { fn ping() = 1 }');
     expect(result.errors).toHaveLength(0);
-    const syms = Array.from(result.modules[0]!.symbolTable.symbols.values());
+    const syms = Array.from(result.symbolTable.symbols.values());
     const ping = syms.find(e => e.name === 'ping');
     expect(ping).toBeDefined();
-    expect(ping?.kind).toBe('fn');
+    expect(ping?.declKind).toBe('Fn');
   });
 
   it('name in nested module does not clash with outer name', () => {
@@ -228,11 +228,11 @@ describe('match arm pattern bindings', () => {
     const result = bind(
       'data Option = Some(Int) | None\nfn f(opt: Option) = match opt | Some(v) -> v | _ -> 0',
     );
-    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    const { symbols: syms, references } = result.symbolTable;
     const undefinedErrors = result.errors.filter(e => e.kind === 'UndefinedName');
     expect(undefinedErrors).toHaveLength(0);
     const patEntry = Array.from(syms.values()).find(
-      e => e.name === 'v' && e.kind === 'patternBinding',
+      e => e.name === 'v' && e.declKind === 'PatternBinding',
     );
     expect(patEntry).toBeDefined();
     expect(Array.from(references.values())).toContain(patEntry?.id);
@@ -240,7 +240,7 @@ describe('match arm pattern bindings', () => {
 
   it('WildcardPat does not introduce a binding', () => {
     const result = bind('fn f() = match 1 | _ -> 0');
-    const syms = Array.from(result.modules[0]!.symbolTable.symbols.values());
+    const syms = Array.from(result.symbolTable.symbols.values());
     const wildcard = syms.find(e => e.name === '_');
     expect(wildcard).toBeUndefined();
   });
@@ -328,7 +328,7 @@ describe('property: all SymbolIds are unique', () => {
         (names) => {
           const src = names.map(n => `fn ${n}() = 1`).join('\n');
           const result = bind(src);
-          const ids = Array.from(result.modules[0]!.symbolTable.symbols.values()).map(e => e.id);
+          const ids = Array.from(result.symbolTable.symbols.values()).map(e => e.id);
           const uniqueIds = new Set(ids);
           return uniqueIds.size === ids.length;
         },

@@ -21,6 +21,12 @@ export type { SymbolKind, SymbolInfo, ModuleSymbolTable } from './symbol-table.j
 export { detectCircularImports } from './module-graph.js';
 export type { ModuleGraph } from './module-graph.js';
 
+export interface BindResult {
+  readonly symbolTable: import('./symbol-table.js').ModuleSymbolTable;
+  readonly resolutionMap: ReadonlyMap<string, SymbolId>;
+  readonly errors: readonly BindError[];
+}
+
 export interface ModuleBindResult {
   readonly modulePath: string;
   readonly symbolTable: import('./symbol-table.js').ModuleSymbolTable;
@@ -83,8 +89,8 @@ class Binder {
     const id = this.freshId(idPrefix, name);
     scope.define(name, id);
     const info = typeAnnotation !== undefined
-      ? { id, name, kind, span, pub, typeAnnotation }
-      : { id, name, kind, span, pub };
+      ? { id, name, declKind: kind, span, isPublic: pub, typeAnnotation }
+      : { id, name, declKind: kind, span, isPublic: pub };
     this.builder.register(info);
     if (pub) {
       this.builder.addExport(name, id);
@@ -129,31 +135,31 @@ class Binder {
   ): void {
     switch (decl.kind) {
       case 'FnDecl':
-        this.registerDecl(scope, decl.name, 'fn', decl.span, decl.returnType, decl.pub, idPrefix);
+        this.registerDecl(scope, decl.name, 'Fn', decl.span, decl.returnType, decl.pub, idPrefix);
         break;
 
       case 'LetDecl':
-        this.registerDecl(scope, decl.name, 'let', decl.span, decl.type_, decl.pub, idPrefix);
+        this.registerDecl(scope, decl.name, 'Let', decl.span, decl.type_, decl.pub, idPrefix);
         break;
 
       case 'DataDecl': {
-        this.registerDecl(scope, decl.name, 'data', decl.span, null, decl.pub, idPrefix);
+        this.registerDecl(scope, decl.name, 'Data', decl.span, null, decl.pub, idPrefix);
         for (const variant of decl.variants) {
-          this.registerDecl(scope, variant.name, 'data', variant.span, null, decl.pub, idPrefix);
+          this.registerDecl(scope, variant.name, 'Data', variant.span, null, decl.pub, idPrefix);
         }
         break;
       }
 
       case 'TypeAliasDecl':
-        this.registerDecl(scope, decl.name, 'typeAlias', decl.span, decl.type_, decl.pub, idPrefix);
+        this.registerDecl(scope, decl.name, 'TypeAlias', decl.span, decl.type_, decl.pub, idPrefix);
         break;
 
       case 'ExternDecl':
-        this.registerDecl(scope, decl.name, 'extern', decl.span, decl.returnType, decl.pub, idPrefix);
+        this.registerDecl(scope, decl.name, 'Extern', decl.span, decl.returnType, decl.pub, idPrefix);
         break;
 
       case 'ModuleDecl':
-        this.registerDecl(scope, decl.name, 'module', decl.span, null, decl.pub, idPrefix);
+        this.registerDecl(scope, decl.name, 'Module', decl.span, null, decl.pub, idPrefix);
         break;
 
       case 'UseDecl': {
@@ -161,7 +167,7 @@ class Binder {
           // `use a.b.c` — alias is the last path segment
           const alias = decl.path[decl.path.length - 1];
           if (alias !== undefined) {
-            this.registerDecl(scope, alias, 'module', decl.span, null, false, idPrefix);
+            this.registerDecl(scope, alias, 'Module', decl.span, null, false, idPrefix);
           }
         } else {
           // `use a.b.{x, y}` — resolve named imports against known module exports
@@ -182,11 +188,11 @@ class Binder {
                 };
                 this.errors.push(err);
                 // Register a placeholder to avoid cascade errors on later references
-                this.registerDecl(scope, item, 'useImport', decl.span, null, false, idPrefix);
+                this.registerDecl(scope, item, 'UseImport', decl.span, null, false, idPrefix);
               }
             } else {
               // Unknown/external module — register as opaque, no error
-              this.registerDecl(scope, item, 'useImport', decl.span, null, false, idPrefix);
+              this.registerDecl(scope, item, 'UseImport', decl.span, null, false, idPrefix);
             }
           }
         }
@@ -235,10 +241,10 @@ class Binder {
   ): void {
     const fnScope = new Scope(outerScope);
     for (const tp of decl.typeParams) {
-      this.registerDecl(fnScope, tp, 'typeParam', decl.span, null, false, idPrefix);
+      this.registerDecl(fnScope, tp, 'TypeParam', decl.span, null, false, idPrefix);
     }
     for (const param of decl.params) {
-      this.registerDecl(fnScope, param.name, 'fnParam', param.span, param.type_, false, idPrefix);
+      this.registerDecl(fnScope, param.name, 'Param', param.span, param.type_, false, idPrefix);
     }
     this.resolveExpr(decl.body, fnScope, idPrefix);
   }
@@ -302,7 +308,7 @@ class Binder {
       case 'LambdaExpr': {
         const lambdaScope = new Scope(scope);
         for (const param of expr.params) {
-          this.registerDecl(lambdaScope, param.name, 'fnParam', param.span, param.type_, false, idPrefix);
+          this.registerDecl(lambdaScope, param.name, 'Param', param.span, param.type_, false, idPrefix);
         }
         this.resolveExpr(expr.body, lambdaScope, idPrefix);
         break;
@@ -329,7 +335,7 @@ class Binder {
       case 'LetExpr': {
         this.resolveExpr(expr.value, scope, idPrefix);
         const letScope = new Scope(scope);
-        this.registerDecl(letScope, expr.name, 'letExprBinding', expr.span, expr.type_, false, idPrefix);
+        this.registerDecl(letScope, expr.name, 'Let', expr.span, expr.type_, false, idPrefix);
         this.resolveExpr(expr.body, letScope, idPrefix);
         break;
       }
@@ -372,7 +378,7 @@ class Binder {
         break;
 
       case 'IdentPat':
-        this.registerDecl(armScope, pattern.name, 'patternBinding', pattern.span, null, false, idPrefix);
+        this.registerDecl(armScope, pattern.name, 'PatternBinding', pattern.span, null, false, idPrefix);
         break;
 
       case 'ConstructorPat': {
@@ -441,7 +447,13 @@ export function bindModules(modules: Map<string, AstModule>): BindProgramResult 
   return { modules: moduleResults, errors: allErrors };
 }
 
-/** Bind a single module. Convenience wrapper around `bindModules`. */
-export function bindModule(module: AstModule, modulePath: string): BindProgramResult {
-  return bindModules(new Map([[modulePath, module]]));
+/** Bind a single module. Returns a flat BindResult for single-module use. */
+export function bindModule(module: AstModule, modulePath: string): BindResult {
+  const binder = new Binder(modulePath, new Map());
+  const { result, errors } = binder.bind(module);
+  return {
+    symbolTable: result.symbolTable,
+    resolutionMap: result.symbolTable.references,
+    errors,
+  };
 }

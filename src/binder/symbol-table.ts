@@ -2,24 +2,23 @@ import type { SymbolId, Span } from '../types.js';
 import type { TypeAnnotation } from '../ast/types.js';
 
 export type SymbolKind =
-  | 'fn'
-  | 'let'
-  | 'data'
-  | 'typeAlias'
-  | 'extern'
-  | 'module'
-  | 'fnParam'
-  | 'typeParam'
-  | 'letExprBinding'
-  | 'patternBinding'
-  | 'useImport';
+  | 'Fn'
+  | 'Let'
+  | 'Data'
+  | 'TypeAlias'
+  | 'Extern'
+  | 'Module'
+  | 'Param'
+  | 'TypeParam'
+  | 'PatternBinding'
+  | 'UseImport';
 
 export interface SymbolInfo {
   readonly id: SymbolId;
   readonly name: string;
-  readonly kind: SymbolKind;
+  readonly declKind: SymbolKind;
   readonly span: Span;
-  readonly pub: boolean;
+  readonly isPublic: boolean;
   readonly typeAnnotation?: TypeAnnotation | null;
 }
 
@@ -27,6 +26,8 @@ export interface ModuleSymbolTable {
   readonly symbols: ReadonlyMap<SymbolId, SymbolInfo>;
   readonly exports: ReadonlyMap<string, SymbolId>;
   readonly references: ReadonlyMap<string, SymbolId>;
+  all(): Iterable<SymbolInfo>;
+  size(): number;
 }
 
 export class SymbolTableBuilder {
@@ -56,10 +57,15 @@ export class SymbolTableBuilder {
   }
 
   build(): ModuleSymbolTable {
+    const symbols: ReadonlyMap<SymbolId, SymbolInfo> = new Map(this._symbols);
+    const exports: ReadonlyMap<string, SymbolId> = new Map(this._exports);
+    const references: ReadonlyMap<string, SymbolId> = new Map(this._references);
     return {
-      symbols: new Map(this._symbols),
-      exports: new Map(this._exports),
-      references: new Map(this._references),
+      symbols,
+      exports,
+      references,
+      all(): Iterable<SymbolInfo> { return symbols.values(); },
+      size(): number { return symbols.size; },
     };
   }
 }
