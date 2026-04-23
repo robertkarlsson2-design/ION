@@ -238,6 +238,21 @@ describe('IonIR serde — unit round-trips', () => {
     const out = deserializeModule(serializeModule(mod));
     expect(out).toEqual(mod);
   });
+
+  it('round-trips Float(-0) preserving the sign of negative zero', () => {
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example.negzero',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Literal', value: { kind: 'Float', value: -0 }, span, type: intType }],
+    };
+    const out = deserializeModule(serializeModule(mod));
+    const outVal = ((out.decls[0] as { value: { value: number } }).value as { value: number }).value;
+    expect(Object.is(outVal, -0)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
