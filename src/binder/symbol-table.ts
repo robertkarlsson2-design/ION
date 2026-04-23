@@ -14,6 +14,41 @@ export type SymbolKind =
   | 'patternBinding'
   | 'useImport';
 
+export type DeclKind =
+  | 'Fn'
+  | 'Let'
+  | 'Data'
+  | 'TypeAlias'
+  | 'Extern'
+  | 'Module'
+  | 'Param'
+  | 'TypeParam'
+  | 'PatternBinding'
+  | 'UseImport';
+
+export interface BoundSymbol {
+  readonly id: SymbolId;
+  readonly name: string;
+  readonly declKind: DeclKind;
+  readonly isPublic: boolean;
+}
+
+function symbolKindToDeclKind(kind: SymbolKind): DeclKind {
+  switch (kind) {
+    case 'fn': return 'Fn';
+    case 'let': return 'Let';
+    case 'letExprBinding': return 'Let';
+    case 'data': return 'Data';
+    case 'typeAlias': return 'TypeAlias';
+    case 'extern': return 'Extern';
+    case 'module': return 'Module';
+    case 'fnParam': return 'Param';
+    case 'typeParam': return 'TypeParam';
+    case 'patternBinding': return 'PatternBinding';
+    case 'useImport': return 'UseImport';
+  }
+}
+
 export interface SymbolInfo {
   readonly id: SymbolId;
   readonly name: string;
@@ -27,6 +62,8 @@ export interface ModuleSymbolTable {
   readonly symbols: ReadonlyMap<SymbolId, SymbolInfo>;
   readonly exports: ReadonlyMap<string, SymbolId>;
   readonly references: ReadonlyMap<string, SymbolId>;
+  all(): IterableIterator<BoundSymbol>;
+  size(): number;
 }
 
 export class SymbolTableBuilder {
@@ -56,10 +93,22 @@ export class SymbolTableBuilder {
   }
 
   build(): ModuleSymbolTable {
+    const symbols = new Map(this._symbols);
     return {
-      symbols: new Map(this._symbols),
+      symbols,
       exports: new Map(this._exports),
       references: new Map(this._references),
+      all(): IterableIterator<BoundSymbol> {
+        return Array.from(symbols.values(), info => ({
+          id: info.id,
+          name: info.name,
+          declKind: symbolKindToDeclKind(info.kind),
+          isPublic: info.pub,
+        })).values();
+      },
+      size(): number {
+        return symbols.size;
+      },
     };
   }
 }

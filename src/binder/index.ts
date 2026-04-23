@@ -17,7 +17,7 @@ import type { BindError, UndefinedNameError, DuplicateBindingError } from './err
 import { buildGraph, topoSort } from './graph.js';
 
 export type { BindError, BindErrorKind } from './errors.js';
-export type { SymbolKind, SymbolInfo, ModuleSymbolTable } from './symbol-table.js';
+export type { SymbolKind, SymbolInfo, ModuleSymbolTable, DeclKind, BoundSymbol } from './symbol-table.js';
 export { detectCircularImports } from './module-graph.js';
 export type { ModuleGraph } from './module-graph.js';
 
@@ -29,6 +29,21 @@ export interface ModuleBindResult {
 export interface BindProgramResult {
   readonly modules: readonly ModuleBindResult[];
   readonly errors: readonly BindError[];
+}
+
+export interface BindResult extends BindProgramResult {
+  readonly symbolTable: import('./symbol-table.js').ModuleSymbolTable;
+  readonly resolutionMap: ReadonlyMap<string, SymbolId>;
+}
+
+function emptyModuleSymbolTable(): import('./symbol-table.js').ModuleSymbolTable {
+  return {
+    symbols: new Map(),
+    exports: new Map(),
+    references: new Map(),
+    all() { return [][Symbol.iterator]() as IterableIterator<import('./symbol-table.js').BoundSymbol>; },
+    size() { return 0; },
+  };
 }
 
 const nullSpan: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
@@ -442,6 +457,8 @@ export function bindModules(modules: Map<string, AstModule>): BindProgramResult 
 }
 
 /** Bind a single module. Convenience wrapper around `bindModules`. */
-export function bindModule(module: AstModule, modulePath: string): BindProgramResult {
-  return bindModules(new Map([[modulePath, module]]));
+export function bindModule(module: AstModule, modulePath: string): BindResult {
+  const base = bindModules(new Map([[modulePath, module]]));
+  const symbolTable = base.modules[0]?.symbolTable ?? emptyModuleSymbolTable();
+  return { ...base, symbolTable, resolutionMap: symbolTable.references };
 }
