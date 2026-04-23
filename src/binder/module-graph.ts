@@ -24,8 +24,14 @@ export function buildModuleGraph(
   return graph;
 }
 
+type StackFrame =
+  | { type: 'enter'; node: string; path: string[] }
+  | { type: 'exit'; node: string };
+
+const nullSpan: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
+
 /**
- * DFS-based cycle detection across a merged module graph.
+ * Iterative three-color DFS cycle detection across a merged module graph.
  * `spans` maps each `"fromModule→toModule"` edge key to the UseDecl span.
  */
 export function detectCircularImports(
@@ -33,41 +39,46 @@ export function detectCircularImports(
   spans: Map<string, Span>,
 ): BindError[] {
   const errors: BindError[] = [];
-  // Three-color DFS: 0=white, 1=gray, 2=black
+  // 0=white, 1=gray, 2=black
   const color = new Map<string, 0 | 1 | 2>();
 
-  function dfs(node: string, path: string[]): void {
-    color.set(node, 1);
-    const deps = graph.get(node);
-    if (deps !== undefined) {
-      for (const dep of deps) {
-        const edgeKey = `${node}→${dep}`;
-        const c = color.get(dep) ?? 0;
-        if (c === 1) {
-          // Back edge — cycle detected
-          const span = spans.get(edgeKey) ?? {
-            file: '',
-            startLine: 0,
-            startCol: 0,
-            endLine: 0,
-            endCol: 0,
-          };
-          errors.push({
-            kind: 'CircularImport',
-            message: `Circular import detected: ${[...path, node, dep].join(' → ')}`,
-            span,
-          });
-        } else if (c === 0) {
-          dfs(dep, [...path, node]);
+  for (const startNode of graph.keys()) {
+    if ((color.get(startNode) ?? 0) !== 0) continue;
+
+    const stack: StackFrame[] = [{ type: 'enter', node: startNode, path: [] }];
+
+    while (stack.length > 0) {
+      const frame = stack.pop()!;
+
+      if (frame.type === 'exit') {
+        color.set(frame.node, 2);
+        continue;
+      }
+
+      const { node, path } = frame;
+      if ((color.get(node) ?? 0) !== 0) continue;
+
+      color.set(node, 1);
+      stack.push({ type: 'exit', node });
+
+      const deps = graph.get(node);
+      if (deps !== undefined) {
+        for (const dep of deps) {
+          const depColor = color.get(dep) ?? 0;
+          if (depColor === 1) {
+            const cycle = [...path, node, dep];
+            const span = spans.get(`${node}→${dep}`) ?? nullSpan;
+            errors.push({
+              kind: 'CircularImport',
+              cycle,
+              message: `Circular import detected: ${cycle.join(' → ')}`,
+              span,
+            });
+          } else if (depColor === 0) {
+            stack.push({ type: 'enter', node: dep, path: [...path, node] });
+          }
         }
       }
-    }
-    color.set(node, 2);
-  }
-
-  for (const node of graph.keys()) {
-    if ((color.get(node) ?? 0) === 0) {
-      dfs(node, []);
     }
   }
 

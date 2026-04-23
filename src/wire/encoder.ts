@@ -45,6 +45,23 @@ function assertNever(x: never): never {
 }
 
 // ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+/** Thrown by encodeModule when an identifier name contains illegal newline characters. */
+export class WireEncodeError extends Error {
+  override readonly name = 'WireEncodeError';
+}
+
+function assertValidName(name: string): void {
+  if (name.includes('\n') || name.includes('\r')) {
+    throw new WireEncodeError(
+      `Identifier name contains illegal newline character: ${JSON.stringify(name)}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 1a: name collection
 // ---------------------------------------------------------------------------
 
@@ -94,6 +111,7 @@ function collectNamesFromType(t: IonType, c: NameCollector): void {
     case 'Fn':
       for (const p of t.params) collectNamesFromType(p, c);
       collectNamesFromType(t.ret, c);
+      for (const tag of t.effects) c.record(tag);
       break;
     case 'User':
       c.record(t.name);
@@ -540,6 +558,8 @@ function encodeVersionLine(): string {
 
 /** Returns "M <module> v=<version> d=<dialects>". */
 function encodeModuleLine(m: IonIRModule): string {
+  assertValidName(m.module);
+  assertValidName(m.version);
   const base = `M ${m.module} v=${m.version}`;
   if (m.dialects.length === 0) return base;
   return `${base} d=${[...m.dialects].sort().join(',')}`;
@@ -558,10 +578,10 @@ function encodeTypeLine(pool: TypePool): string {
 }
 
 /** Returns "X import <sid> from <module>:<sid> [; ...]" or "" when no imports. */
-function encodeImportLines(imports: readonly ModuleRefNode[]): string {
+function encodeImportLines(imports: readonly ModuleRefNode[], ctx: EncoderContext): string {
   if (imports.length === 0) return '';
   const parts = imports.map(imp => {
-    const modPath = imp.modulePath.join('.');
+    const modPath = imp.modulePath.map(p => encodeName(p, ctx.sym)).join('.');
     const sid = String(imp.symbolId);
     return `import ${sid} from ${modPath}:${sid}`;
   });
@@ -679,6 +699,9 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
       return `${node.modulePath.map(p => encodeName(p, ctx.sym)).join('.')}::${String(node.symbolId)}`;
 
     case 'ForeignRef':
+      assertValidName(node.target);
+      assertValidName(node.module);
+      assertValidName(node.symbol);
       return `ffi:${node.target}:${node.module}:${node.symbol}`;
 
     case 'Effect':
@@ -781,7 +804,11 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
 
 /** Encodes an IonIRModule to wire-format text. Deterministic and byte-stable. */
 export function encodeModule(module: IonIRModule): string {
+  assertValidName(module.module);
+  assertValidName(module.version);
+  for (const dialect of module.dialects) assertValidName(dialect);
   const names = collectNames(module);
+  for (const name of names.keys()) assertValidName(name);
   const types = collectTypes(module);
 
   const sym = buildSymbolPool(names);
@@ -798,7 +825,7 @@ export function encodeModule(module: IonIRModule): string {
   const typLine = encodeTypeLine(typ);
   if (typLine) lines.push(typLine);
 
-  const importLine = encodeImportLines(module.imports);
+  const importLine = encodeImportLines(module.imports, ctx);
   if (importLine) lines.push(importLine);
 
   const dataLine = encodeDataLines(module.data, ctx);

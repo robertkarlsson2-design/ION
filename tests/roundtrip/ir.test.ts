@@ -238,6 +238,21 @@ describe('IonIR serde — unit round-trips', () => {
     const out = deserializeModule(serializeModule(mod));
     expect(out).toEqual(mod);
   });
+
+  it('round-trips Float(-0) preserving the sign of negative zero', () => {
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example.negzero',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Literal', value: { kind: 'Float', value: -0 }, span, type: intType }],
+    };
+    const out = deserializeModule(serializeModule(mod));
+    const outVal = ((out.decls[0] as { value: { value: number } }).value as { value: number }).value;
+    expect(Object.is(outVal, -0)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -479,6 +494,7 @@ describe('IonIR serde — error cases', () => {
       decls: [{ kind: 'Literal', value: { kind: 'Float', value: Infinity }, span, type: intType }],
     };
     expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+    expect(() => serializeModule(mod)).toThrow('decls[0].value.value');
   });
 
   it('throws IonIRSerdeError when serializing Float(-Infinity)', () => {
@@ -492,6 +508,7 @@ describe('IonIR serde — error cases', () => {
       decls: [{ kind: 'Literal', value: { kind: 'Float', value: -Infinity }, span, type: intType }],
     };
     expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+    expect(() => serializeModule(mod)).toThrow('decls[0].value.value');
   });
 
   it('throws IonIRSerdeError when serializing Float(NaN)', () => {
@@ -505,6 +522,7 @@ describe('IonIR serde — error cases', () => {
       decls: [{ kind: 'Literal', value: { kind: 'Float', value: NaN }, span, type: intType }],
     };
     expect(() => serializeModule(mod)).toThrow(IonIRSerdeError);
+    expect(() => serializeModule(mod)).toThrow('decls[0].value.value');
   });
 });
 
@@ -546,6 +564,37 @@ describe('IonIR serde — depth limit guards', () => {
       type = { kind: 'List', elem: type };
     }
     return type;
+  }
+
+  function makeDeepLetWithAdtDeclJson(depth: number): unknown {
+    const leaf = {
+      kind: 'Var',
+      name: 'x',
+      symbolId: testSid,
+      span: testSpan,
+      type: { kind: 'Int' },
+    };
+    let node: unknown = {
+      kind: 'AdtDecl',
+      name: 'T',
+      symbolId: testSid,
+      variants: [],
+      span: testSpan,
+      type: { kind: 'List', elem: { kind: 'List', elem: { kind: 'List', elem: { kind: 'Int' } } } },
+    };
+    for (let i = 0; i < depth; i++) {
+      node = {
+        kind: 'Let',
+        name: 'x',
+        symbolId: testSid,
+        bindingType: { kind: 'Int' },
+        value: leaf,
+        body: node,
+        span: testSpan,
+        type: { kind: 'Int' },
+      };
+    }
+    return node;
   }
 
   function wrapInModule(decl: unknown): string {
@@ -620,5 +669,70 @@ describe('IonIR serde — depth limit guards', () => {
       caught = e;
     }
     expect(caught).toBeInstanceOf(IonIRSerdeError);
+  });
+
+  it('node depth: AdtDecl inside Let-chain at exactly the limit does not throw', () => {
+    // 997 Lets + AdtDecl with 3-deep List type: peak type depth = 997 + 3 = 1000, within limit
+    const json = wrapInModule(makeDeepLetWithAdtDeclJson(MAX_NESTING_DEPTH - 3));
+    expect(() => deserializeModule(json)).not.toThrow();
+  });
+
+  it('node depth: AdtDecl inside Let-chain inherits outer depth', () => {
+    // 998 Lets + AdtDecl with 3-deep List type: peak type depth = 998 + 3 = 1001 > 1000, throws
+    const json = wrapInModule(makeDeepLetWithAdtDeclJson(MAX_NESTING_DEPTH - 2));
+    expect(() => deserializeModule(json)).toThrow(IonIRSerdeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite E — serializer depth limit guards
+// ---------------------------------------------------------------------------
+
+describe('IonIR serde — serializer depth limit guards', () => {
+  function makeDeepLetModule(n: number): IonIRModule {
+    let node: IonIRNode = { kind: 'Var', name: 'x', symbolId: sid, span, type: intType };
+    for (let i = 0; i < n; i++) {
+      node = {
+        kind: 'Let',
+        name: 'x',
+        symbolId: sid,
+        bindingType: intType,
+        value: { kind: 'Var', name: 'x', symbolId: sid, span, type: intType },
+        body: node,
+        span,
+        type: intType,
+      };
+    }
+    return {
+      ionir: '1.0',
+      module: 'org.example.deep',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [node],
+    };
+  }
+
+  it('deeply-nested module throws IonIRSerdeError', () => {
+    expect(() => serializeModule(makeDeepLetModule(MAX_NESTING_DEPTH + 10))).toThrow(IonIRSerdeError);
+  });
+
+  it('error message matches /module exceeds max nesting depth/', () => {
+    expect(() => serializeModule(makeDeepLetModule(MAX_NESTING_DEPTH + 10))).toThrow(/module exceeds max nesting depth/);
+  });
+
+  it('thrown value is instanceof IonIRSerdeError', () => {
+    let caught: unknown;
+    try {
+      serializeModule(makeDeepLetModule(MAX_NESTING_DEPTH + 10));
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(IonIRSerdeError);
+  });
+
+  it('shallow module does not throw', () => {
+    expect(() => serializeModule(makeDeepLetModule(2))).not.toThrow();
   });
 });

@@ -4,6 +4,7 @@ import { lex } from '../../src/lexer/index.js';
 import { parseModule } from '../../src/parser/declarations.js';
 import { buildModule } from '../../src/ast/builder.js';
 import { bindModule, detectCircularImports } from '../../src/binder/index.js';
+import { buildModuleGraph } from '../../src/binder/module-graph.js';
 import type { ModuleGraph } from '../../src/binder/index.js';
 
 // ---------------------------------------------------------------------------
@@ -14,39 +15,47 @@ function bind(src: string, modulePath = 'test') {
   return bindModule(buildModule(parseModule(lex(src, 'test.ion'))), modulePath);
 }
 
+function symbols(src: string, modulePath = 'test') {
+  return Array.from(bind(src, modulePath).modules[0]!.symbolTable.symbols.values());
+}
+
+function refs(src: string, modulePath = 'test') {
+  return bind(src, modulePath).modules[0]!.symbolTable.references;
+}
+
 // ---------------------------------------------------------------------------
 // 1. Basic top-level resolution
 // ---------------------------------------------------------------------------
 
 describe('basic top-level resolution', () => {
   it('fn declaration registers a symbol with no errors', () => {
-    const { symbolTable, errors } = bind('fn foo() = 42');
-    expect(errors).toHaveLength(0);
-    expect(symbolTable.size()).toBe(1);
-    const [entry] = [...symbolTable.all()];
+    const result = bind('fn foo() = 42');
+    expect(result.errors).toHaveLength(0);
+    const syms = Array.from(result.modules[0]!.symbolTable.symbols.values());
+    expect(syms).toHaveLength(1);
+    const [entry] = syms;
     expect(entry?.name).toBe('foo');
-    expect(entry?.declKind).toBe('Fn');
-    expect(entry?.isPublic).toBe(false);
+    expect(entry?.kind).toBe('fn');
+    expect(entry?.pub).toBe(false);
   });
 
   it('let declaration registers a symbol', () => {
-    const { symbolTable, errors } = bind('let answer = 42');
-    expect(errors).toHaveLength(0);
-    const [entry] = [...symbolTable.all()];
+    const result = bind('let answer = 42');
+    expect(result.errors).toHaveLength(0);
+    const syms = Array.from(result.modules[0]!.symbolTable.symbols.values());
+    const [entry] = syms;
     expect(entry?.name).toBe('answer');
-    expect(entry?.declKind).toBe('Let');
+    expect(entry?.kind).toBe('let');
   });
 
   it('fn body can reference a top-level let', () => {
-    const { resolutionMap, errors, symbolTable } = bind(
-      'let x = 1\nfn bar() = x',
-    );
-    expect(errors).toHaveLength(0);
-    expect(symbolTable.size()).toBe(2);
-    // resolutionMap must contain an entry for the `x` Ident in bar's body.
-    expect(resolutionMap.size).toBeGreaterThan(0);
-    const xEntry = [...symbolTable.all()].find(e => e.name === 'x');
-    expect([...resolutionMap.values()]).toContain(xEntry?.id);
+    const result = bind('let x = 1\nfn bar() = x');
+    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    expect(result.errors).toHaveLength(0);
+    expect(syms.size).toBe(2);
+    expect(references.size).toBeGreaterThan(0);
+    const xEntry = Array.from(syms.values()).find(e => e.name === 'x');
+    expect(Array.from(references.values())).toContain(xEntry?.id);
   });
 });
 
@@ -56,12 +65,9 @@ describe('basic top-level resolution', () => {
 
 describe('mutual recursion', () => {
   it('fn a calls b and fn b calls a — both resolve without errors', () => {
-    const { errors, resolutionMap } = bind(
-      'fn a() = b()\nfn b() = a()',
-    );
-    expect(errors).toHaveLength(0);
-    // Two Ident references (`b` in a's body, `a` in b's body) resolved.
-    expect(resolutionMap.size).toBe(2);
+    const result = bind('fn a() = b()\nfn b() = a()');
+    expect(result.errors).toHaveLength(0);
+    expect(result.modules[0]!.symbolTable.references.size).toBe(2);
   });
 });
 
@@ -108,16 +114,14 @@ describe('duplicate binding', () => {
 
 describe('parameter scoping', () => {
   it('param x in body resolves to the fn param, not an outer let x', () => {
-    const { errors, resolutionMap, symbolTable } = bind(
-      'let x = 99\nfn double(x: Int) = x * 2',
-    );
-    expect(errors).toHaveLength(0);
-    const paramEntry = [...symbolTable.all()].find(
-      e => e.name === 'x' && e.declKind === 'Param',
+    const result = bind('let x = 99\nfn double(x: Int) = x * 2');
+    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    expect(result.errors).toHaveLength(0);
+    const paramEntry = Array.from(syms.values()).find(
+      e => e.name === 'x' && e.kind === 'fnParam',
     );
     expect(paramEntry).toBeDefined();
-    // The only resolved `x` reference (in double's body) must map to the param.
-    expect([...resolutionMap.values()]).toContain(paramEntry?.id);
+    expect(Array.from(references.values())).toContain(paramEntry?.id);
   });
 
   it('type params are in scope within fn signature and body', () => {
@@ -132,19 +136,17 @@ describe('parameter scoping', () => {
 
 describe('lambda scoping', () => {
   it('lambda param x resolves within lambda body', () => {
-    const { errors, resolutionMap, symbolTable } = bind(
-      'fn f() = let n = 5; (x -> x + 1)(n)',
-    );
-    expect(errors).toHaveLength(0);
-    const lambdaParam = [...symbolTable.all()].find(
-      e => e.name === 'x' && e.declKind === 'Param',
+    const result = bind('fn f() = let n = 5; (x -> x + 1)(n)');
+    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    expect(result.errors).toHaveLength(0);
+    const lambdaParam = Array.from(syms.values()).find(
+      e => e.name === 'x' && e.kind === 'fnParam',
     );
     expect(lambdaParam).toBeDefined();
-    expect([...resolutionMap.values()]).toContain(lambdaParam?.id);
+    expect(Array.from(references.values())).toContain(lambdaParam?.id);
   });
 
   it('lambda param does not leak outside lambda', () => {
-    // `x` inside the lambda is fine; but `x` in an outer context (after) is not.
     const { errors } = bind('fn f() = let _lam = (x -> x); x');
     const undefinedErrors = errors.filter(e => e.kind === 'UndefinedName');
     expect(undefinedErrors.length).toBeGreaterThan(0);
@@ -157,19 +159,17 @@ describe('lambda scoping', () => {
 
 describe('LetExpr scoping', () => {
   it('let y = 10; y + 1 — y in body resolves correctly', () => {
-    const { errors, resolutionMap, symbolTable } = bind(
-      'fn f() = let y = 10; y + 1',
-    );
-    expect(errors).toHaveLength(0);
-    const letEntry = [...symbolTable.all()].find(
-      e => e.name === 'y' && e.declKind === 'Let',
+    const result = bind('fn f() = let y = 10; y + 1');
+    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    expect(result.errors).toHaveLength(0);
+    const letEntry = Array.from(syms.values()).find(
+      e => e.name === 'y' && e.kind === 'letExprBinding',
     );
     expect(letEntry).toBeDefined();
-    expect([...resolutionMap.values()]).toContain(letEntry?.id);
+    expect(Array.from(references.values())).toContain(letEntry?.id);
   });
 
   it('value of let is evaluated in outer scope', () => {
-    // The value `z` is undefined — it should produce UndefinedName.
     const { errors } = bind('fn f() = let y = z; y');
     const undefinedErrors = errors.filter(e => e.kind === 'UndefinedName');
     expect(undefinedErrors).toHaveLength(1);
@@ -188,9 +188,7 @@ describe('UseDecl imports', () => {
   });
 
   it('use std.db.{query, insert} → selective names in scope', () => {
-    const { errors } = bind(
-      'use std.db.{query, insert}\nfn f() = query',
-    );
+    const { errors } = bind('use std.db.{query, insert}\nfn f() = query');
     expect(errors).toHaveLength(0);
   });
 
@@ -207,17 +205,15 @@ describe('UseDecl imports', () => {
 
 describe('nested module', () => {
   it('fn inside nested module gets a SymbolId', () => {
-    const { symbolTable, errors } = bind(
-      'module Inner { fn ping() = 1 }',
-    );
-    expect(errors).toHaveLength(0);
-    const ping = [...symbolTable.all()].find(e => e.name === 'ping');
+    const result = bind('module Inner { fn ping() = 1 }');
+    expect(result.errors).toHaveLength(0);
+    const syms = Array.from(result.modules[0]!.symbolTable.symbols.values());
+    const ping = syms.find(e => e.name === 'ping');
     expect(ping).toBeDefined();
-    expect(ping?.declKind).toBe('Fn');
+    expect(ping?.kind).toBe('fn');
   });
 
   it('name in nested module does not clash with outer name', () => {
-    // Both outer `x` and inner `x` can coexist in distinct scopes.
     const { errors } = bind('let x = 1\nmodule M { let x = 2 }');
     expect(errors).toHaveLength(0);
   });
@@ -229,25 +225,23 @@ describe('nested module', () => {
 
 describe('match arm pattern bindings', () => {
   it('IdentPat v in arm resolves to PatternBinding SymbolId', () => {
-    const { errors, symbolTable, resolutionMap } = bind(
+    const result = bind(
       'data Option = Some(Int) | None\nfn f(opt: Option) = match opt | Some(v) -> v | _ -> 0',
     );
-    const undefinedErrors = errors.filter(e => e.kind === 'UndefinedName');
+    const { symbols: syms, references } = result.modules[0]!.symbolTable;
+    const undefinedErrors = result.errors.filter(e => e.kind === 'UndefinedName');
     expect(undefinedErrors).toHaveLength(0);
-    const patEntry = [...symbolTable.all()].find(
-      e => e.name === 'v' && e.declKind === 'PatternBinding',
+    const patEntry = Array.from(syms.values()).find(
+      e => e.name === 'v' && e.kind === 'patternBinding',
     );
     expect(patEntry).toBeDefined();
-    expect([...resolutionMap.values()]).toContain(patEntry?.id);
+    expect(Array.from(references.values())).toContain(patEntry?.id);
   });
 
   it('WildcardPat does not introduce a binding', () => {
-    const { symbolTable } = bind(
-      'fn f() = match 1 | _ -> 0',
-    );
-    const wildcard = [...symbolTable.all()].find(
-      e => e.name === '_',
-    );
+    const result = bind('fn f() = match 1 | _ -> 0');
+    const syms = Array.from(result.modules[0]!.symbolTable.symbols.values());
+    const wildcard = syms.find(e => e.name === '_');
     expect(wildcard).toBeUndefined();
   });
 
@@ -267,21 +261,23 @@ describe('match arm pattern bindings', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 11. Module graph extraction
+// 11. Module graph extraction (via buildModuleGraph directly)
 // ---------------------------------------------------------------------------
 
 describe('module graph', () => {
   it('use a.b and use c.d → graph has both imported paths', () => {
-    const { moduleGraph } = bind('use a.b\nuse c.d', 'mymod');
-    const deps = moduleGraph.get('mymod');
+    const ast = buildModule(parseModule(lex('use a.b\nuse c.d', 'test.ion')));
+    const graph = buildModuleGraph('mymod', ast.decls);
+    const deps = graph.get('mymod');
     expect(deps).toBeDefined();
     expect(deps?.has('a.b')).toBe(true);
     expect(deps?.has('c.d')).toBe(true);
   });
 
   it('module with no use decls → graph entry is empty', () => {
-    const { moduleGraph } = bind('fn foo() = 1', 'mymod');
-    const deps = moduleGraph.get('mymod');
+    const ast = buildModule(parseModule(lex('fn foo() = 1', 'test.ion')));
+    const graph = buildModuleGraph('mymod', ast.decls);
+    const deps = graph.get('mymod');
     expect(deps).toBeDefined();
     expect(deps?.size).toBe(0);
   });
@@ -326,14 +322,13 @@ describe('circular import detection', () => {
 
 describe('property: all SymbolIds are unique', () => {
   it('distinct function names produce distinct SymbolIds', () => {
-    // Use `f<N>` names to avoid collisions with Ion keywords.
     fc.assert(
       fc.property(
         fc.uniqueArray(fc.nat(9999).map(n => `f${n}`), { minLength: 1, maxLength: 8 }),
         (names) => {
           const src = names.map(n => `fn ${n}() = 1`).join('\n');
-          const { symbolTable } = bind(src);
-          const ids = [...symbolTable.all()].map(e => e.id);
+          const result = bind(src);
+          const ids = Array.from(result.modules[0]!.symbolTable.symbols.values()).map(e => e.id);
           const uniqueIds = new Set(ids);
           return uniqueIds.size === ids.length;
         },

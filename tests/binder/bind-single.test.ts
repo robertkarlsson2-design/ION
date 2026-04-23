@@ -3,8 +3,8 @@ import { lex } from '../../src/lexer/index.js';
 import { parseModule } from '../../src/parser/declarations.js';
 import { buildModule } from '../../src/ast/builder.js';
 import { bindModule } from '../../src/binder/index.js';
+import type { BindResult, BindError } from '../../src/binder/index.js';
 import type { AstModule } from '../../src/ast/nodes.js';
-import type { BindError } from '../../src/binder/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -22,6 +22,14 @@ function errorKinds(errors: readonly BindError[]): string[] {
   return errors.map(e => e.kind);
 }
 
+function allSymbols(result: BindResult) {
+  return [...result.symbolTable.all()];
+}
+
+function publicNames(result: BindResult): Set<string> {
+  return new Set(allSymbols(result).filter(s => s.isPublic).map(s => s.name));
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -30,9 +38,7 @@ describe('bindModule — empty module', () => {
   it('produces no errors and no symbols', () => {
     const result = bind('');
     expect(result.errors).toHaveLength(0);
-    expect(result.modules).toHaveLength(1);
-    expect(result.modules[0]?.symbolTable.symbols.size).toBe(0);
-    expect(result.modules[0]?.symbolTable.exports.size).toBe(0);
+    expect(result.symbolTable.size()).toBe(0);
   });
 });
 
@@ -41,34 +47,30 @@ describe('bindModule — fn declaration', () => {
     const result = bind('pub fn foo(x: Int) -> Int = x');
     expect(result.errors).toHaveLength(0);
 
-    const { symbols, exports, references } = result.modules[0]!.symbolTable;
-
     // pub fn foo is in exports
-    expect(exports.has('foo')).toBe(true);
-    const fooId = exports.get('foo')!;
+    expect(publicNames(result).has('foo')).toBe(true);
 
-    // foo is an fn symbol and is pub
-    const fooSym = symbols.get(fooId);
-    expect(fooSym?.kind).toBe('fn');
+    // foo is an Fn symbol and is pub
+    const fooSym = allSymbols(result).find(s => s.name === 'foo');
+    expect(fooSym?.declKind).toBe('Fn');
     expect(fooSym?.name).toBe('foo');
-    expect(fooSym?.pub).toBe(true);
+    expect(fooSym?.isPublic).toBe(true);
 
-    // x is a fnParam symbol
-    const xSym = Array.from(symbols.values()).find(s => s.name === 'x');
-    expect(xSym?.kind).toBe('fnParam');
+    // x is a Param symbol
+    const xSym = allSymbols(result).find(s => s.name === 'x');
+    expect(xSym?.declKind).toBe('Param');
 
     // The Ident 'x' in the body resolves to x's id
-    const refValues = Array.from(references.values());
+    const refValues = Array.from(result.resolutionMap.values());
     expect(refValues).toContain(xSym?.id);
   });
 
   it('non-pub fn is in symbols but not in exports', () => {
     const result = bind('fn hidden() = 42');
     expect(result.errors).toHaveLength(0);
-    const { symbols, exports } = result.modules[0]!.symbolTable;
-    const hiddenSym = Array.from(symbols.values()).find(s => s.name === 'hidden');
-    expect(hiddenSym?.kind).toBe('fn');
-    expect(exports.has('hidden')).toBe(false);
+    const hiddenSym = allSymbols(result).find(s => s.name === 'hidden');
+    expect(hiddenSym?.declKind).toBe('Fn');
+    expect(publicNames(result).has('hidden')).toBe(false);
   });
 });
 
@@ -77,7 +79,8 @@ describe('bindModule — undefined name', () => {
     const result = bind('let a = b');
     expect(errorKinds(result.errors)).toContain('UndefinedName');
     const err = result.errors.find(e => e.kind === 'UndefinedName');
-    expect(err).toMatchObject({ kind: 'UndefinedName', name: 'b' });
+    expect(err?.kind).toBe('UndefinedName');
+    expect(err?.message).toContain('b');
   });
 });
 
@@ -86,27 +89,24 @@ describe('bindModule — duplicate binding', () => {
     const result = bind('fn foo() = 1\nfn foo() = 2');
     expect(errorKinds(result.errors)).toContain('DuplicateBinding');
     const err = result.errors.find(e => e.kind === 'DuplicateBinding');
-    expect(err).toMatchObject({ kind: 'DuplicateBinding', name: 'foo' });
+    expect(err?.kind).toBe('DuplicateBinding');
+    expect(err?.message).toContain('foo');
   });
 });
 
 describe('bindModule — LetExpr sequential binding', () => {
   it('resolves inner LetExpr referencing the outer binding', () => {
-    // ION let expression syntax: let x = value; body
-    // Nested: let x = 42; let y = x; y
     const result = bind('fn test() -> Int = let x = 42; let y = x; y');
     expect(result.errors).toHaveLength(0);
 
-    const { symbols, references } = result.modules[0]!.symbolTable;
+    const xSym = allSymbols(result).find(s => s.name === 'x');
+    const ySym = allSymbols(result).find(s => s.name === 'y');
 
-    const xSym = Array.from(symbols.values()).find(s => s.name === 'x');
-    const ySym = Array.from(symbols.values()).find(s => s.name === 'y');
-
-    expect(xSym?.kind).toBe('letExprBinding');
-    expect(ySym?.kind).toBe('letExprBinding');
+    expect(xSym?.declKind).toBe('Let');
+    expect(ySym?.declKind).toBe('Let');
 
     // Both x and y should appear as reference targets
-    const refValues = Array.from(references.values());
+    const refValues = Array.from(result.resolutionMap.values());
     expect(refValues).toContain(xSym?.id);
     expect(refValues).toContain(ySym?.id);
   });
@@ -114,32 +114,28 @@ describe('bindModule — LetExpr sequential binding', () => {
 
 describe('bindModule — forward reference', () => {
   it('resolves forward references via two-pass hoisting', () => {
-    // pub fn a calls pub fn b, which is declared after a
     const result = bind('pub fn a() -> Int = b()\npub fn b() -> Int = 42');
     expect(result.errors).toHaveLength(0);
 
-    const { exports, symbols, references } = result.modules[0]!.symbolTable;
-    expect(exports.has('a')).toBe(true);
-    expect(exports.has('b')).toBe(true);
+    expect(publicNames(result).has('a')).toBe(true);
+    expect(publicNames(result).has('b')).toBe(true);
 
-    const bSym = Array.from(symbols.values()).find(s => s.name === 'b');
+    const bSym = allSymbols(result).find(s => s.name === 'b');
     // The reference to b inside a's body should resolve to b's id
-    expect(Array.from(references.values())).toContain(bSym?.id);
+    expect(Array.from(result.resolutionMap.values())).toContain(bSym?.id);
   });
 });
 
 describe('bindModule — match pattern binding', () => {
-  it('binds IdentPat as patternBinding and resolves it in the arm body', () => {
+  it('binds IdentPat as PatternBinding and resolves it in the arm body', () => {
     const result = bind('fn test(e: Int) -> Int = match e | x -> x');
     expect(result.errors).toHaveLength(0);
 
-    const { symbols, references } = result.modules[0]!.symbolTable;
-
-    const xSym = Array.from(symbols.values()).find(s => s.name === 'x' && s.kind === 'patternBinding');
+    const xSym = allSymbols(result).find(s => s.name === 'x' && s.declKind === 'PatternBinding');
     expect(xSym).toBeDefined();
 
     // The body reference 'x' resolves to the pattern binding
-    expect(Array.from(references.values())).toContain(xSym?.id);
+    expect(Array.from(result.resolutionMap.values())).toContain(xSym?.id);
   });
 });
 
@@ -149,29 +145,25 @@ describe('bindModule — nested module', () => {
     const result = bind(src);
     expect(result.errors).toHaveLength(0);
 
-    const { symbols, exports } = result.modules[0]!.symbolTable;
+    // 'Inner' is a Module symbol in the outer scope
+    const innerModuleSym = allSymbols(result).find(s => s.name === 'Inner');
+    expect(innerModuleSym?.declKind).toBe('Module');
 
-    // 'Inner' is a module symbol in the outer scope
-    const innerModuleSym = Array.from(symbols.values()).find(s => s.name === 'Inner');
-    expect(innerModuleSym?.kind).toBe('module');
-
-    // 'baz' is an fn symbol in the overall symbols map
-    const bazSym = Array.from(symbols.values()).find(s => s.name === 'baz');
-    expect(bazSym?.kind).toBe('fn');
+    // 'baz' is an Fn symbol in the overall symbol table
+    const bazSym = allSymbols(result).find(s => s.name === 'baz');
+    expect(bazSym?.declKind).toBe('Fn');
 
     // 'outer' is a top-level pub export
-    expect(exports.has('outer')).toBe(true);
+    expect(publicNames(result).has('outer')).toBe(true);
   });
 });
 
 describe('bindModule — type parameters', () => {
-  it('registers type params as typeParam symbols', () => {
+  it('registers type params as TypeParam symbols', () => {
     const result = bind('fn id<T>(x: T) -> T = x');
     expect(result.errors).toHaveLength(0);
 
-    const { symbols } = result.modules[0]!.symbolTable;
-
-    const tSym = Array.from(symbols.values()).find(s => s.name === 'T');
-    expect(tSym?.kind).toBe('typeParam');
+    const tSym = allSymbols(result).find(s => s.name === 'T');
+    expect(tSym?.declKind).toBe('TypeParam');
   });
 });

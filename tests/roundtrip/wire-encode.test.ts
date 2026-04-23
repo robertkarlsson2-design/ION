@@ -679,13 +679,30 @@ const moduleRefArb = fc.record({
 const adtDeclArb = fc.record({
   name: fc.string({ minLength: 1, maxLength: 10 }),
   symbolId: symbolIdArb,
+  variants: fc.array(
+    fc.record({
+      tag: fc.string({ minLength: 1, maxLength: 10 }),
+      symbolId: symbolIdArb,
+      fields: fc.array(
+        fc.record({
+          name: fc.string({ minLength: 1, maxLength: 10 }),
+          symbolId: symbolIdArb,
+          type: ionTypeArb,
+          span: spanArb,
+        }),
+        { maxLength: 3 },
+      ),
+      span: spanArb,
+    }),
+    { maxLength: 3 },
+  ),
   span: spanArb,
   type: ionTypeArb,
-}).map(({ name, symbolId, span: s, type }) => ({
+}).map(({ name, symbolId, variants, span: s, type }) => ({
   kind: 'AdtDecl' as const,
   name,
   symbolId,
-  variants: [],
+  variants,
   span: s,
   type,
 }));
@@ -706,6 +723,129 @@ const moduleArb: fc.Arbitrary<IonIRModule> = fc.record({
   data,
   decls,
 }));
+
+// ---------------------------------------------------------------------------
+// Suite F — Import path pool symmetry
+// ---------------------------------------------------------------------------
+
+describe('wire encoder — import path pool symmetry', () => {
+  // organizationService: 19 chars, tokenCost=ceil(19/4)=5
+  // shouldPool: count*(5-1) > 2+5 → count*4 > 7 → count>=2
+  const orgSvcSegment = 'organizationService';
+  const orgSvcSid = makeSymbolId('svc:0');
+
+  function makePooledPathModule(): IonIRModule {
+    // import uses the segment once, ModuleRef decl uses it once → 2 total → pooled
+    const importRef: IonIRNode & { kind: 'ModuleRef' } = {
+      kind: 'ModuleRef',
+      modulePath: [orgSvcSegment],
+      symbolId: orgSvcSid,
+      span,
+      type: intType,
+    };
+    return {
+      ionir: '1.0',
+      module: 'org.example.sym',
+      version: '1.0.0',
+      dialects: ['core'],
+      imports: [{ kind: 'ModuleRef', modulePath: [orgSvcSegment], symbolId: orgSvcSid, span, type: intType }],
+      data: [],
+      decls: [importRef],
+    };
+  }
+
+  it('F1: pooled segment is aliased consistently in both X and F lines', () => {
+    const out = encodeModule(makePooledPathModule());
+    const lines = out.split('\n').filter(l => l.length > 0);
+
+    const sLine = lines.find(l => l.startsWith('S ')) ?? '';
+    const xLine = lines.find(l => l.startsWith('X ')) ?? '';
+    const fLine = lines.find(l => l.startsWith('F ')) ?? '';
+
+    // segment was pooled
+    expect(sLine).toContain(orgSvcSegment);
+    // neither X nor F contain the raw segment
+    expect(xLine).not.toContain(orgSvcSegment);
+    expect(fLine).not.toContain(orgSvcSegment);
+
+    // extract the alias from the S line, e.g. "a=organizationService"
+    const aliasMatch = sLine.match(/(\w+)=organizationService/);
+    expect(aliasMatch).not.toBeNull();
+    const alias = aliasMatch![1];
+
+    // both X and F use that same alias
+    expect(xLine).toContain(alias);
+    expect(fLine).toContain(alias);
+  });
+
+  it('F2: unpooled segment remains raw in both X and F lines', () => {
+    const stdSid = makeSymbolId('std:0');
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example.raw',
+      version: '1.0.0',
+      dialects: ['core'],
+      imports: [{ kind: 'ModuleRef', modulePath: ['std', 'io'], symbolId: stdSid, span, type: intType }],
+      data: [],
+      decls: [{ kind: 'ModuleRef', modulePath: ['std', 'io'], symbolId: stdSid, span, type: intType }],
+    };
+    const out = encodeModule(mod);
+    const lines = out.split('\n').filter(l => l.length > 0);
+
+    // short segments not pooled → no S line
+    expect(lines.some(l => l.startsWith('S '))).toBe(false);
+
+    const xLine = lines.find(l => l.startsWith('X ')) ?? '';
+    const fLine = lines.find(l => l.startsWith('F ')) ?? '';
+    expect(xLine).toContain('std');
+    expect(fLine).toContain('std');
+  });
+
+  it('F3: multi-segment path — pooled segment aliased, unpooled segment raw, in both X and F', () => {
+    // organizationService pooled (2 occurrences), io not pooled (2 chars, cost 1)
+    const mixedSid = makeSymbolId('mixed:0');
+    const importRef: IonIRNode & { kind: 'ModuleRef' } = {
+      kind: 'ModuleRef',
+      modulePath: [orgSvcSegment, 'io'],
+      symbolId: mixedSid,
+      span,
+      type: intType,
+    };
+    const mod: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example.mixed',
+      version: '1.0.0',
+      dialects: ['core'],
+      imports: [{ kind: 'ModuleRef', modulePath: [orgSvcSegment, 'io'], symbolId: mixedSid, span, type: intType }],
+      data: [],
+      decls: [importRef],
+    };
+    const out = encodeModule(mod);
+    const lines = out.split('\n').filter(l => l.length > 0);
+
+    const sLine = lines.find(l => l.startsWith('S ')) ?? '';
+    const xLine = lines.find(l => l.startsWith('X ')) ?? '';
+    const fLine = lines.find(l => l.startsWith('F ')) ?? '';
+
+    // segment was pooled
+    expect(sLine).toContain(orgSvcSegment);
+
+    // raw segment absent from X and F
+    expect(xLine).not.toContain(orgSvcSegment);
+    expect(fLine).not.toContain(orgSvcSegment);
+
+    // unpooled 'io' segment appears raw in both
+    expect(xLine).toContain('io');
+    expect(fLine).toContain('io');
+
+    // alias consistent between X and F
+    const aliasMatch = sLine.match(/(\w+)=organizationService/);
+    expect(aliasMatch).not.toBeNull();
+    const alias = aliasMatch![1];
+    expect(xLine).toContain(alias);
+    expect(fLine).toContain(alias);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Suite E — Property tests

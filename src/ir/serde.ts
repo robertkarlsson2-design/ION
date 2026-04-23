@@ -61,13 +61,16 @@ export class IonIRSerdeError extends Error {
 // ---------------------------------------------------------------------------
 
 function setReplacer(_key: string, value: unknown): unknown {
+  if (Object.is(value, -0)) return '-0';
   if (value instanceof Set) {
     return [...(value as Set<unknown>)].sort();
   }
   return value;
 }
 
-function assertFiniteNumbers(value: unknown, path: string): void {
+function assertFiniteNumbers(value: unknown, path: string, depth = 0): void {
+  if (depth > MAX_NESTING_DEPTH)
+    throw new IonIRSerdeError(`module exceeds max nesting depth`, path);
   if (typeof value === 'number') {
     if (!isFinite(value)) {
       throw new IonIRSerdeError(`value is not a finite number (got ${String(value)})`, path);
@@ -76,21 +79,21 @@ function assertFiniteNumbers(value: unknown, path: string): void {
   }
   if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i++) {
-      assertFiniteNumbers(value[i], `${path}[${i}]`);
+      assertFiniteNumbers(value[i], `${path}[${i}]`, depth + 1);
     }
     return;
   }
   if (value instanceof Set) {
     let i = 0;
     for (const elem of value) {
-      assertFiniteNumbers(elem, `${path}[${i}]`);
+      assertFiniteNumbers(elem, `${path}[${i}]`, depth + 1);
       i++;
     }
     return;
   }
   if (typeof value === 'object' && value !== null) {
     for (const [key, val] of Object.entries(value)) {
-      assertFiniteNumbers(val, path ? `${path}.${key}` : key);
+      assertFiniteNumbers(val, path ? `${path}.${key}` : key, depth + 1);
     }
   }
 }
@@ -195,7 +198,11 @@ function parseLiteralValue(raw: unknown, path: string): LiteralValue {
   const kind = assertString(r['kind'], `${path}.kind`);
   switch (kind) {
     case 'Int': return { kind: 'Int', value: assertNumber(r['value'], `${path}.value`) };
-    case 'Float': return { kind: 'Float', value: assertNumber(r['value'], `${path}.value`) };
+    case 'Float': {
+      const raw = r['value'];
+      if (raw === '-0') return { kind: 'Float', value: -0 };
+      return { kind: 'Float', value: assertNumber(raw, `${path}.value`) };
+    }
     case 'Str': return { kind: 'Str', value: assertString(r['value'], `${path}.value`) };
     case 'Bool': return { kind: 'Bool', value: assertBoolean(r['value'], `${path}.value`) };
     case 'Null': return { kind: 'Null' };
