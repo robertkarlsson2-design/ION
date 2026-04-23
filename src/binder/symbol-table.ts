@@ -26,6 +26,9 @@ export class SymbolTable {
 
   /** Register a symbol entry; throws if the id is already registered. */
   register(entry: SymbolEntry): void {
+    if (this.entries.has(entry.id)) {
+      throw new Error(`SymbolTable: duplicate id '${entry.id}'`);
+    }
     this.entries.set(entry.id, entry);
   }
 
