@@ -67,7 +67,9 @@ function setReplacer(_key: string, value: unknown): unknown {
   return value;
 }
 
-function assertFiniteNumbers(value: unknown, path: string): void {
+function assertFiniteNumbers(value: unknown, path: string, depth = 0): void {
+  if (depth > MAX_NESTING_DEPTH)
+    throw new IonIRSerdeError(`module exceeds max nesting depth`, path);
   if (typeof value === 'number') {
     if (!isFinite(value)) {
       throw new IonIRSerdeError(`value is not a finite number (got ${String(value)})`, path);
@@ -76,21 +78,21 @@ function assertFiniteNumbers(value: unknown, path: string): void {
   }
   if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i++) {
-      assertFiniteNumbers(value[i], `${path}[${i}]`);
+      assertFiniteNumbers(value[i], `${path}[${i}]`, depth + 1);
     }
     return;
   }
   if (value instanceof Set) {
     let i = 0;
     for (const elem of value) {
-      assertFiniteNumbers(elem, `${path}[${i}]`);
+      assertFiniteNumbers(elem, `${path}[${i}]`, depth + 1);
       i++;
     }
     return;
   }
   if (typeof value === 'object' && value !== null) {
     for (const [key, val] of Object.entries(value)) {
-      assertFiniteNumbers(val, path ? `${path}.${key}` : key);
+      assertFiniteNumbers(val, path ? `${path}.${key}` : key, depth + 1);
     }
   }
 }

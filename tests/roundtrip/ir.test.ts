@@ -668,3 +668,56 @@ describe('IonIR serde — depth limit guards', () => {
     expect(() => deserializeModule(json)).toThrow(IonIRSerdeError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite E — serializer depth limit guards
+// ---------------------------------------------------------------------------
+
+describe('IonIR serde — serializer depth limit guards', () => {
+  function makeDeepLetModule(n: number): IonIRModule {
+    let node: IonIRNode = { kind: 'Var', name: 'x', symbolId: sid, span, type: intType };
+    for (let i = 0; i < n; i++) {
+      node = {
+        kind: 'Let',
+        name: 'x',
+        symbolId: sid,
+        bindingType: intType,
+        value: { kind: 'Var', name: 'x', symbolId: sid, span, type: intType },
+        body: node,
+        span,
+        type: intType,
+      };
+    }
+    return {
+      ionir: '1.0',
+      module: 'org.example.deep',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [node],
+    };
+  }
+
+  it('deeply-nested module throws IonIRSerdeError', () => {
+    expect(() => serializeModule(makeDeepLetModule(MAX_NESTING_DEPTH + 10))).toThrow(IonIRSerdeError);
+  });
+
+  it('error message matches /module exceeds max nesting depth/', () => {
+    expect(() => serializeModule(makeDeepLetModule(MAX_NESTING_DEPTH + 10))).toThrow(/module exceeds max nesting depth/);
+  });
+
+  it('thrown value is instanceof IonIRSerdeError', () => {
+    let caught: unknown;
+    try {
+      serializeModule(makeDeepLetModule(MAX_NESTING_DEPTH + 10));
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(IonIRSerdeError);
+  });
+
+  it('shallow module does not throw', () => {
+    expect(() => serializeModule(makeDeepLetModule(2))).not.toThrow();
+  });
+});
