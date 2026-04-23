@@ -76,3 +76,4 @@ export type { PrettyOptions } from './wire/index.js';
 
 export * as ast from './ast/index.js';
 export * from './grammar/index.js';
+export * from './checker/index.js';

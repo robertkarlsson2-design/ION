@@ -136,6 +136,68 @@ describe('bindModule', () => {
     expect(result.modules).toHaveLength(1);
     expect(result.modules[0]?.modulePath).toBe('myMod');
   });
+
+  it('file path containing colon (Windows-style) — resolution map is correct', () => {
+    // Simulate a Windows absolute path like C:/project/src/main.ion
+    const tokens = lex('fn add(a: Int, b: Int) -> Int = a + b', 'C:/project/src/main.ion');
+    const ast = buildModule(parseModule(tokens));
+    const result = bindModule(ast, 'C:/project/src/main.ion');
+    expect(result.errors).toHaveLength(0);
+    // 'a' and 'b' each appear once in the body
+    const refs = result.modules[0]!.symbolTable.references;
+    expect(refs.size).toBe(2);
+    // Each resolved id must be a non-empty string
+    for (const id of refs.values()) {
+      expect(typeof id).toBe('string');
+      expect((id as string).length).toBeGreaterThan(0);
+    }
+    // All keys use \0 as separator — none should collide across colon-containing paths
+    for (const key of refs.keys()) {
+      expect(key).toContain('\0');
+      expect(key.startsWith('C:/project/src/main.ion\0')).toBe(true);
+    }
+  });
+});
+
+describe('DataDecl variant name clash — DuplicateBinding (ION-68)', () => {
+  it('fn declared before data variant with same name — DuplicateBinding on variant', () => {
+    const ast = parse('fn foo() = 1\ndata D = foo');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('foo');
+  });
+
+  it('let decl before data variant with same name — DuplicateBinding on variant', () => {
+    const ast = parse('let x = 1\ndata D = x');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('x');
+  });
+
+  it('duplicate variant name within same data decl — DuplicateBinding on second variant', () => {
+    const ast = parse('data D = A | A');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('A');
+  });
+
+  it('data variant declared before fn with same name — DuplicateBinding on fn (regression guard)', () => {
+    const ast = parse('data D = foo\nfn foo() = 1');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('foo');
+  });
+
+  it('data decl with distinct variant names — zero errors (regression guard)', () => {
+    const ast = parse('data D = Leaf | Node');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(0);
+  });
 });
 
 describe('bindProgram (via detectCircularImports)', () => {

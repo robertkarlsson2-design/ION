@@ -33,8 +33,9 @@ export interface BindProgramResult {
 
 const nullSpan: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
 
+// \0 is guaranteed absent from all OS file paths, making this key unambiguous.
 function spanKey(span: Span): string {
-  return `${span.file}:${span.startLine}:${span.startCol}`;
+  return `${span.file}\0${span.startLine}\0${span.startCol}`;
 }
 
 class Binder {
@@ -138,9 +139,7 @@ class Binder {
       case 'DataDecl': {
         this.registerDecl(scope, decl.name, 'data', decl.span, null, decl.pub, idPrefix);
         for (const variant of decl.variants) {
-          if (!scope.hasOwn(variant.name)) {
-            this.registerDecl(scope, variant.name, 'data', variant.span, null, decl.pub, idPrefix);
-          }
+          this.registerDecl(scope, variant.name, 'data', variant.span, null, decl.pub, idPrefix);
         }
         break;
       }

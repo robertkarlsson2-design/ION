@@ -34,7 +34,11 @@ export class SymbolTableBuilder {
   private readonly _exports: Map<string, SymbolId> = new Map();
   private readonly _references: Map<string, SymbolId> = new Map();
 
+  /** Register a symbol entry; throws if the id is already registered. */
   register(info: SymbolInfo): void {
+    if (this._symbols.has(info.id)) {
+      throw new Error(`SymbolTable: duplicate id '${info.id}'`);
+    }
     this._symbols.set(info.id, info);
   }
 

@@ -679,13 +679,30 @@ const moduleRefArb = fc.record({
 const adtDeclArb = fc.record({
   name: fc.string({ minLength: 1, maxLength: 10 }),
   symbolId: symbolIdArb,
+  variants: fc.array(
+    fc.record({
+      tag: fc.string({ minLength: 1, maxLength: 10 }),
+      symbolId: symbolIdArb,
+      fields: fc.array(
+        fc.record({
+          name: fc.string({ minLength: 1, maxLength: 10 }),
+          symbolId: symbolIdArb,
+          type: ionTypeArb,
+          span: spanArb,
+        }),
+        { maxLength: 3 },
+      ),
+      span: spanArb,
+    }),
+    { maxLength: 3 },
+  ),
   span: spanArb,
   type: ionTypeArb,
-}).map(({ name, symbolId, span: s, type }) => ({
+}).map(({ name, symbolId, variants, span: s, type }) => ({
   kind: 'AdtDecl' as const,
   name,
   symbolId,
-  variants: [],
+  variants,
   span: s,
   type,
 }));
