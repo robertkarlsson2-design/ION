@@ -137,6 +137,47 @@ describe('bindModule', () => {
   });
 });
 
+describe('DataDecl variant name clash — DuplicateBinding (ION-68)', () => {
+  it('fn declared before data variant with same name — DuplicateBinding on variant', () => {
+    const ast = parse('fn foo() = 1\ndata D = foo');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('foo');
+  });
+
+  it('let decl before data variant with same name — DuplicateBinding on variant', () => {
+    const ast = parse('let x = 1\ndata D = x');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('x');
+  });
+
+  it('duplicate variant name within same data decl — DuplicateBinding on second variant', () => {
+    const ast = parse('data D = A | A');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('A');
+  });
+
+  it('data variant declared before fn with same name — DuplicateBinding on fn (regression guard)', () => {
+    const ast = parse('data D = foo\nfn foo() = 1');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('foo');
+  });
+
+  it('data decl with distinct variant names — zero errors (regression guard)', () => {
+    const ast = parse('data D = Leaf | Node');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(0);
+  });
+});
+
 describe('bindProgram (via detectCircularImports)', () => {
   it('topological order — dependency comes before dependent (no errors)', () => {
     const astA = parse('fn foo() = 1');

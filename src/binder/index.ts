@@ -145,9 +145,7 @@ class Binder {
       case 'DataDecl': {
         this.registerDecl(scope, decl.name, 'Data', decl.span, null, decl.pub, modulePath);
         for (const variant of decl.variants) {
-          if (!scope.hasOwn(variant.name)) {
-            this.registerDecl(scope, variant.name, 'Data', variant.span, null, decl.pub, modulePath);
-          }
+          this.registerDecl(scope, variant.name, 'Data', variant.span, null, decl.pub, modulePath);
         }
         break;
       }
