@@ -135,6 +135,26 @@ describe('bindModule', () => {
     const result = bindModule(ast, 'myMod');
     expect(result.moduleGraph.has('myMod')).toBe(true);
   });
+
+  it('file path containing colon (Windows-style) — resolution map is correct', () => {
+    // Simulate a Windows absolute path like C:/project/src/main.ion
+    const tokens = lex('fn add(a: Int, b: Int) -> Int = a + b', 'C:/project/src/main.ion');
+    const ast = buildModule(parseModule(tokens));
+    const result = bindModule(ast, 'C:/project/src/main.ion');
+    expect(result.errors).toHaveLength(0);
+    // 'a' and 'b' each appear once in the body
+    expect(result.resolutionMap.size).toBe(2);
+    // Each resolved id must be a non-empty string
+    for (const id of result.resolutionMap.values()) {
+      expect(typeof id).toBe('string');
+      expect((id as string).length).toBeGreaterThan(0);
+    }
+    // All keys use \0 as separator — none should collide across colon-containing paths
+    for (const key of result.resolutionMap.keys()) {
+      expect(key).toContain('\0');
+      expect(key.startsWith('C:/project/src/main.ion\0')).toBe(true);
+    }
+  });
 });
 
 describe('DataDecl variant name clash — DuplicateBinding (ION-68)', () => {

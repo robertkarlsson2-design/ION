@@ -32,8 +32,9 @@ export interface BindResult {
   readonly errors: BindError[];
 }
 
+// \0 is guaranteed absent from all OS file paths, making this key unambiguous.
 function spanKey(span: Span): string {
-  return `${span.file}:${span.startLine}:${span.startCol}`;
+  return `${span.file}\0${span.startLine}\0${span.startCol}`;
 }
 
 class Binder {
