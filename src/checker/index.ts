@@ -228,7 +228,7 @@ class Checker {
         const usedEffects = new Set<EffectTag>();
         const bodyType = this.inferExpr(decl.body, bodyEnv, usedEffects);
 
-        const unifyErr = unify(bodyType, fnType.ret, this.subst, decl.body.span);
+        const unifyErr = unify(fnType.ret, bodyType, this.subst, decl.body.span);
         if (unifyErr !== null) this.errors.push(unifyErr);
 
         this.checkEffects(usedEffects, new Set(decl.effects), decl.span);

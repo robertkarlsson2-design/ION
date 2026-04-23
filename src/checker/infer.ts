@@ -7,8 +7,7 @@ import type {
 } from '../ast/nodes.js';
 import type { IonType, TypeVar, FnType } from '../ir/types.js';
 import type { SymbolId, Span } from '../types.js';
-import type { SymbolTable } from '../binder/symbol-table.js';
-import type { ResolutionMap } from '../binder/index.js';
+import type { ModuleSymbolTable } from '../binder/symbol-table.js';
 import type { CheckError } from './types.js';
 import { resolveAnnotation } from './annotation.js';
 import { applySubst, applySubstEnv, composeSubst, emptySubst, unify, typeStr } from './unifier.js';
@@ -18,8 +17,8 @@ import type { EffectTag } from '../ast/types.js';
 
 /** Shared mutable state threaded through the inference pass. */
 export interface InferCtx {
-  readonly symbolTable: SymbolTable;
-  readonly resolutionMap: ResolutionMap;
+  readonly symbolTable: ModuleSymbolTable;
+  readonly resolutionMap: ReadonlyMap<string, SymbolId>;
   /** spanKey(param.span) or spanKey(pattern.span) → SymbolId (Param + PatternBinding). */
   readonly varIndex: ReadonlyMap<string, SymbolId>;
   /** spanKey(let-binding span) → SymbolId for both LetDecl and LetExpr. */
@@ -43,7 +42,7 @@ export interface InferCtx {
 
 /** Build a canonical span key matching the binder's format. */
 export function spanKey(span: Span): string {
-  return `${span.file}:${span.startLine}:${span.startCol}`;
+  return `${span.file}\0${span.startLine}\0${span.startCol}`;
 }
 
 /** Produce a new unique TypeVar using the context's monotonic counter. */
@@ -501,10 +500,11 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
       if (innerType.kind === 'Result') return innerType.ok;
       ctx.errors.push({
         kind: 'InvalidPropagate',
-        code: 'E0403',
-        actualType: innerType,
+        code: 'E0404',
+        found: innerType,
         span: expr.span,
         message: `The '?' operator requires an Option or Result type, got ${typeStr(innerType)}`,
+        suggestion: `Only use '?' on Option<T> or Result<T, E> values`,
       });
       return freshTypeVar(ctx);
     }
@@ -629,10 +629,10 @@ function findRecordFieldType(
 // ---------------------------------------------------------------------------
 
 /** Build varIndex (Param + PatternBinding) from the symbol table. */
-export function buildVarIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
+export function buildVarIndex(symbolTable: ModuleSymbolTable): Map<string, SymbolId> {
   const idx = new Map<string, SymbolId>();
-  for (const entry of symbolTable.all()) {
-    if (entry.declKind === 'Param' || entry.declKind === 'PatternBinding') {
+  for (const entry of symbolTable.symbols.values()) {
+    if (entry.kind === 'fnParam' || entry.kind === 'patternBinding') {
       idx.set(spanKey(entry.span), entry.id);
     }
   }
@@ -640,10 +640,10 @@ export function buildVarIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
 }
 
 /** Build letIndex (LetDecl + LetExpr bindings) from the symbol table. */
-export function buildLetIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
+export function buildLetIndex(symbolTable: ModuleSymbolTable): Map<string, SymbolId> {
   const idx = new Map<string, SymbolId>();
-  for (const entry of symbolTable.all()) {
-    if (entry.declKind === 'Let') {
+  for (const entry of symbolTable.symbols.values()) {
+    if (entry.kind === 'let' || entry.kind === 'letExprBinding') {
       idx.set(spanKey(entry.span), entry.id);
     }
   }
@@ -651,10 +651,10 @@ export function buildLetIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
 }
 
 /** Build fnDeclIndex (Fn + Extern) from the symbol table. */
-export function buildFnDeclIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
+export function buildFnDeclIndex(symbolTable: ModuleSymbolTable): Map<string, SymbolId> {
   const idx = new Map<string, SymbolId>();
-  for (const entry of symbolTable.all()) {
-    if (entry.declKind === 'Fn' || entry.declKind === 'Extern') {
+  for (const entry of symbolTable.symbols.values()) {
+    if (entry.kind === 'fn' || entry.kind === 'extern') {
       idx.set(entry.name, entry.id);
     }
   }
@@ -662,10 +662,10 @@ export function buildFnDeclIndex(symbolTable: SymbolTable): Map<string, SymbolId
 }
 
 /** Build nameIndex (Data + TypeAlias) from the symbol table. */
-export function buildNameIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
+export function buildNameIndex(symbolTable: ModuleSymbolTable): Map<string, SymbolId> {
   const idx = new Map<string, SymbolId>();
-  for (const entry of symbolTable.all()) {
-    if (entry.declKind === 'Data' || entry.declKind === 'TypeAlias') {
+  for (const entry of symbolTable.symbols.values()) {
+    if (entry.kind === 'data' || entry.kind === 'typeAlias') {
       idx.set(entry.name, entry.id);
     }
   }

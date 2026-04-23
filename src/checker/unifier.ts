@@ -224,8 +224,9 @@ function makeMismatch(expected: IonType, actual: IonType, span: Span): CheckErro
     kind: 'TypeMismatch',
     code: 'E0401',
     expected,
-    actual,
+    found: actual,
     span,
     message: `Type mismatch: expected ${typeStr(expected)}, got ${typeStr(actual)}`,
+    suggestion: `Expected ${typeStr(expected)}, but got ${typeStr(actual)}`,
   };
 }

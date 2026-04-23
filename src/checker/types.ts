@@ -1,3 +1,5 @@
+export type { CheckError } from './errors.js';
+
 export type {
   IonType,
   IntType,

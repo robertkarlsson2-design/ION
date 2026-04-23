@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "typecheck": "tsc --project tsconfig.test.json"
   },
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.15"
