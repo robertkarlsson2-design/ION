@@ -558,6 +558,8 @@ function encodeVersionLine(): string {
 
 /** Returns "M <module> v=<version> d=<dialects>". */
 function encodeModuleLine(m: IonIRModule): string {
+  assertValidName(m.module);
+  assertValidName(m.version);
   const base = `M ${m.module} v=${m.version}`;
   if (m.dialects.length === 0) return base;
   return `${base} d=${[...m.dialects].sort().join(',')}`;
@@ -697,6 +699,9 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext): string {
       return `${node.modulePath.map(p => encodeName(p, ctx.sym)).join('.')}::${String(node.symbolId)}`;
 
     case 'ForeignRef':
+      assertValidName(node.target);
+      assertValidName(node.module);
+      assertValidName(node.symbol);
       return `ffi:${node.target}:${node.module}:${node.symbol}`;
 
     case 'Effect':

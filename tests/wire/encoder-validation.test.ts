@@ -171,6 +171,34 @@ describe('Suite V — newline validation', () => {
       .toThrow(WireEncodeError);
   });
 
+  it('V15: ForeignRef.target with \\n throws WireEncodeError', () => {
+    const foreignRef: IonIRNode = {
+      kind: 'ForeignRef',
+      target: 'bad\ntarget',
+      module: 'legit',
+      symbol: 'fn',
+      sig: { params: [], ret: intType, template: '$1()' },
+      span,
+      type: intType,
+    };
+    expect(() => encodeModule({ ...makeMinimal(), decls: [foreignRef] }))
+      .toThrow(WireEncodeError);
+  });
+
+  it('V16: ForeignRef.symbol with \\n throws WireEncodeError', () => {
+    const foreignRef: IonIRNode = {
+      kind: 'ForeignRef',
+      target: 'js',
+      module: 'legit',
+      symbol: 'bad\nsym',
+      sig: { params: [], ret: intType, template: '$1()' },
+      span,
+      type: intType,
+    };
+    expect(() => encodeModule({ ...makeMinimal(), decls: [foreignRef] }))
+      .toThrow(WireEncodeError);
+  });
+
   it('V14: Fn type effect tag with \\n throws WireEncodeError', () => {
     const fnType: IonType = {
       kind: 'Fn',
