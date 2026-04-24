@@ -191,6 +191,54 @@ describe('DataDecl variant name clash — DuplicateBinding (ION-68)', () => {
   });
 });
 
+describe('self-named constructor — ION-77 regression', () => {
+  it('data Foo = Foo(Int) — zero errors', () => {
+    const ast = parse('data Foo = Foo(Int)');
+    const result = bindModule(ast, 'test');
+    expect(result.errors.filter(e => e.kind === 'DuplicateBinding')).toHaveLength(0);
+  });
+
+  it('data Foo = Foo (unit variant) — zero errors', () => {
+    const ast = parse('data Foo = Foo');
+    const result = bindModule(ast, 'test');
+    expect(result.errors.filter(e => e.kind === 'DuplicateBinding')).toHaveLength(0);
+  });
+
+  it('data Error = Error(String) — zero errors', () => {
+    const ast = parse('data Error = Error(String)');
+    const result = bindModule(ast, 'test');
+    expect(result.errors.filter(e => e.kind === 'DuplicateBinding')).toHaveLength(0);
+  });
+
+  it('data Foo = Foo | Bar — zero errors', () => {
+    const ast = parse('data Foo = Foo | Bar');
+    const result = bindModule(ast, 'test');
+    expect(result.errors.filter(e => e.kind === 'DuplicateBinding')).toHaveLength(0);
+  });
+
+  it('data Foo = Bar | Foo — zero errors (self-named at non-first position)', () => {
+    const ast = parse('data Foo = Bar | Foo');
+    const result = bindModule(ast, 'test');
+    expect(result.errors.filter(e => e.kind === 'DuplicateBinding')).toHaveLength(0);
+  });
+
+  it('data Foo = Foo | Foo — exactly 1 DuplicateBinding for second Foo', () => {
+    const ast = parse('data Foo = Foo | Foo');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('Foo');
+  });
+
+  it('fn foo declared before data D = foo — still 1 DuplicateBinding (ION-68 guard unchanged)', () => {
+    const ast = parse('fn foo() = 1\ndata D = foo');
+    const result = bindModule(ast, 'test');
+    const dupes = result.errors.filter(e => e.kind === 'DuplicateBinding');
+    expect(dupes).toHaveLength(1);
+    expect(dupes[0]?.message).toContain('foo');
+  });
+});
+
 describe('bindProgram (via detectCircularImports)', () => {
   it('topological order — dependency comes before dependent (no errors)', () => {
     const astA = parse('fn foo() = 1');
