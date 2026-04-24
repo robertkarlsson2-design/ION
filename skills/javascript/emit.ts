@@ -24,11 +24,17 @@ import type {
   CasePattern,
 } from '../../src/ir/nodes.js';
 import { expandTemplate, wrapEmitted } from '../../src/emit/template.js';
-import type { EmittedExpr } from '../../src/emit/template.js';
+import type {
+  JsNode,
+  JsModule,
+  JsConst,
+  JsClass,
+  JsMethod,
+} from './js-ast.js';
+import { printJsModule, printJsExpr } from './printer.js';
 
-interface EmitCtx {
-  readonly indent: number;
-  readonly helpers: Map<string, string>;
+interface BuildCtx {
+  readonly helpers: Map<string, JsNode>;
 }
 
 const JS_IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -43,367 +49,440 @@ function assertSafeJsIdentifier(name: string, context: string): void {
  * Emit an IonIRModule as a JavaScript source string.
  */
 export function emitJS(module: IonIRModule): string {
-  const ctx: EmitCtx = { indent: 0, helpers: new Map() };
-
-  const adtLines = module.data.map(d => emitAdtDecl(d, ctx));
-  const declLines = module.decls.map(d => emitTopLevelDecl(d, ctx));
-
-  const parts: string[] = ['"use strict";'];
-  const helpersStr = [...ctx.helpers.values()].join('\n');
-  if (helpersStr) parts.push(helpersStr);
-  if (adtLines.length > 0) parts.push(adtLines.join('\n'));
-  if (declLines.length > 0) parts.push(declLines.join('\n'));
-
-  return parts.join('\n') + '\n';
+  return printJsModule(buildJsModule(module));
 }
 
-function indentStr(ctx: EmitCtx): string {
-  return '  '.repeat(ctx.indent);
+function buildJsModule(module: IonIRModule): JsModule {
+  const ctx: BuildCtx = { helpers: new Map() };
+  const dataDecls = module.data.flatMap(d => buildAdtDecl(d, ctx));
+  const bodyDecls = module.decls.flatMap(d => buildTopLevelDecl(d, ctx));
+  const helpers = [...ctx.helpers.values()];
+  return { kind: 'JsModule', helpers, dataDecls, bodyDecls };
 }
 
-function nest(ctx: EmitCtx): EmitCtx {
-  return { indent: ctx.indent + 1, helpers: ctx.helpers };
-}
-
-function emitTopLevelDecl(node: IonIRNode, ctx: EmitCtx): string {
+function buildTopLevelDecl(node: IonIRNode, ctx: BuildCtx): JsNode[] {
   switch (node.kind) {
-    case 'Let': return emitLetTopLevel(node, ctx);
-    case 'OopClass': return emitOopClass(node, ctx);
-    case 'AdtDecl': return emitAdtDecl(node, ctx);
-    case 'EffectDecl': return emitEffectDecl(node);
-    case 'OopInterface': return `// interface ${node.name}`;
-    default: return `${emitExpr(node, ctx)};`;
+    case 'Let': return [buildLetTopLevel(node, ctx)];
+    case 'OopClass': return [buildOopClass(node, ctx)];
+    case 'AdtDecl': return buildAdtDecl(node, ctx);
+    case 'EffectDecl': return [buildEffectDecl(node)];
+    case 'OopInterface': return [{ kind: 'JsLineComment', text: `interface ${node.name}` }];
+    default: {
+      const expr = buildExpr(node, ctx);
+      return [{ kind: 'JsRaw', code: `${nodeToRawStr(expr)};` }];
+    }
   }
 }
 
-function emitLetTopLevel(node: LetNode, ctx: EmitCtx): string {
-  const value = emitExpr(node.value, ctx);
-  return `${indentStr(ctx)}const ${node.name} = ${value};`;
+/** Flatten a simple JsNode to a raw string for the rare default-decl case. */
+function nodeToRawStr(node: JsNode): string {
+  if (node.kind === 'JsRaw') return node.code;
+  if (node.kind === 'JsIdent') return node.name;
+  return 'undefined';
 }
 
-function emitExpr(node: IonIRNode, ctx: EmitCtx): EmittedExpr {
+function buildLetTopLevel(node: LetNode, ctx: BuildCtx): JsConst {
+  return { kind: 'JsConst', name: node.name, value: buildExpr(node.value, ctx) };
+}
+
+function buildExpr(node: IonIRNode, ctx: BuildCtx): JsNode {
   switch (node.kind) {
-    case 'Literal': return emitLiteral(node);
-    case 'Var': return wrapEmitted(node.name);
-    case 'Abs': return emitAbs(node, ctx);
-    case 'App': return emitApp(node, ctx);
-    case 'Let': return emitLetExpr(node, ctx);
-    case 'Case': return emitCase(node, ctx);
-    case 'ForeignRef': return emitForeignRef(node);
-    case 'Accessor': return emitAccessor(node, ctx);
-    case 'Constructor': return emitConstructor(node, ctx);
-    case 'ModuleRef': return emitModuleRef(node);
-    case 'OopNew': return emitOopNew(node, ctx);
-    case 'OopVirtualCall': return emitOopVirtualCall(node, ctx);
-    case 'OopThis': return wrapEmitted('this');
-    case 'AsyncBlock': return emitAsyncBlock(node, ctx);
-    case 'Await': return emitAwait(node, ctx);
-    case 'AdtMatch': return emitAdtMatch(node, ctx);
-    case 'Perform': return emitPerform(node, ctx);
-    case 'Handle': return emitHandle(node, ctx);
-    case 'Resume': return emitResume(node, ctx);
-    case 'Effect': return emitExpr(node.body, ctx);
+    case 'Literal': return buildLiteral(node);
+    case 'Var': return { kind: 'JsIdent', name: node.name };
+    case 'Abs': return buildAbs(node, ctx);
+    case 'App': return buildApp(node, ctx);
+    case 'Let': return buildLetExpr(node, ctx);
+    case 'Case': return buildCase(node, ctx);
+    case 'ForeignRef': return buildForeignRef(node);
+    case 'Accessor': return buildAccessor(node, ctx);
+    case 'Constructor': return buildConstructor(node, ctx);
+    case 'ModuleRef': return { kind: 'JsRaw', code: node.modulePath.join('.') };
+    case 'OopNew': return buildOopNew(node, ctx);
+    case 'OopVirtualCall': return buildOopVirtualCall(node, ctx);
+    case 'OopThis': return { kind: 'JsIdent', name: 'this' };
+    case 'AsyncBlock': return buildAsyncBlock(node, ctx);
+    case 'Await': return buildAwait(node, ctx);
+    case 'AdtMatch': return buildAdtMatch(node, ctx);
+    case 'Perform': return buildPerform(node, ctx);
+    case 'Handle': return buildHandle(node, ctx);
+    case 'Resume': return buildResume(node, ctx);
+    case 'Effect': return buildExpr(node.body, ctx);
     case 'OopClass':
     case 'OopInterface':
     case 'AdtDecl':
     case 'EffectDecl':
-      return wrapEmitted('undefined');
+      return { kind: 'JsIdent', name: 'undefined' };
   }
 }
 
-function emitLiteral(node: LiteralNode): EmittedExpr {
+function buildLiteral(node: LiteralNode): JsNode {
   const v = node.value;
   switch (v.kind) {
-    case 'Int': return wrapEmitted(String(v.value));
-    case 'Float': return wrapEmitted(String(v.value));
-    case 'Bool': return wrapEmitted(v.value ? 'true' : 'false');
-    case 'Null': return wrapEmitted('null');
-    case 'Str': {
-      const escaped = v.value
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, '\\n')
-        .replace(/\r/g, '\\r')
-        .replace(/\t/g, '\\t');
-      return wrapEmitted(`"${escaped}"`);
-    }
+    case 'Int': return { kind: 'JsNumber', value: v.value };
+    case 'Float': return { kind: 'JsNumber', value: v.value };
+    case 'Bool': return { kind: 'JsBool', value: v.value };
+    case 'Null': return { kind: 'JsNull' };
+    case 'Str': return { kind: 'JsString', value: v.value };
   }
 }
 
-function emitAbs(node: AbsNode, ctx: EmitCtx): EmittedExpr {
-  const body = emitExpr(node.body, ctx);
-  if (node.params.length === 0) {
-    return wrapEmitted(`() => ${body}`);
-  }
-  if (node.params.length === 1) {
-    return wrapEmitted(`${node.params[0].name} => ${body}`);
-  }
-  const params = node.params.map(p => p.name).join(', ');
-  return wrapEmitted(`(${params}) => ${body}`);
+function buildAbs(node: AbsNode, ctx: BuildCtx): JsNode {
+  return {
+    kind: 'JsArrow',
+    params: node.params.map(p => p.name),
+    body: buildExpr(node.body, ctx),
+  };
 }
 
-function emitApp(node: AppNode, ctx: EmitCtx): EmittedExpr {
-  const calleeExpr = emitExpr(node.callee, ctx);
-  const callee = node.callee.kind === 'Abs' ? `(${calleeExpr})` : calleeExpr;
-  const args = node.args.map(a => emitExpr(a, ctx)).join(', ');
-  return wrapEmitted(`${callee}(${args})`);
+function buildApp(node: AppNode, ctx: BuildCtx): JsNode {
+  return {
+    kind: 'JsCall',
+    callee: buildExpr(node.callee, ctx),
+    args: node.args.map(a => buildExpr(a, ctx)),
+  };
 }
 
-function emitLetExpr(node: LetNode, ctx: EmitCtx): EmittedExpr {
-  const inner = nest(ctx);
-  const ind = indentStr(ctx);
-  const ind1 = indentStr(inner);
-  const value = emitExpr(node.value, ctx);
-  const body = emitExpr(node.body, inner);
-  return wrapEmitted(`(() => {\n${ind1}const ${node.name} = ${value};\n${ind1}return ${body};\n${ind}})()`);
+function buildLetExpr(node: LetNode, ctx: BuildCtx): JsNode {
+  return {
+    kind: 'JsIife',
+    body: [
+      { kind: 'JsConst', name: node.name, value: buildExpr(node.value, ctx) },
+      { kind: 'JsReturn', value: buildExpr(node.body, ctx) },
+    ],
+  };
 }
 
-function emitCase(node: CaseNode, ctx: EmitCtx): EmittedExpr {
-  if (node.arms.length === 0) return wrapEmitted('undefined');
+function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
+  if (node.arms.length === 0) return { kind: 'JsIdent', name: 'undefined' };
 
-  // Single wildcard arm simplifies to just the body
   if (node.arms.length === 1 && node.arms[0].pattern.kind === 'Wildcard') {
-    return emitExpr(node.arms[0].body, ctx);
+    return buildExpr(node.arms[0].body, ctx);
   }
 
-  const scrutinee = emitExpr(node.scrutinee, ctx);
-  const inner = nest(ctx);
-  const inner2 = nest(inner);
-  const ind = indentStr(ctx);
-  const ind1 = indentStr(inner);
-  const ind2 = indentStr(inner2);
-
-  const clauses: string[] = [];
+  const scrutineeNode = buildExpr(node.scrutinee, ctx);
+  const branches: Array<{ readonly cond: JsNode; readonly body: readonly JsNode[] }> = [];
+  let elseBranch: readonly JsNode[] | undefined;
 
   for (let i = 0; i < node.arms.length; i++) {
     const arm = node.arms[i];
     const isLast = i === node.arms.length - 1;
-    const body = emitExpr(arm.body, inner2);
+    const bodyNode = buildExpr(arm.body, ctx);
     const pat = arm.pattern;
-    const varBinding = pat.kind === 'Var' ? `${ind2}const ${pat.name} = ${scrutinee};\n` : '';
-    const ctorFieldBindings = pat.kind === 'Constructor'
+
+    const varBinding: JsNode[] = pat.kind === 'Var'
+      ? [{ kind: 'JsConst', name: pat.name, value: scrutineeNode }]
+      : [];
+
+    const ctorBindings: JsNode[] = pat.kind === 'Constructor'
       ? pat.fields
           .filter(f => f.kind === 'Var')
-          .map(f => (f.kind === 'Var' ? `${ind2}const ${f.name} = ${scrutinee}.${f.name};\n` : ''))
-          .join('')
-      : '';
+          .map(f => {
+            if (f.kind !== 'Var') return null;
+            const c: JsConst = {
+              kind: 'JsConst',
+              name: f.name,
+              value: { kind: 'JsMember', receiver: scrutineeNode, member: f.name },
+            };
+            return c;
+          })
+          .filter((x): x is JsConst => x !== null)
+      : [];
 
     if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
-      const prefix = clauses.length === 0 ? '' : ' else ';
-      clauses.push(`${prefix}{\n${varBinding}${ind2}return ${body};\n${ind1}}`);
+      elseBranch = [...varBinding, { kind: 'JsReturn', value: bodyNode }];
     } else {
-      const cond = emitPatternCond(pat, scrutinee);
-      const guard = arm.guard !== undefined ? ` && ${emitExpr(arm.guard, inner2)}` : '';
-      const kw = clauses.length === 0 ? 'if ' : ' else if ';
-      clauses.push(`${kw}(${cond}${guard}) {\n${varBinding}${ctorFieldBindings}${ind2}return ${body};\n${ind1}}`);
+      let condNode = buildPatternCond(pat, scrutineeNode);
+      if (arm.guard !== undefined) {
+        condNode = { kind: 'JsBinary', op: '&&', left: condNode, right: buildExpr(arm.guard, ctx) };
+      }
+      branches.push({
+        cond: condNode,
+        body: [...varBinding, ...ctorBindings, { kind: 'JsReturn', value: bodyNode }],
+      });
     }
   }
 
-  return wrapEmitted(`(() => {\n${ind1}${clauses.join('')}\n${ind}})()`);
+  return {
+    kind: 'JsIife',
+    body: [{ kind: 'JsIfElse', branches, elseBranch }],
+  };
 }
 
-function emitPatternCond(pat: CasePattern, scrutinee: string): string {
-  if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'true';
+function buildPatternCond(pat: CasePattern, scrutinee: JsNode): JsNode {
+  if (pat.kind === 'Wildcard' || pat.kind === 'Var') {
+    return { kind: 'JsBool', value: true };
+  }
   if (pat.kind === 'Constructor') {
     assertSafeJsIdentifier(pat.ctorName, 'Constructor pattern tag');
-    return `${scrutinee}._tag === "${pat.ctorName}"`;
+    return {
+      kind: 'JsBinary', op: '===',
+      left: { kind: 'JsMember', receiver: scrutinee, member: '_tag' },
+      right: { kind: 'JsString', value: pat.ctorName },
+    };
   }
   const v = pat.value;
-  if (v.kind === 'Bool') return `${scrutinee} === ${v.value}`;
-  if (v.kind === 'Null') return `${scrutinee} === null`;
-  if (v.kind === 'Str') {
-    const escaped = v.value
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\t/g, '\\t');
-    return `${scrutinee} === "${escaped}"`;
-  }
-  return `${scrutinee} === ${v.value}`;
+  if (v.kind === 'Bool') return { kind: 'JsBinary', op: '===', left: scrutinee, right: { kind: 'JsBool', value: v.value } };
+  if (v.kind === 'Null') return { kind: 'JsBinary', op: '===', left: scrutinee, right: { kind: 'JsNull' } };
+  if (v.kind === 'Str') return { kind: 'JsBinary', op: '===', left: scrutinee, right: { kind: 'JsString', value: v.value } };
+  return { kind: 'JsBinary', op: '===', left: scrutinee, right: { kind: 'JsNumber', value: v.value } };
 }
 
-function emitForeignRef(node: ForeignRefNode): EmittedExpr {
+function buildForeignRef(node: ForeignRefNode): JsNode {
   const arity = node.sig.params.length;
   if (arity === 0) {
-    return wrapEmitted(expandTemplate(node.sig.template, []));
+    return { kind: 'JsRaw', code: expandTemplate(node.sig.template, []) };
   }
   const paramNames = Array.from({ length: arity }, (_, i) => `_p${i + 1}`);
   const emittedArgs = paramNames.map(p => wrapEmitted(p));
-  const call = expandTemplate(node.sig.template, emittedArgs);
-  if (arity === 1) {
-    return wrapEmitted(`${paramNames[0]} => ${call}`);
-  }
-  return wrapEmitted(`(${paramNames.join(', ')}) => ${call}`);
+  const callCode = expandTemplate(node.sig.template, emittedArgs);
+  return {
+    kind: 'JsArrow',
+    params: paramNames,
+    body: { kind: 'JsRaw', code: callCode },
+  };
 }
 
-function emitAccessor(node: AccessorNode, ctx: EmitCtx): EmittedExpr {
-  const recv = emitExpr(node.receiver, ctx);
-  return wrapEmitted(`${recv}.${node.member}`);
+function buildAccessor(node: AccessorNode, ctx: BuildCtx): JsNode {
+  return { kind: 'JsMember', receiver: buildExpr(node.receiver, ctx), member: node.member };
 }
 
-function emitConstructor(node: ConstructorNode, ctx: EmitCtx): EmittedExpr {
-  const args = node.args.map(a => emitExpr(a, ctx)).join(', ');
-  return wrapEmitted(`${node.ctorName}(${args})`);
+function buildConstructor(node: ConstructorNode, ctx: BuildCtx): JsNode {
+  return {
+    kind: 'JsCall',
+    callee: { kind: 'JsIdent', name: node.ctorName },
+    args: node.args.map(a => buildExpr(a, ctx)),
+  };
 }
 
-function emitModuleRef(node: ModuleRefNode): EmittedExpr {
-  return wrapEmitted(node.modulePath.join('.'));
-}
-
-function emitOopNew(node: OopNewNode, ctx: EmitCtx): EmittedExpr {
+function buildOopNew(node: OopNewNode, ctx: BuildCtx): JsNode {
   const className = node.type.kind === 'User' ? node.type.name : String(node.ctorSymbolId);
-  const args = node.args.map(a => emitExpr(a, ctx)).join(', ');
-  return wrapEmitted(`new ${className}(${args})`);
+  return {
+    kind: 'JsNew',
+    className,
+    args: node.args.map(a => buildExpr(a, ctx)),
+  };
 }
 
-function emitOopVirtualCall(node: OopVirtualCallNode, ctx: EmitCtx): EmittedExpr {
-  const recv = emitExpr(node.receiver, ctx);
-  const args = node.args.map(a => emitExpr(a, ctx)).join(', ');
-  return wrapEmitted(`${recv}.${node.method}(${args})`);
+function buildOopVirtualCall(node: OopVirtualCallNode, ctx: BuildCtx): JsNode {
+  return {
+    kind: 'JsCall',
+    callee: { kind: 'JsMember', receiver: buildExpr(node.receiver, ctx), member: node.method },
+    args: node.args.map(a => buildExpr(a, ctx)),
+  };
 }
 
-function emitAsyncBlock(node: AsyncBlockNode, ctx: EmitCtx): EmittedExpr {
-  const inner = nest(ctx);
-  const ind = indentStr(ctx);
-  const ind1 = indentStr(inner);
-  const body = emitExpr(node.body, inner);
-  return wrapEmitted(`async () => {\n${ind1}return ${body};\n${ind}}`);
+function buildAsyncBlock(node: AsyncBlockNode, ctx: BuildCtx): JsNode {
+  // async () => { return body; }  — emit as JsRaw to preserve async keyword
+  const bodyNode = buildExpr(node.body, ctx);
+  return { kind: 'JsRaw', code: `async () => {\n  return ${printJsExpr(bodyNode)};\n}` };
 }
 
-function emitAwait(node: AwaitNode, ctx: EmitCtx): EmittedExpr {
-  const expr = emitExpr(node.expr, ctx);
-  return wrapEmitted(`await ${expr}`);
+function buildAwait(node: AwaitNode, ctx: BuildCtx): JsNode {
+  return { kind: 'JsRaw', code: `await ${printJsExpr(buildExpr(node.expr, ctx))}` };
 }
 
-function emitAdtDecl(node: AdtDeclNode, ctx: EmitCtx): string {
-  const ind = indentStr(ctx);
-  const lines: string[] = [`// ADT: ${node.name}`];
+function buildAdtDecl(node: AdtDeclNode, _ctx: BuildCtx): JsNode[] {
+  const nodes: JsNode[] = [{ kind: 'JsLineComment', text: `ADT: ${node.name}` }];
   for (const variant of node.variants) {
     assertSafeJsIdentifier(variant.tag, 'ADT variant tag');
     if (variant.fields.length === 0) {
-      lines.push(`${ind}const ${variant.tag} = { _tag: "${variant.tag}" };`);
+      nodes.push({
+        kind: 'JsConst',
+        name: variant.tag,
+        value: {
+          kind: 'JsObject',
+          props: [{ kind: 'JsObjectProp', key: '_tag', value: { kind: 'JsString', value: variant.tag }, shorthand: false }],
+        },
+      });
     } else {
       const params = variant.fields.map(f => f.name).join(', ');
       const fields = variant.fields.map(f => f.name).join(', ');
-      lines.push(`${ind}const ${variant.tag} = (${params}) => ({ _tag: "${variant.tag}", ${fields} });`);
+      nodes.push({
+        kind: 'JsConst',
+        name: variant.tag,
+        value: { kind: 'JsRaw', code: `(${params}) => ({ _tag: "${variant.tag}", ${fields} })` },
+      });
     }
   }
-  return lines.join('\n');
+  return nodes;
 }
 
-function emitAdtMatch(node: AdtMatchNode, ctx: EmitCtx): EmittedExpr {
-  const scrutineeStr = emitExpr(node.scrutinee, ctx);
-  const inner = nest(ctx);
-  const inner2 = nest(inner);
-  const ind = indentStr(ctx);
-  const ind1 = indentStr(inner);
-  const ind2 = indentStr(inner2);
-
+function buildAdtMatch(node: AdtMatchNode, ctx: BuildCtx): JsNode {
+  const scrutineeNode = buildExpr(node.scrutinee, ctx);
   const cases = node.arms.map(arm => {
     assertSafeJsIdentifier(arm.tag, 'ADT match arm tag');
-    const bindings = arm.bindings
-      .map(b => `${ind2}const ${b.name} = _s.${b.name};`)
-      .join('\n');
-    const body = emitExpr(arm.body, inner2);
-    const stmts = bindings ? `${bindings}\n${ind2}return ${body};` : `${ind2}return ${body};`;
-    return `${ind1}case "${arm.tag}": {\n${stmts}\n${ind1}}`;
+    const bindings: JsNode[] = arm.bindings.map(b => ({
+      kind: 'JsConst' as const,
+      name: b.name,
+      value: { kind: 'JsMember' as const, receiver: { kind: 'JsIdent' as const, name: '_s' }, member: b.name },
+    }));
+    return {
+      kind: 'JsSwitchCase' as const,
+      label: arm.tag,
+      body: [...bindings, { kind: 'JsReturn' as const, value: buildExpr(arm.body, ctx) }],
+    };
   });
 
-  return wrapEmitted(
-    `(() => {\n${ind1}const _s = ${scrutineeStr};\n${ind1}switch (_s._tag) {\n${cases.join('\n')}\n${ind1}}\n${ind}})()`,
-  );
+  return {
+    kind: 'JsIife',
+    body: [
+      { kind: 'JsConst', name: '_s', value: scrutineeNode },
+      {
+        kind: 'JsSwitch',
+        expr: { kind: 'JsMember', receiver: { kind: 'JsIdent', name: '_s' }, member: '_tag' },
+        cases,
+      },
+    ],
+  };
 }
 
-function emitPerform(node: PerformNode, ctx: EmitCtx): EmittedExpr {
+function buildPerform(node: PerformNode, ctx: BuildCtx): JsNode {
   ensureEffectPerformHelper(ctx);
   assertSafeJsIdentifier(node.operation, 'Perform operation name');
-  const args = node.args.map(a => emitExpr(a, ctx)).join(', ');
-  const payload = `[${args}]`;
-  return wrapEmitted(`(() => { throw new EffectPerform("${node.operation}", ${payload}); })()`);
+  const argNodes = node.args.map(a => buildExpr(a, ctx));
+  return {
+    kind: 'JsIife',
+    body: [
+      {
+        kind: 'JsThrow',
+        value: {
+          kind: 'JsNew',
+          className: 'EffectPerform',
+          args: [{ kind: 'JsString', value: node.operation }, { kind: 'JsArray', elems: argNodes }],
+        },
+      },
+    ],
+  };
 }
 
-function emitHandle(node: HandleNode, ctx: EmitCtx): EmittedExpr {
+function buildHandle(node: HandleNode, ctx: BuildCtx): JsNode {
   ensureEffectPerformHelper(ctx);
-  const inner = nest(ctx);
-  const inner2 = nest(inner);
-  const ind = indentStr(ctx);
-  const ind1 = indentStr(inner);
-  const ind2 = indentStr(inner2);
-  const body = emitExpr(node.body, inner);
 
-  const handlerClauses = node.handlers.map(h => {
+  const bodyNode = buildExpr(node.body, ctx);
+  const retStmt: JsNode = node.returnClause !== undefined
+    ? { kind: 'JsReturn', value: buildExpr(node.returnClause, ctx) }
+    : { kind: 'JsReturn', value: { kind: 'JsIdent', name: '_result' } };
+
+  const handlerIfs: JsNode[] = node.handlers.map(h => {
     assertSafeJsIdentifier(h.operation, 'Handle operation name');
-    const bindings = h.params
-      .map((p, i) => `${ind2}  const ${p.name} = _e.payload[${i}];`)
-      .join('\n');
-    const hBody = emitExpr(h.body, { indent: inner2.indent + 1, helpers: ctx.helpers });
-    const ind3 = indentStr({ indent: inner2.indent + 1, helpers: ctx.helpers });
-    const content = bindings
-      ? `${bindings}\n${ind3}return ${hBody};`
-      : `${ind3}return ${hBody};`;
-    return `${ind2}if (_e.operation === "${h.operation}") {\n${content}\n${ind2}}`;
+    const bindings: JsNode[] = h.params.map((p, i) => ({
+      kind: 'JsConst' as const,
+      name: p.name,
+      value: {
+        kind: 'JsSubscript' as const,
+        receiver: { kind: 'JsMember' as const, receiver: { kind: 'JsIdent' as const, name: '_e' }, member: 'payload' },
+        index: { kind: 'JsNumber' as const, value: i },
+      },
+    }));
+    return {
+      kind: 'JsIfElse' as const,
+      branches: [{
+        cond: {
+          kind: 'JsBinary' as const, op: '===',
+          left: { kind: 'JsMember' as const, receiver: { kind: 'JsIdent' as const, name: '_e' }, member: 'operation' },
+          right: { kind: 'JsString' as const, value: h.operation },
+        },
+        body: [...bindings, { kind: 'JsReturn' as const, value: buildExpr(h.body, ctx) }],
+      }],
+      elseBranch: undefined,
+    };
   });
 
-  const retStmt = node.returnClause !== undefined
-    ? `${ind2}return ${emitExpr(node.returnClause, inner2)};`
-    : `${ind2}return _result;`;
-
-  return wrapEmitted(
-    `(() => {\n${ind1}try {\n${ind2}const _result = ${body};\n${retStmt}\n${ind1}} catch (_e) {\n${ind2}if (_e instanceof EffectPerform) {\n${handlerClauses.join('\n')}\n${ind2}}\n${ind2}throw _e;\n${ind1}}\n${ind}})()`,
-  );
+  return {
+    kind: 'JsIife',
+    body: [
+      {
+        kind: 'JsTryCatch',
+        tryBody: [
+          { kind: 'JsConst', name: '_result', value: bodyNode },
+          retStmt,
+        ],
+        catchParam: '_e',
+        catchBody: [
+          {
+            kind: 'JsIfElse',
+            branches: [{
+              cond: { kind: 'JsInstanceof', expr: { kind: 'JsIdent', name: '_e' }, className: 'EffectPerform' },
+              body: handlerIfs,
+            }],
+            elseBranch: undefined,
+          },
+          { kind: 'JsThrow', value: { kind: 'JsIdent', name: '_e' } },
+        ],
+      },
+    ],
+  };
 }
 
-function emitResume(node: ResumeNode, ctx: EmitCtx): EmittedExpr {
-  const val = emitExpr(node.value, ctx);
-  return wrapEmitted(`/* resume */ ${val}`);
+function buildResume(node: ResumeNode, ctx: BuildCtx): JsNode {
+  return { kind: 'JsRaw', code: `/* resume */ ${printJsExpr(buildExpr(node.value, ctx))}` };
 }
 
-function ensureEffectPerformHelper(ctx: EmitCtx): void {
+function ensureEffectPerformHelper(ctx: BuildCtx): void {
   if (!ctx.helpers.has('EffectPerform')) {
-    ctx.helpers.set(
-      'EffectPerform',
-      [
-        'class EffectPerform extends Error {',
-        '  constructor(operation, payload) {',
-        '    super(`Effect: ${operation}`);',
-        '    this.operation = operation;',
-        '    this.payload = payload;',
-        '  }',
-        '}',
-      ].join('\n'),
-    );
+    const helper: JsClass = {
+      kind: 'JsClass',
+      name: 'EffectPerform',
+      superClass: 'Error',
+      ctor: {
+        kind: 'JsMethod',
+        name: 'constructor',
+        params: ['operation', 'payload'],
+        isStatic: false,
+        body: [
+          { kind: 'JsRaw', code: 'super(`Effect: ${operation}`)' },
+          {
+            kind: 'JsAssign',
+            lhs: { kind: 'JsMember', receiver: { kind: 'JsIdent', name: 'this' }, member: 'operation' },
+            rhs: { kind: 'JsIdent', name: 'operation' },
+          },
+          {
+            kind: 'JsAssign',
+            lhs: { kind: 'JsMember', receiver: { kind: 'JsIdent', name: 'this' }, member: 'payload' },
+            rhs: { kind: 'JsIdent', name: 'payload' },
+          },
+        ],
+      },
+      methods: [],
+    };
+    ctx.helpers.set('EffectPerform', helper);
   }
 }
 
-function emitOopClass(node: OopClassNode, ctx: EmitCtx): string {
-  const inner = nest(ctx);
-  const inner2 = nest(inner);
-  const ind = indentStr(ctx);
-  const ind1 = indentStr(inner);
-  const ind2 = indentStr(inner2);
+function buildOopClass(node: OopClassNode, ctx: BuildCtx): JsClass {
+  const ctorBody: JsNode[] = node.fields.map(f => ({
+    kind: 'JsAssign' as const,
+    lhs: { kind: 'JsMember' as const, receiver: { kind: 'JsIdent' as const, name: 'this' }, member: f.name },
+    rhs: { kind: 'JsIdent' as const, name: f.name },
+  }));
 
-  const ctorParams = node.fields.map(f => f.name).join(', ');
-  const ctorAssignments = node.fields.map(f => `${ind2}this.${f.name} = ${f.name};`).join('\n');
-  const ctor = ctorAssignments
-    ? `${ind1}constructor(${ctorParams}) {\n${ctorAssignments}\n${ind1}}`
-    : `${ind1}constructor(${ctorParams}) {}`;
+  const ctor: JsMethod = {
+    kind: 'JsMethod',
+    name: 'constructor',
+    params: node.fields.map(f => f.name),
+    isStatic: false,
+    body: ctorBody,
+  };
 
-  const methods = node.methods.map(m => {
-    const mParams = m.params.map(p => p.name).join(', ');
-    const prefix = m.isStatic ? 'static ' : '';
-    if (m.body === undefined) {
-      return `${ind1}${prefix}${m.name}(${mParams}) {}`;
-    }
-    const mBody = emitExpr(m.body, inner2);
-    return `${ind1}${prefix}${m.name}(${mParams}) {\n${ind2}return ${mBody};\n${ind1}}`;
-  });
+  const methods: JsMethod[] = node.methods.map(m => ({
+    kind: 'JsMethod' as const,
+    name: m.name,
+    params: m.params.map(p => p.name),
+    isStatic: m.isStatic,
+    body: m.body !== undefined
+      ? [{ kind: 'JsReturn' as const, value: buildExpr(m.body, ctx) }]
+      : [],
+  }));
 
-  const extendsStr = node.superClass !== undefined ? ` extends ${String(node.superClass)}` : '';
-  const classBody = [ctor, ...methods].join('\n\n');
-  return `${ind}class ${node.name}${extendsStr} {\n${classBody}\n${ind}}`;
+  return {
+    kind: 'JsClass',
+    name: node.name,
+    superClass: node.superClass !== undefined ? String(node.superClass) : undefined,
+    ctor,
+    methods,
+  };
 }
 
-function emitEffectDecl(node: EffectDeclNode): string {
-  return `// effect ${node.name}`;
+function buildEffectDecl(node: EffectDeclNode): JsNode {
+  return { kind: 'JsLineComment', text: `effect ${node.name}` };
 }
