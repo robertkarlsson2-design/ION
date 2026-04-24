@@ -21,6 +21,7 @@ import type {
   ConstructorNode,
   ModuleRefNode,
   EffectDeclNode,
+  ListLitIRNode,
   CasePattern,
 } from '../../src/ir/nodes.js';
 import { expandTemplate, wrapEmitted } from '../../src/emit/template.js';
@@ -132,6 +133,8 @@ function buildExpr(node: IonIRNode, ctx: BuildCtx): JsNode {
     case 'Handle': return buildHandle(node, ctx);
     case 'Resume': return buildResume(node, ctx);
     case 'Effect': return buildExpr(node.body, ctx);
+    case 'ListLit':
+      return { kind: 'JsArray', elems: node.elements.map(e => buildExpr(e, ctx)) };
     case 'OopClass':
     case 'OopInterface':
     case 'AdtDecl':

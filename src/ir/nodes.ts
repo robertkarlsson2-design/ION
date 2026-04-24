@@ -145,6 +145,13 @@ export interface AccessorNode {
   readonly type: IonType;
 }
 
+export interface ListLitIRNode {
+  readonly kind: 'ListLit';
+  readonly elements: readonly IonIRNode[];
+  readonly span: Span;
+  readonly type: IonType;
+}
+
 export interface ModuleRefNode {
   readonly kind: 'ModuleRef';
   readonly modulePath: readonly string[];
@@ -180,6 +187,7 @@ export type CoreNode =
   | CaseNode
   | ConstructorNode
   | AccessorNode
+  | ListLitIRNode
   | ModuleRefNode
   | ForeignRefNode
   | EffectNode;
@@ -382,7 +390,7 @@ export type IonIRNode = CoreNode | OopNode | AsyncNode | AdtNode | EffectsNode;
 
 /** All valid `kind` strings for IonIR nodes, for runtime validation. */
 export const VALID_IR_KINDS: ReadonlySet<string> = new Set<string>([
-  'Var', 'Literal', 'App', 'Abs', 'Let', 'Case', 'Constructor', 'Accessor',
+  'Var', 'Literal', 'App', 'Abs', 'Let', 'Case', 'Constructor', 'Accessor', 'ListLit',
   'ModuleRef', 'ForeignRef', 'Effect',
   'OopClass', 'OopInterface', 'OopNew', 'OopVirtualCall', 'OopThis',
   'AsyncBlock', 'Await',

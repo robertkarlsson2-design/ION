@@ -213,6 +213,12 @@ export interface GroupExprNode {
   readonly leadingTrivia: readonly TriviaNode[];
 }
 
+export interface ListLitExprNode {
+  readonly kind: 'ListLitExpr';
+  readonly elements: readonly ExprNode[];
+  readonly span: Span;
+}
+
 export type ExprNode =
   | LiteralIntNode
   | LiteralFloatNode
@@ -230,7 +236,8 @@ export type ExprNode =
   | LetExprNode
   | AccessorExprNode
   | PropagateExprNode
-  | GroupExprNode;
+  | GroupExprNode
+  | ListLitExprNode;
 
 // ---------------------------------------------------------------------------
 // Declaration nodes

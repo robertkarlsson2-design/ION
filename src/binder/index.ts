@@ -353,6 +353,10 @@ class Binder {
         this.resolveExpr(expr.inner, scope, idPrefix);
         break;
 
+      case 'ListLit':
+        for (const el of expr.elements) this.resolveExpr(el, scope, idPrefix);
+        break;
+
       default: {
         const _exhaustive: never = expr;
         throw new Error(`Unhandled expr kind: ${(_exhaustive as AstExprNode).kind}`);
