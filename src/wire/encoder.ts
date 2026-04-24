@@ -723,7 +723,7 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
       assertValidName(node.target);
       assertValidName(node.module);
       assertValidName(node.symbol);
-      return `ffi:${node.target}:${node.module}:${node.symbol}`;
+      return `ffi:${encodeName(node.target, ctx.sym)}:${encodeName(node.module, ctx.sym)}:${encodeName(node.symbol, ctx.sym)}`;
 
     case 'Effect':
       return `eff!${node.effectTag}(${encodeNode(node.body, ctx, depth + 1)})`;

@@ -500,11 +500,11 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
   // ── ffi:target:module:symbol ─────────────────────────────────────────────
   if (cur.text.startsWith('ffi:', cur.pos)) {
     cur.pos += 4;
-    const target = readUntilChar(cur, ':');
+    const target = resolveName(readUntilChar(cur, ':'), ctx);
     consume(cur, ':');
-    const module = readUntilChar(cur, ':');
+    const module = resolveName(readUntilChar(cur, ':'), ctx);
     consume(cur, ':');
-    const symbol = readIdent(cur);
+    const symbol = resolveName(readIdent(cur), ctx);
     return {
       kind: 'ForeignRef', target, module, symbol, sig: FOREIGN_SIG_PLACEHOLDER,
       span: WIRE_SPAN, type: { kind: 'Unit' },
