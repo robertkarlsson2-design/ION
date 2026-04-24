@@ -16,7 +16,8 @@ export type IonType =
   | FnType
   | UserType
   | TypeVar
-  | NeverType;
+  | NeverType
+  | TupleType;
 
 export interface IntType {
   readonly kind: 'Int';
@@ -90,4 +91,9 @@ export interface TypeVar {
 /** Bottom type; result type of match arms that never return. */
 export interface NeverType {
   readonly kind: 'Never';
+}
+
+export interface TupleType {
+  readonly kind: 'Tuple';
+  readonly elements: readonly IonType[];
 }

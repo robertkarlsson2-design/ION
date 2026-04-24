@@ -160,6 +160,8 @@ export function prettyPrintType(type: IonType): string {
       if (type.args.length === 0) return type.name;
       return `${type.name}<${type.args.map(prettyPrintType).join(', ')}>`;
     }
+    case 'Tuple':
+      return `(${type.elements.map(prettyPrintType).join(', ')})`;
     default: return assertNever(type);
   }
 }

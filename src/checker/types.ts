@@ -14,6 +14,7 @@ export type {
   UserType,
   TypeVar,
   NeverType,
+  TupleType,
   EffectSet,
 } from '../ir/types.js';
 
@@ -26,6 +27,7 @@ import type {
   ResultType,
   FnType,
   UserType,
+  TupleType,
 } from '../ir/types.js';
 
 /** Maps TypeVar.id to the concrete type it has been unified with. */
@@ -74,6 +76,8 @@ export function applySubst(s: Substitution, t: IonType): IonType {
         symbolId: t.symbolId,
         args: t.args.map(a => applySubst(s, a)),
       };
+    case 'Tuple':
+      return { kind: 'Tuple', elements: t.elements.map(e => applySubst(s, e)) };
   }
 }
 
@@ -100,6 +104,8 @@ export function typeToString(t: IonType): string {
     case 'User':
       if (t.args.length === 0) return t.name;
       return `${t.name}<${t.args.map(typeToString).join(', ')}>`;
+    case 'Tuple':
+      return `(${t.elements.map(typeToString).join(', ')})`;
   }
 }
 
@@ -148,6 +154,16 @@ export function typesEqual(a: IonType, b: IonType): boolean {
         // Array bounds are checked by the length guard above.
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         if (!typesEqual(a.args[i]!, bu.args[i]!)) return false;
+      }
+      return true;
+    }
+    case 'Tuple': {
+      const bt = b as TupleType;
+      if (a.elements.length !== bt.elements.length) return false;
+      for (let i = 0; i < a.elements.length; i++) {
+        // Array bounds are checked by the length guard above.
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        if (!typesEqual(a.elements[i]!, bt.elements[i]!)) return false;
       }
       return true;
     }

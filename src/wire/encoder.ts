@@ -124,6 +124,9 @@ function collectNamesFromType(t: IonType, c: NameCollector, depth = 0): void {
       c.record(t.name);
       for (const a of t.args) collectNamesFromType(a, c, depth + 1);
       break;
+    case 'Tuple':
+      for (const e of t.elements) collectNamesFromType(e, c, depth + 1);
+      break;
     default:
       assertNever(t);
   }
@@ -341,6 +344,8 @@ function serializeTypeRaw(t: IonType, depth = 0): string {
       return t.args.length === 0
         ? t.name
         : `${t.name}<${t.args.map(a => serializeTypeRaw(a, depth + 1)).join(',')}>`;
+    case 'Tuple':
+      return `tup<${t.elements.map(e => serializeTypeRaw(e, depth + 1)).join(',')}>`;
     default:
       return assertNever(t);
   }
@@ -385,6 +390,9 @@ function collectTypesFromType(t: IonType, out: Map<string, number>, depth = 0): 
       break;
     case 'User':
       for (const a of t.args) collectTypesFromType(a, out, depth + 1);
+      break;
+    case 'Tuple':
+      for (const e of t.elements) collectTypesFromType(e, out, depth + 1);
       break;
     default:
       assertNever(t);

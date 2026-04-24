@@ -26,5 +26,7 @@ export function formatIonType(t: IonType): string {
       return `${t.name}[${t.args.map(formatIonType).join(', ')}]`;
     }
     case 'TypeVar': return `'t${t.id}`;
+    case 'Tuple':
+      return `(${t.elements.map(formatIonType).join(', ')})`;
   }
 }
