@@ -380,6 +380,16 @@ export type EffectsNode = EffectDeclNode | PerformNode | HandleNode | ResumeNode
 
 export type IonIRNode = CoreNode | OopNode | AsyncNode | AdtNode | EffectsNode;
 
+/** All valid `kind` strings for IonIR nodes, for runtime validation. */
+export const VALID_IR_KINDS: ReadonlySet<string> = new Set<string>([
+  'Var', 'Literal', 'App', 'Abs', 'Let', 'Case', 'Constructor', 'Accessor',
+  'ModuleRef', 'ForeignRef', 'Effect',
+  'OopClass', 'OopInterface', 'OopNew', 'OopVirtualCall', 'OopThis',
+  'AsyncBlock', 'Await',
+  'AdtDecl', 'AdtMatch',
+  'EffectDecl', 'Perform', 'Handle', 'Resume',
+]);
+
 /** Which extension dialects are active in a given module. */
 export type IonIRDialect = 'core' | 'ion-oop' | 'ion-async' | 'ion-adt' | 'ion-effects';
 
