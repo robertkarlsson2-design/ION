@@ -133,12 +133,12 @@ emit:
   });
 });
 
-// ── Suite: all 30 patterns load ───────────────────────────────────────────────
+// ── Suite: all 44 patterns load ───────────────────────────────────────────────
 
 describe('full pattern set loads without errors', () => {
-  it('skills/javascript/patterns/ loads exactly 30 matchers', async () => {
+  it('skills/javascript/patterns/ loads exactly 44 matchers', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
-    expect(matchers).toHaveLength(30);
+    expect(matchers).toHaveLength(44);
     expect(matchers.every(m => typeof m.match === 'function')).toBe(true);
   }, 30000);
 });

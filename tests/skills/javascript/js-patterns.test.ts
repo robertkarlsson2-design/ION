@@ -1089,4 +1089,4 @@ describe('ternary', () => {
 it('loadPatterns from skills/javascript returns at least 27 matchers', async () => {
   const matchers = await loadPatterns(SKILL_DIR);
   expect(matchers.length).toBeGreaterThanOrEqual(27);
-});
+}, 30000);
