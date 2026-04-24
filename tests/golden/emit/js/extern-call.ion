@@ -1,0 +1,5 @@
+-- ION-22 golden test: ForeignRef extern call
+-- Tests: ForeignRef template expansion via Let binding + App
+
+extern console_log : (Str) -> Unit = "console.log($1)"
+let result = console_log("hello")

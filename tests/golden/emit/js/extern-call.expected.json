@@ -1,0 +1,21 @@
+{
+  "type": "Program",
+  "sourceType": "module",
+  "body": [
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": { "type": "Identifier", "name": "result_test_result_1" },
+          "init": { "type": "RawExpression", "raw": "console.log(\"hello\")" }
+        }
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": { "type": "Literal", "value": 0 }
+    }
+  ]
+}

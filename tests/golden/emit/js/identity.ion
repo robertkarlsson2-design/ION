@@ -1,0 +1,4 @@
+-- ION-22 golden test: identity function
+-- Tests: Abs + Var emission
+
+let identity = \x -> x

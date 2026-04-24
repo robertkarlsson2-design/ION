@@ -1,0 +1,27 @@
+-- JavaScript stdlib extern declarations.
+-- These are used by Ion programmers to call JS builtins via ForeignRef templates.
+-- The template string uses $1..$N positional placeholders (1-indexed).
+
+extern console_log    : (Str) -> Unit          = "console.log($1)"
+extern console_error  : (Str) -> Unit          = "console.error($1)"
+extern array_push     : [A] (List<A>, A) -> Unit = "$1.push($2)"
+extern array_pop      : [A] (List<A>) -> A      = "$1.pop()"
+extern array_length   : [A] (List<A>) -> Int    = "$1.length"
+extern array_map      : [A, B] (List<A>, (A) -> B) -> List<B> = "$1.map($2)"
+extern array_filter   : [A] (List<A>, (A) -> Bool) -> List<A> = "$1.filter($2)"
+extern array_reduce   : [A, B] (List<A>, (B, A) -> B, B) -> B = "$1.reduce($2, $3)"
+extern string_concat  : (Str, Str) -> Str       = "$1 + $2"
+extern string_length  : (Str) -> Int            = "$1.length"
+extern string_includes: (Str, Str) -> Bool      = "$1.includes($2)"
+extern string_split   : (Str, Str) -> List<Str> = "$1.split($2)"
+extern string_trim    : (Str) -> Str            = "$1.trim()"
+extern math_floor     : (Float) -> Int          = "Math.floor($1)"
+extern math_ceil      : (Float) -> Int          = "Math.ceil($1)"
+extern math_abs       : (Float) -> Float        = "Math.abs($1)"
+extern json_stringify : [A] (A) -> Str          = "JSON.stringify($1)"
+extern json_parse     : (Str) -> Any            = "JSON.parse($1)"
+extern typeof_check   : [A] (A) -> Str          = "typeof $1"
+extern object_keys    : [A] (A) -> List<Str>    = "Object.keys($1)"
+extern object_assign  : [A] (A, A) -> A         = "Object.assign($1, $2)"
+extern promise_resolve: [A] (A) -> Promise<A>   = "Promise.resolve($1)"
+extern promise_reject : (Any) -> Promise<Never> = "Promise.reject($1)"

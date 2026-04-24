@@ -1,0 +1,26 @@
+{
+  "type": "Program",
+  "sourceType": "module",
+  "body": [
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": { "type": "Identifier", "name": "identity_test_identity_0" },
+          "init": {
+            "type": "ArrowFunctionExpression",
+            "params": [{ "type": "Identifier", "name": "x_test_x_1" }],
+            "body": { "type": "Identifier", "name": "x_test_x_1" },
+            "async": false
+          }
+        }
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": { "type": "Literal", "value": 0 }
+    }
+  ]
+}
