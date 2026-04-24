@@ -228,7 +228,11 @@ function parsePool(line: string): Map<string, string> {
 // Phase 4: type expression parser
 // ---------------------------------------------------------------------------
 
-function parseType(cur: Cursor, ctx: DecoderContext): IonType {
+function parseType(cur: Cursor, ctx: DecoderContext, typeDepth = 0): IonType {
+  if (typeDepth > MAX_ENCODE_DEPTH) {
+    throw new WireDecodeError('type expression exceeds maximum depth');
+  }
+
   if (peek(cur) === '$') {
     cur.pos++;
     const id = readIdent(cur);
@@ -241,7 +245,7 @@ function parseType(cur: Cursor, ctx: DecoderContext): IonType {
   const resolved = ctx.typ.get(word);
   if (resolved !== undefined) {
     const sub: Cursor = { text: resolved, pos: 0 };
-    return parseType(sub, ctx);
+    return parseType(sub, ctx, typeDepth + 1);
   }
 
   switch (word) {
@@ -255,32 +259,32 @@ function parseType(cur: Cursor, ctx: DecoderContext): IonType {
 
     case 'list': {
       consume(cur, '<');
-      const elem = parseType(cur, ctx);
+      const elem = parseType(cur, ctx, typeDepth + 1);
       consume(cur, '>');
       return { kind: 'List', elem };
     }
 
     case 'opt': {
       consume(cur, '<');
-      const inner = parseType(cur, ctx);
+      const inner = parseType(cur, ctx, typeDepth + 1);
       consume(cur, '>');
       return { kind: 'Option', inner };
     }
 
     case 'map': {
       consume(cur, '<');
-      const key = parseType(cur, ctx);
+      const key = parseType(cur, ctx, typeDepth + 1);
       consume(cur, ',');
-      const value = parseType(cur, ctx);
+      const value = parseType(cur, ctx, typeDepth + 1);
       consume(cur, '>');
       return { kind: 'Map', key, value };
     }
 
     case 'res': {
       consume(cur, '<');
-      const ok = parseType(cur, ctx);
+      const ok = parseType(cur, ctx, typeDepth + 1);
       consume(cur, ',');
-      const errType = parseType(cur, ctx);
+      const errType = parseType(cur, ctx, typeDepth + 1);
       consume(cur, '>');
       return { kind: 'Result', ok, err: errType };
     }
@@ -289,12 +293,12 @@ function parseType(cur: Cursor, ctx: DecoderContext): IonType {
       consume(cur, '(');
       const params: IonType[] = [];
       if (!tryConsume(cur, ')')) {
-        params.push(parseType(cur, ctx));
-        while (tryConsume(cur, ',')) params.push(parseType(cur, ctx));
+        params.push(parseType(cur, ctx, typeDepth + 1));
+        while (tryConsume(cur, ',')) params.push(parseType(cur, ctx, typeDepth + 1));
         consume(cur, ')');
       }
       consume(cur, '->');
-      const ret = parseType(cur, ctx);
+      const ret = parseType(cur, ctx, typeDepth + 1);
       const effects: EffectTag[] = [];
       if (tryConsume(cur, '!')) {
         effects.push(readIdent(cur) as EffectTag);
@@ -308,8 +312,8 @@ function parseType(cur: Cursor, ctx: DecoderContext): IonType {
       const name = resolveName(word, ctx);
       if (peek(cur) === '<') {
         cur.pos++;
-        const args: IonType[] = [parseType(cur, ctx)];
-        while (tryConsume(cur, ',')) args.push(parseType(cur, ctx));
+        const args: IonType[] = [parseType(cur, ctx, typeDepth + 1)];
+        while (tryConsume(cur, ',')) args.push(parseType(cur, ctx, typeDepth + 1));
         consume(cur, '>');
         return { kind: 'User', name, symbolId: makeSymbolId(''), args };
       }
