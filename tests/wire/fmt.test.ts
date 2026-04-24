@@ -191,6 +191,58 @@ describe('runFmt --pretty on already-formatted file', () => {
 });
 
 // ---------------------------------------------------------------------------
+// F11 — --check on a file already in canonical pretty form exits 0
+// ---------------------------------------------------------------------------
+
+describe('runFmt --check on already-pretty file', () => {
+  it('F11: exits 0 when file was previously formatted with --pretty (surface syntax)', async () => {
+    const dir = await makeTmp();
+    const filePath = await writeTmp(dir, 'h.ion', serializeModule(minimalModule));
+    // First: convert to pretty (surface syntax)
+    const first = await runFmt(['--pretty', filePath]);
+    expect(first.exitCode).toBe(0);
+    const prettyContent = await readFile(filePath, 'utf-8');
+    expect(prettyContent.startsWith('module ')).toBe(true);
+    // Second: --check on the now-surface-syntax file must exit 0
+    const chunks: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      chunks.push(typeof chunk === 'string' ? chunk : chunk.toString());
+      return true;
+    });
+    const result = await runFmt(['--check', filePath]);
+    expect(result.exitCode).toBe(0);
+    expect(chunks.join('')).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F12 — --check on a wire-format file exits 1 as "not in canonical form"
+// ---------------------------------------------------------------------------
+
+describe('runFmt --check on wire-format file', () => {
+  it('F12: exits 1 with filename in stderr (not a serde error) when file is in wire format', async () => {
+    const dir = await makeTmp();
+    const filePath = await writeTmp(dir, 'i.ion', serializeModule(minimalModule));
+    // First: convert to wire format
+    const first = await runFmt(['--wire', filePath]);
+    expect(first.exitCode).toBe(0);
+    const wireContent = await readFile(filePath, 'utf-8');
+    expect(wireContent.startsWith('I1\n')).toBe(true);
+    // Second: --check on the now-wire-format file must exit 1 with filename, not a serde error
+    const chunks: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      chunks.push(typeof chunk === 'string' ? chunk : chunk.toString());
+      return true;
+    });
+    const result = await runFmt(['--check', filePath]);
+    expect(result.exitCode).toBe(1);
+    const output = chunks.join('');
+    expect(output).toContain('i.ion');
+    expect(output).not.toContain('failed to deserialize');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // F10 — --wire first pass produces expected wire encoding
 // ---------------------------------------------------------------------------
 
