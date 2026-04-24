@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, glob } from 'node:fs/promises';
 import { watch } from 'node:fs';
-import { join, resolve, dirname, relative, basename } from 'node:path';
+import { join, resolve, dirname, relative, basename, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { lex } from '../lexer/index.js';
 import { parseModule, ParseError } from '../parser/declarations.js';
@@ -173,6 +173,7 @@ async function collectIonFiles(
   for (const pattern of includePatterns) {
     for await (const rel of glob(pattern, { cwd: rootDir })) {
       const abs = resolve(rootDir, rel);
+      if (abs !== rootDir && !abs.startsWith(rootDir + sep)) continue;
       if (seen.has(abs)) continue;
       seen.add(abs);
       const relNorm = rel.replace(/\\/g, '/');
@@ -247,6 +248,19 @@ async function compileFile(
 ): Promise<CompileFileResult> {
   const ext = TARGET_EXT[target] ?? '.js';
   const outputPath = resolveOutputPath(ionPath, rootDir, outDir, ext);
+
+  if (!outputPath.startsWith(outDir + sep)) {
+    return {
+      outputPath,
+      diagnostics: [{
+        file: ionPath,
+        code: 'BD001',
+        message: `output path escapes outDir: ${outputPath}`,
+        span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: null,
+      }],
+    };
+  }
 
   let src: string;
   try {
@@ -492,6 +506,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
       if (!filename.endsWith('.ion')) return;
 
       const ionPath = resolve(resolvedRootDir, filename);
+      if (!ionPath.startsWith(resolvedRootDir + sep)) return;
       compileFile(ionPath, resolvedRootDir, resolvedOutDir, emitter, target, parsed.noSourcemap)
         .then(result => {
           if (result.diagnostics.length > 0) {
