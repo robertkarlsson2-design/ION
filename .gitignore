@@ -1,3 +1,7 @@
 dist/
 node_modules/
 .pnpm-store/
+*.tsbuildinfo
+.env
+.env.local
+coverage/

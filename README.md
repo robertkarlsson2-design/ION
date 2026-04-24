@@ -52,22 +52,27 @@ Same Ion source. Same logic. Idiomatic output per target.
 
 ## Status
 
-> Ion is in active development. The IR foundation and wire format are complete. The lexer, parser, and JavaScript plugin are in progress.
+> Ion is in active development. The compiler frontend is complete. The JavaScript backend and `ion build` CLI are in progress.
 
 | Component | Status |
 |---|---|
 | IonIR type system | ✅ Complete |
 | Wire format encoder/decoder | ✅ Complete |
+| Lexer | ✅ Complete |
+| Parser | ✅ Complete |
+| Binder (symbol resolution) | ✅ Complete |
+| Type checker | ✅ Complete |
+| AST desugarer → IonIR | ✅ Complete |
 | `ion fmt` CLI | ✅ Complete |
-| Lexer | 🔧 In progress |
-| Parser | 🔧 In progress |
-| Type checker | 🔧 In progress |
-| JavaScript plugin | 🔧 In progress |
+| Pattern matching engine | ✅ Complete |
+| VS Code extension | ✅ Complete |
+| JavaScript emitter | 🔧 In progress |
+| `ion build` CLI | 🔧 In progress |
+| `ion ingest` (convert existing code) | 🔧 In progress |
 | TypeScript plugin | 📋 Planned — Phase 4 |
 | Java plugin | 📋 Planned — Phase 5 |
 | Python plugin | 📋 Planned — Phase 5 |
-| LSP / VS Code extension | 📋 Planned — Phase 4 |
-| `ion ingest` (convert existing code) | 📋 Planned — Phase 4 |
+| LSP server | 📋 Planned — Phase 4 |
 
 ---
 
