@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
 
+/** Escapes a file path for safe embedding in a POSIX shell command. */
+function shellQuote(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
 function workspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
@@ -26,7 +31,7 @@ export function registerCommands(context: vscode.ExtensionContext): void {
       const terminal = vscode.window.createTerminal({ name: 'Ion Check', cwd: root });
       terminal.show();
       if (file !== undefined && file.endsWith('.ion')) {
-        terminal.sendText(`npx ion check ${JSON.stringify(file)}`);
+        terminal.sendText(`npx ion check ${shellQuote(file)}`);
       } else {
         terminal.sendText('npx ion check --all');
       }
@@ -40,7 +45,7 @@ export function registerCommands(context: vscode.ExtensionContext): void {
       const flag = file.endsWith('.ionw') ? '--wire' : '--pretty';
       const terminal = vscode.window.createTerminal({ name: 'Ion Format', cwd: root });
       terminal.show();
-      terminal.sendText(`npx ion fmt ${flag} ${JSON.stringify(file)}`);
+      terminal.sendText(`npx ion fmt ${flag} ${shellQuote(file)}`);
     }),
 
     vscode.commands.registerCommand('ion.ingest', async () => {
@@ -58,7 +63,7 @@ export function registerCommands(context: vscode.ExtensionContext): void {
 
       const terminal = vscode.window.createTerminal({ name: 'Ion Ingest', cwd: root });
       terminal.show();
-      terminal.sendText(`npx ion ingest ${JSON.stringify(file)} --skill ${selectedSkill}`);
+      terminal.sendText(`npx ion ingest ${shellQuote(file)} --skill ${selectedSkill}`);
     }),
   );
 }

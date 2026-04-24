@@ -20,7 +20,9 @@ async function updateStatusBar(): Promise<void> {
 
   const target = await readTargetFromConfig(root);
   if (target !== null) {
-    statusBarItem.text = `Ion: ${target}`;
+    // Strip VS Code icon sequences ($(...)) to prevent icon injection from untrusted workspace config.
+    const safeTarget = target.replace(/\$\([^)]*\)/g, '');
+    statusBarItem.text = `Ion: ${safeTarget}`;
     statusBarItem.show();
   } else {
     statusBarItem.hide();
