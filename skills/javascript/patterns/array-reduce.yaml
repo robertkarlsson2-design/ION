@@ -9,7 +9,8 @@ match:
           - pattern:
               capture: $OBJ
           - pattern:
-              text: reduce
+              nodeType: property_identifier
+              capture: $METHOD
     - pattern:
         nodeType: arguments
         children:
@@ -17,16 +18,25 @@ match:
               capture: $FN
           - pattern:
               capture: $INIT
+conditions:
+  - kind: text-equals
+    var: $METHOD
+    value: "reduce"
 emit:
   kind: App
   callee:
-    kind: Var
-    name:
-      metavar: $OBJ
-      field: text
-    symbolId:
-      metavar: $OBJ
-      field: text
+    kind: Accessor
+    receiver:
+      kind: Var
+      name:
+        metavar: $OBJ
+        field: text
+      symbolId:
+        metavar: $OBJ
+        field: text
+      type:
+        kind: Never
+    member: reduce
     type:
       kind: Never
   args:
@@ -39,5 +49,12 @@ emit:
         field: text
       type:
         kind: Never
-  type:
-    kind: Never
+    - kind: Var
+      name:
+        metavar: $INIT
+        field: text
+      symbolId:
+        metavar: $INIT
+        field: text
+      type:
+        kind: Never

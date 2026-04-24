@@ -1,0 +1,54 @@
+id: optional-chain-member
+language: javascript
+match:
+  nodeType: member_expression
+  children:
+    - pattern:
+        capture: $OBJ
+    - pattern:
+        nodeType: optional_chain
+        capture: $CHAIN
+    - pattern:
+        capture: $MEMBER
+emit:
+  kind: App
+  callee:
+    kind: ForeignRef
+    target: map
+    module: ion:option
+    symbol: map
+    sig:
+      params: []
+      ret:
+        kind: Never
+      template: "$1?.$2"
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $OBJ
+        field: text
+      symbolId:
+        metavar: $OBJ
+        field: text
+      type:
+        kind: Never
+    - kind: Abs
+      params: []
+      captures: []
+      body:
+        kind: Accessor
+        receiver:
+          kind: Var
+          name: x
+          symbolId: x
+          type:
+            kind: Never
+        member:
+          metavar: $MEMBER
+          field: text
+        type:
+          kind: Never
+      type:
+        kind: Never

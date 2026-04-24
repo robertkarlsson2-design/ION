@@ -71,7 +71,8 @@ export interface ChildPattern {
 export type Condition =
   | { readonly kind: 'has-children'; readonly count: number }
   | { readonly kind: 'is-type'; readonly var: string; readonly type: string }
-  | { readonly kind: 'not-mutated-in'; readonly var: string; readonly scope: string };
+  | { readonly kind: 'not-mutated-in'; readonly var: string; readonly scope: string }
+  | { readonly kind: 'text-equals'; readonly var: string; readonly value: string };
 
 /** Emit spec mirrors IonIR node shape with metavar references. */
 export type EmitSpec = Record<string, unknown>;
@@ -223,6 +224,12 @@ function parseCondition(raw: unknown): Condition {
     }
     return { kind: 'not-mutated-in', var: c['var'] as string, scope: c['scope'] as string };
   }
+  if (kind === 'text-equals') {
+    if (typeof c['var'] !== 'string' || typeof c['value'] !== 'string') {
+      throw new Error("text-equals condition requires string 'var' and 'value'");
+    }
+    return { kind: 'text-equals', var: c['var'] as string, value: c['value'] as string };
+  }
   throw new Error(`unknown condition kind: ${String(kind)}`);
 }
 
@@ -356,6 +363,11 @@ function evaluateCondition(cond: Condition, bindings: Bindings, node: CSTNode): 
       // Stubbed as always-true until binder integration is complete.
       return true;
     }
+    case 'text-equals': {
+      const bound = bindings.get(cond.var);
+      if (!bound || Array.isArray(bound)) return false;
+      return (bound as CSTNode).text === cond.value;
+    }
   }
 }
 
@@ -407,6 +419,9 @@ function buildValue(
 ): unknown {
   if (Array.isArray(spec)) return spec.map(item => buildValue(item, bindings, rootSpan, ruleId));
   if (spec === null || typeof spec !== 'object') return spec;
+
+  if (Array.isArray(spec))
+    return (spec as unknown[]).map(item => buildValue(item, bindings, rootSpan, ruleId));
 
   const obj = spec as Record<string, unknown>;
 

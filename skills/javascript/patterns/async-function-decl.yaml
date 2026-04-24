@@ -1,8 +1,10 @@
-id: function-decl
+id: async-function-decl
 language: javascript
 match:
   nodeType: function_declaration
   children:
+    - pattern:
+        capture: $ASYNC_KW
     - pattern:
         nodeType: identifier
         capture: $NAME
@@ -12,6 +14,10 @@ match:
     - pattern:
         nodeType: statement_block
         capture: $BODY
+conditions:
+  - kind: text-equals
+    var: $ASYNC_KW
+    value: "async"
 emit:
   kind: Let
   name:
@@ -23,19 +29,23 @@ emit:
   bindingType:
     kind: Never
   value:
-    kind: Abs
-    params: []
-    captures: []
+    kind: AsyncBlock
     body:
-      kind: Var
-      name:
-        metavar: $BODY
-        field: text
-      symbolId:
-        metavar: $BODY
-        field: text
-      type:
-        kind: Never
+      kind: Abs
+      params: []
+      captures: []
+      body:
+        kind: Var
+        name:
+          metavar: $BODY
+          field: text
+        symbolId:
+          metavar: $BODY
+          field: text
+        type:
+          kind: Never
+    type:
+      kind: Never
   body:
     kind: Literal
     value:
