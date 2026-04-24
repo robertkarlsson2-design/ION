@@ -315,7 +315,6 @@ describe('G: error cases', () => {
   it('G1: unsupported skill → exit 2', async () => {
     const { exitCode } = await runIngest(
       ['/tmp/nonexistent.js', '--skill', 'rust'],
-      { plugin: makeEmptyPlugin(), patterns: [] },
     );
     expect(exitCode).toBe(2);
   });
