@@ -1,4 +1,4 @@
-id: class-decl
+id: class-extends
 language: javascript
 match:
   nodeType: class_declaration
@@ -7,11 +7,14 @@ match:
         nodeType: identifier
         capture: $NAME
     - pattern:
+        nodeType: class_heritage
+        capture: $SUPER
+    - pattern:
         nodeType: class_body
         capture: $BODY
 conditions:
   - kind: has-children
-    count: 2
+    count: 3
 emit:
   kind: OopClass
   name:
@@ -19,6 +22,9 @@ emit:
     field: text
   symbolId:
     metavar: $NAME
+    field: text
+  superClass:
+    metavar: $SUPER
     field: text
   interfaces: []
   fields: []

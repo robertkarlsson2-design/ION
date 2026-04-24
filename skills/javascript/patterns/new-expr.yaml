@@ -8,12 +8,22 @@ match:
         capture: $CTOR
     - pattern:
         nodeType: arguments
-        capture: $ARGS
+        children:
+          - pattern:
+              capture: $$$ARGS
+            isSequence: true
 emit:
   kind: OopNew
   ctorSymbolId:
     metavar: $CTOR
     field: text
-  args: []
-  type:
-    kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $CTOR
+        field: text
+      symbolId:
+        metavar: $CTOR
+        field: text
+      type:
+        kind: Never

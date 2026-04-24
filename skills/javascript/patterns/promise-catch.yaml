@@ -9,33 +9,47 @@ match:
           - pattern:
               capture: $OBJ
           - pattern:
-              text: catch
+              nodeType: property_identifier
+              capture: $METHOD
     - pattern:
         nodeType: arguments
         children:
           - pattern:
-              capture: $ARG
+              capture: $FN
+conditions:
+  - kind: text-equals
+    var: $METHOD
+    value: "catch"
 emit:
   kind: App
   callee:
-    kind: Var
-    name:
-      metavar: $OBJ
-      field: text
-    symbolId:
-      metavar: $OBJ
-      field: text
+    kind: ForeignRef
+    target: catchErr
+    module: ion:result
+    symbol: catchErr
+    sig:
+      params: []
+      ret:
+        kind: Never
+      template: "$1.catch($2)"
     type:
       kind: Never
   args:
     - kind: Var
       name:
-        metavar: $ARG
+        metavar: $OBJ
         field: text
       symbolId:
-        metavar: $ARG
+        metavar: $OBJ
         field: text
       type:
         kind: Never
-  type:
-    kind: Never
+    - kind: Var
+      name:
+        metavar: $FN
+        field: text
+      symbolId:
+        metavar: $FN
+        field: text
+      type:
+        kind: Never

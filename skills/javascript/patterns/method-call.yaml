@@ -9,9 +9,14 @@ match:
           - pattern:
               capture: $OBJ
           - pattern:
+              nodeType: property_identifier
               capture: $METHOD
     - pattern:
-        capture: $ARGS
+        nodeType: arguments
+        children:
+          - pattern:
+              capture: $$$ARGS
+            isSequence: true
 emit:
   kind: OopVirtualCall
   receiver:
@@ -28,5 +33,3 @@ emit:
     metavar: $METHOD
     field: text
   args: []
-  type:
-    kind: Never

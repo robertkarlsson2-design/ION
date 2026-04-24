@@ -1,0 +1,26 @@
+id: arrow-fn-block
+language: javascript
+match:
+  nodeType: arrow_function
+  children:
+    - pattern:
+        nodeType: formal_parameters
+        capture: $PARAMS
+    - pattern:
+        nodeType: statement_block
+        capture: $BODY
+conditions:
+  - kind: is-type
+    var: $BODY
+    type: statement_block
+emit:
+  kind: Abs
+  params: []
+  captures: []
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int

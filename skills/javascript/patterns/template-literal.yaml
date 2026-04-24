@@ -1,0 +1,23 @@
+id: template-literal
+language: javascript
+match:
+  nodeType: template_string
+  children:
+    - pattern:
+        capture: $$$PARTS
+      isSequence: true
+emit:
+  kind: App
+  callee:
+    kind: ForeignRef
+    target: format
+    module: ion:str
+    symbol: format
+    sig:
+      params: []
+      ret:
+        kind: Never
+      template: "`${$1}`"
+    type:
+      kind: Never
+  args: []

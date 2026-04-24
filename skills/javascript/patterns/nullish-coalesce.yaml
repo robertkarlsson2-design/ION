@@ -1,0 +1,54 @@
+id: nullish-coalesce
+language: javascript
+match:
+  nodeType: binary_expression
+  children:
+    - pattern:
+        capture: $LEFT
+    - pattern:
+        capture: $OP
+    - pattern:
+        capture: $RIGHT
+conditions:
+  - kind: text-equals
+    var: $OP
+    value: "??"
+emit:
+  kind: App
+  callee:
+    kind: ForeignRef
+    target: getOrElse
+    module: ion:option
+    symbol: getOrElse
+    sig:
+      params: []
+      ret:
+        kind: Never
+      template: "$1 ?? $2()"
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $LEFT
+        field: text
+      symbolId:
+        metavar: $LEFT
+        field: text
+      type:
+        kind: Never
+    - kind: Abs
+      params: []
+      captures: []
+      body:
+        kind: Var
+        name:
+          metavar: $RIGHT
+          field: text
+        symbolId:
+          metavar: $RIGHT
+          field: text
+        type:
+          kind: Never
+      type:
+        kind: Never

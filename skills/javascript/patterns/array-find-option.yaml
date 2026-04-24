@@ -1,4 +1,4 @@
-id: promise-then
+id: array-find-option
 language: javascript
 match:
   nodeType: call_expression
@@ -19,13 +19,23 @@ match:
 conditions:
   - kind: text-equals
     var: $METHOD
-    value: "then"
+    value: "find"
 emit:
-  kind: AsyncBlock
-  body:
-    kind: Await
-    expr:
-      kind: App
+  kind: App
+  callee:
+    kind: ForeignRef
+    target: fromNullable
+    module: ion:option
+    symbol: fromNullable
+    sig:
+      params: []
+      ret:
+        kind: Never
+      template: "$1"
+    type:
+      kind: Never
+  args:
+    - kind: App
       callee:
         kind: Accessor
         receiver:
@@ -38,7 +48,7 @@ emit:
             field: text
           type:
             kind: Never
-        member: then
+        member: find
         type:
           kind: Never
       args:
@@ -53,5 +63,3 @@ emit:
             kind: Never
       type:
         kind: Never
-    type:
-      kind: Never

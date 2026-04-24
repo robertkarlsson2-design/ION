@@ -9,33 +9,41 @@ match:
           - pattern:
               capture: $OBJ
           - pattern:
-              text: filter
+              nodeType: property_identifier
+              capture: $METHOD
     - pattern:
         nodeType: arguments
         children:
           - pattern:
-              capture: $ARG
+              capture: $FN
+conditions:
+  - kind: text-equals
+    var: $METHOD
+    value: "filter"
 emit:
   kind: App
   callee:
-    kind: Var
-    name:
-      metavar: $OBJ
-      field: text
-    symbolId:
-      metavar: $OBJ
-      field: text
+    kind: Accessor
+    receiver:
+      kind: Var
+      name:
+        metavar: $OBJ
+        field: text
+      symbolId:
+        metavar: $OBJ
+        field: text
+      type:
+        kind: Never
+    member: filter
     type:
       kind: Never
   args:
     - kind: Var
       name:
-        metavar: $ARG
+        metavar: $FN
         field: text
       symbolId:
-        metavar: $ARG
+        metavar: $FN
         field: text
       type:
         kind: Never
-  type:
-    kind: Never
