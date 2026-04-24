@@ -323,19 +323,14 @@ describe('D: emit and transform', () => {
     expect((result?.symbolId as string).startsWith('pattern:')).toBe(true);
   });
 
-  it('D5: invalid emit.kind (unknown IonIR kind) still returns an object (kind is just a string)', () => {
+  it('D5: invalid emit.kind (unknown IonIR kind) returns null, no throw', () => {
     const node = makeLeaf('leaf', 'x');
     const rule = makeRule({
       match: { nodeType: 'leaf' },
       emit: { kind: 'UnknownKind9999', name: 'x', symbolId: 'x' },
     });
-    // The engine doesn't validate known kinds; it builds what the spec says
-    const result = compileRule(rule).match(node);
-    // Either returns null or returns a node — must not throw
     expect(() => compileRule(rule).match(node)).not.toThrow();
-    if (result !== null) {
-      expect(result.kind).toBe('UnknownKind9999');
-    }
+    expect(compileRule(rule).match(node)).toBeNull();
   });
 });
 

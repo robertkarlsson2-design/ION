@@ -46,6 +46,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { IonIRNode } from '../ir/nodes.js';
+import { VALID_IR_KINDS } from '../ir/nodes.js';
 import type { IonType } from '../ir/types.js';
 import type { Span, SymbolId } from '../types.js';
 import { makeSymbolId } from '../types.js';
@@ -132,7 +133,7 @@ export function compileRule(rule: PatternRule): PatternMatcher {
         const bindings = new Map<string, CSTNode | CSTNode[]>();
         if (!matchPattern(rule.match, node, bindings)) return null;
         if (!evaluateConditions(rule.conditions, bindings, node)) return null;
-        return buildEmit(rule.emit, bindings, node, node.startPosition.row.toString(), rule.id);
+        return buildEmit(rule.emit, bindings, node, '', rule.id);
       } catch {
         return null;
       }
@@ -437,6 +438,7 @@ function buildEmit(
 
   // Ensure required IonIR fields are present
   if (typeof built['kind'] !== 'string') return null;
+  if (!VALID_IR_KINDS.has(built['kind'] as string)) return null;
   if (!built['span']) built['span'] = rootSpan;
   if (!built['type']) built['type'] = NEVER_TYPE;
 
@@ -444,9 +446,6 @@ function buildEmit(
   if (!built['symbolId'] && typeof built['name'] === 'string') {
     built['symbolId'] = makeSymbolId('pattern:' + ruleId + ':' + (built['name'] as string)) as SymbolId;
   }
-
-  // Validate it looks like a valid IonIRNode (at minimum: kind + span + type)
-  if (typeof built['kind'] !== 'string') return null;
 
   return built as unknown as IonIRNode;
 }
