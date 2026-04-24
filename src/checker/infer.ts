@@ -43,7 +43,7 @@ export interface InferCtx {
 
 /** Build a canonical span key matching the binder's format. */
 export function spanKey(span: Span): string {
-  return `${span.file}:${span.startLine}:${span.startCol}`;
+  return `${span.file}\0${span.startLine}\0${span.startCol}`;
 }
 
 /** Produce a new unique TypeVar using the context's monotonic counter. */
@@ -204,20 +204,9 @@ function registerFnType(decl: AstFnDeclNode, ctx: InferCtx): void {
     if (paramId !== undefined) ctx.typeEnv.set(paramId, pt);
   }
 
-  let retType: IonType;
-  if (decl.returnType === null) {
-    ctx.errors.push({
-      kind: 'UnannotatedTopLevel',
-      code: 'E0402',
-      name: decl.name,
-      span: decl.span,
-      message: `Function '${decl.name}' requires a return type annotation`,
-      suggestion: `Add a type annotation`,
-    });
-    retType = freshTypeVar(ctx);
-  } else {
-    retType = resolveAnnotation(decl.returnType, ctx.nameIndex, tpEnv, ctx.errors);
-  }
+  const retType: IonType = decl.returnType !== null
+    ? resolveAnnotation(decl.returnType, ctx.nameIndex, tpEnv, ctx.errors)
+    : freshTypeVar(ctx);
 
   const fnType: FnType = {
     kind: 'Fn',
@@ -291,8 +280,7 @@ function inferFnBody(decl: AstFnDeclNode, ctx: InferCtx): void {
   ctx.effectsUsed = new Set();
 
   const bodyType = inferExpr(decl.body, ctx);
-  // Declared return type is the "expected"; inferred body type is the "actual".
-  ctx.subst = unify(fnType.ret, bodyType, ctx.subst, decl.span, ctx.errors);
+  ctx.subst = unify(bodyType, fnType.ret, ctx.subst, decl.span, ctx.errors);
 
   // Check that body uses only declared effects.
   const undeclared = [...ctx.effectsUsed].filter(e => !fnType.effects.has(e));
@@ -363,9 +351,27 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
         case 'Sub':
         case 'Mul':
         case 'Div':
-        case 'Mod':
+        case 'Mod': {
           ctx.subst = unify(left, right, ctx.subst, expr.span, ctx.errors);
-          return applySubst(ctx.subst, left);
+          const unified = applySubst(ctx.subst, left);
+          if (
+            unified.kind !== 'Int' &&
+            unified.kind !== 'Float' &&
+            unified.kind !== 'TypeVar'
+          ) {
+            ctx.errors.push({
+              kind: 'TypeMismatch',
+              code: 'E0401',
+              expected: { kind: 'Int' },
+              found: unified,
+              span: expr.span,
+              message: `Arithmetic operator requires Int or Float operands, found ${typeStr(unified)}`,
+              suggestion: `Use Int or Float values with arithmetic operators`,
+            });
+            return { kind: 'Int' };
+          }
+          return unified;
+        }
         case 'EqEq':
         case 'NotEq':
         case 'Lt':
@@ -385,8 +391,24 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
     case 'UnaryExpr': {
       const operand = inferExpr(expr.operand, ctx);
       switch (expr.op) {
-        case 'Neg':
+        case 'Neg': {
+          if (
+            operand.kind !== 'Int' &&
+            operand.kind !== 'Float' &&
+            operand.kind !== 'TypeVar'
+          ) {
+            ctx.errors.push({
+              kind: 'TypeMismatch',
+              code: 'E0401',
+              expected: { kind: 'Int' },
+              found: operand,
+              span: expr.span,
+              message: `Unary '-' requires Int or Float, found ${typeStr(operand)}`,
+              suggestion: `Apply unary '-' only to Int or Float values`,
+            });
+          }
           return applySubst(ctx.subst, operand);
+        }
         case 'Not':
           ctx.subst = unify(operand, { kind: 'Bool' }, ctx.subst, expr.span, ctx.errors);
           return { kind: 'Bool' };
@@ -396,6 +418,22 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
     case 'CallExpr': {
       const calleeType = inferExpr(expr.callee, ctx);
       const argTypes = expr.args.map(a => inferExpr(a.value, ctx));
+      const resolvedFn = applySubst(ctx.subst, calleeType);
+      if (resolvedFn.kind === 'Fn' && argTypes.length !== resolvedFn.params.length) {
+        ctx.errors.push({
+          kind: 'ArityMismatch',
+          code: 'E0406',
+          expected: resolvedFn.params.length,
+          found: argTypes.length,
+          span: expr.span,
+          message: `Expected ${resolvedFn.params.length} argument(s), found ${argTypes.length}`,
+          suggestion: `Provide exactly ${resolvedFn.params.length} argument(s)`,
+        });
+        for (const eff of resolvedFn.effects) {
+          ctx.effectsUsed.add(eff);
+        }
+        return applySubst(ctx.subst, resolvedFn.ret);
+      }
       const retVar = freshTypeVar(ctx);
       const expectedFnType: FnType = {
         kind: 'Fn',
