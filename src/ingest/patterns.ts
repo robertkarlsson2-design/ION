@@ -377,7 +377,7 @@ function resolveMetavar(
   ref: Record<string, unknown>,
   bindings: Bindings,
   rootSpan: Span,
-  ruleId: string,
+  _ruleId: string,
 ): unknown {
   const metavar = ref['metavar'];
   const field = ref['field'];
