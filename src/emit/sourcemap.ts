@@ -111,11 +111,21 @@ export class SourceMapBuilder {
   }
 }
 
-/** Convenience wrapper used by the CLI when no token-level mappings are available. */
-export function generateSourceMap(opts: { sourceFile: string; outputFile: string; sourceContent: string }): string {
-  const builder = new SourceMapBuilder();
-  return builder.toJSON({
+/**
+ * Generate a minimal ECMA v3 source map JSON string for a compiled output file.
+ * Produces a map with no segment entries (token-level mappings require emitter integration).
+ */
+export function generateSourceMap(opts: {
+  sourceFile: string;
+  outputFile: string;
+  sourceContent: string;
+}): string {
+  return JSON.stringify({
+    version: 3,
     file: opts.outputFile,
-    sourceContents: new Map([[opts.sourceFile, opts.sourceContent]]),
+    sources: [opts.sourceFile],
+    sourcesContent: [opts.sourceContent],
+    names: [],
+    mappings: '',
   });
 }
