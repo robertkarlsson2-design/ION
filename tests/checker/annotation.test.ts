@@ -88,16 +88,16 @@ describe('resolveAnnotation', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('Named Unknown without nameIndex entry → UnknownType error + TypeVar fallback', () => {
+  it('Named Unknown without nameIndex entry → TypeMismatch error + TypeVar fallback', () => {
     const errors: CheckError[] = [];
     const result = resolveAnnotation(named('Unknown'), new Map(), new Map(), errors);
     expect(result).toEqual({ kind: 'TypeVar', id: 'Unknown' });
     expect(errors).toHaveLength(1);
-    expect(errors[0]?.kind).toBe('UnknownType');
-    expect(errors[0]?.code).toBe('E0406');
+    expect(errors[0]?.kind).toBe('TypeMismatch');
+    expect(errors[0]?.code).toBe('E0401');
     const err = errors[0];
-    if (err?.kind === 'UnknownType') {
-      expect(err.name).toBe('Unknown');
+    if (err?.kind === 'TypeMismatch') {
+      expect(err.message).toContain('Unknown');
     }
   });
 

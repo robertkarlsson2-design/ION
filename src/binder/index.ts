@@ -17,7 +17,8 @@ import type { BindError, UndefinedNameError, DuplicateBindingError } from './err
 import { buildGraph, topoSort } from './graph.js';
 
 export type { BindError, BindErrorKind } from './errors.js';
-export type { SymbolKind, SymbolInfo, ModuleSymbolTable } from './symbol-table.js';
+export type { SymbolKind, SymbolInfo, ModuleSymbolTable, SymbolTable } from './symbol-table.js';
+export type ResolutionMap = ReadonlyMap<string, SymbolId>;
 export { detectCircularImports } from './module-graph.js';
 export type { ModuleGraph } from './module-graph.js';
 

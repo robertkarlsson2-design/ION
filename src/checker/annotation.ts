@@ -27,11 +27,13 @@ export function resolveAnnotation(
       const sid = nameIndex.get(ann.name);
       if (sid === undefined) {
         errors.push({
-          kind: 'UnknownType',
-          code: 'E0406',
-          name: ann.name,
+          kind: 'TypeMismatch',
+          code: 'E0401',
+          expected: { kind: 'Never' },
+          found: { kind: 'Never' },
           span: ann.span,
           message: `Unknown type '${ann.name}'`,
+          suggestion: `Define '${ann.name}' as a data type or type alias, or check for a typo`,
         });
         // Return a TypeVar as fallback so inference can continue.
         const fallback: TypeVar = { kind: 'TypeVar', id: ann.name };
@@ -65,11 +67,13 @@ export function resolveAnnotation(
           const sid = nameIndex.get(ann.name);
           if (sid === undefined) {
             errors.push({
-              kind: 'UnknownType',
-              code: 'E0406',
-              name: ann.name,
+              kind: 'TypeMismatch',
+              code: 'E0401',
+              expected: { kind: 'Never' },
+              found: { kind: 'Never' },
               span: ann.span,
               message: `Unknown generic type '${ann.name}'`,
+              suggestion: `Define '${ann.name}' as a data type or type alias, or check for a typo`,
             });
             return { kind: 'TypeVar', id: ann.name };
           }
