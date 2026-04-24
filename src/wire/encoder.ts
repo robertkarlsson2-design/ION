@@ -51,15 +51,15 @@ function assertNever(x: never): never {
 // Validation
 // ---------------------------------------------------------------------------
 
-/** Thrown by encodeModule when an identifier name contains illegal newline characters. */
+/** Thrown by encodeModule when an identifier name contains illegal control characters. */
 export class WireEncodeError extends Error {
   override readonly name = 'WireEncodeError';
 }
 
 function assertValidName(name: string): void {
-  if (name.includes('\n') || name.includes('\r')) {
+  if (/[\x00-\x1F]/.test(name)) {
     throw new WireEncodeError(
-      `Identifier name contains illegal newline character: ${JSON.stringify(name)}`,
+      `Identifier name contains illegal control character: ${JSON.stringify(name)}`,
     );
   }
 }

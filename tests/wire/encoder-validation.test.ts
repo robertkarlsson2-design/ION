@@ -218,6 +218,16 @@ describe('Suite V — newline validation', () => {
     expect(() => encodeModule({ ...makeMinimal(), decls: [absNode] }))
       .toThrow(WireEncodeError);
   });
+  it('V17: module name with \\t (tab) throws WireEncodeError', () => {
+    expect(() => encodeModule({ ...makeMinimal(), module: 'test\tmodule' }))
+      .toThrow(WireEncodeError);
+  });
+
+  it('V18: module name with \\0 (null) throws WireEncodeError', () => {
+    expect(() => encodeModule({ ...makeMinimal(), module: 'test\0module' }))
+      .toThrow(WireEncodeError);
+  });
+
   it('V-TypeVar: TypeVar id with \\n throws WireEncodeError', () => {
     const fnType: IonType = {
       kind: 'Fn',
