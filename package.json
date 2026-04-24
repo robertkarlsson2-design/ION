@@ -8,6 +8,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.0",
     "@dqbd/tiktoken": "^1.0.15",
     "tree-sitter-javascript": "^0.25.0",
     "web-tree-sitter": "^0.25.0",
