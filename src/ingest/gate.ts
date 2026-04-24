@@ -325,10 +325,15 @@ export async function runGate(
   const checkPassed = ionCheckErrors.length === 0;
   const passed = checkPassed && testsPassed;
 
-  const llmRetryContext = buildLlmRetryContext(
+  let llmRetryContext = buildLlmRetryContext(
     ionCheckErrors,
     testsPassed ? null : testOutput,
   );
+
+  // Maintain invariant: llmRetryContext is null iff passed === true.
+  if (!passed && llmRetryContext === null) {
+    llmRetryContext = '[tests failed with no output]';
+  }
 
   return {
     passed,

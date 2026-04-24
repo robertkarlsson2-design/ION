@@ -216,4 +216,12 @@ describe('Suite D: llmRetryContext', () => {
     const result = await runGate({ ionFiles: [], workDir: dir }, noopExec, noopSpawn);
     expect(result.llmRetryContext).toBeNull();
   });
+
+  it('D5: llmRetryContext is non-null when tests fail with empty output', async () => {
+    await writeFile(join(dir, 'vitest.config.ts'), '');
+    const fakeSpawn: SpawnFn = async () => ({ passed: false, output: '' });
+    const result = await runGate({ ionFiles: [], workDir: dir }, noopExec, fakeSpawn);
+    expect(result.passed).toBe(false);
+    expect(result.llmRetryContext).not.toBeNull();
+  });
 });
