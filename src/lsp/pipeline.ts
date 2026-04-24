@@ -8,7 +8,7 @@ import { parseModule } from '../parser/declarations.js';
 import { ParseError } from '../parser/errors.js';
 import { buildModule } from '../ast/builder.js';
 import { bindModule, type BindResult, type BindError } from '../binder/index.js';
-import { checkModule, type CheckResult, type CheckError, spanKey } from '../checker/index.js';
+import { checkModule, type CheckResult, type CheckError } from '../checker/index.js';
 import { ionSpanToRange, ionSpanToLocation } from './span-utils.js';
 import type { Span } from '../types.js';
 
