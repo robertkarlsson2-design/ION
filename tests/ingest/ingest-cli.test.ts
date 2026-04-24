@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, resolve, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 
 // Prevent tree-sitter WASM initialization when importing ingest.ts.
@@ -299,17 +299,16 @@ describe('ingestSingleFile', () => {
     expect(result.stats.llm).toBe(0);
   });
 
-  it('21. module name is derived from file path and embedded in output', async () => {
+  it('21. module name is derived from relative path and embedded in output', async () => {
     const inputPath = join(tmpDir, 'my.module.js');
     await writeFile(inputPath, '');
 
     const result = await ingestSingleFile(inputPath, makeStubPlugin(), [], undefined, false);
 
     const wire = await readFile(result.outputPath, 'utf-8');
-    // deriveModuleName(inputPath) → tmpDir uses OS path, strip leading ./ not needed here
+    const expectedModuleName = deriveModuleName(relative(process.cwd(), inputPath));
     // The module line is "M <moduleName> v=0.0.0"
-    expect(wire).toContain('M ');
-    expect(wire).toContain('my.module');
+    expect(wire).toContain(`M ${expectedModuleName} `);
   });
 });
 

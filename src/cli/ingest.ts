@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir, stat, glob } from 'node:fs/promises';
-import { resolve, dirname, extname } from 'node:path';
+import { resolve, relative, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runPipeline } from '../ingest/pipeline.js';
 import { loadPatterns } from '../ingest/patterns.js';
@@ -235,7 +235,7 @@ export async function ingestSingleFile(
     };
   }
 
-  const moduleName = deriveModuleName(filePath);
+  const moduleName = deriveModuleName(relative(process.cwd(), filePath));
   const result = await runPipeline(source, {
     plugin,
     patterns,

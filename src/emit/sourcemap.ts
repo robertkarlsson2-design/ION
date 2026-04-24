@@ -120,7 +120,12 @@ export function generateSourceMap(opts: {
   outputFile: string;
   sourceContent: string;
 }): string {
-  const builder = new SourceMapBuilder();
-  const sourceContents = new Map([[opts.sourceFile, opts.sourceContent]]);
-  return builder.toJSON({ file: opts.outputFile, sourceContents });
+  return JSON.stringify({
+    version: 3,
+    file: opts.outputFile,
+    sources: [opts.sourceFile],
+    sourcesContent: [opts.sourceContent],
+    names: [],
+    mappings: '',
+  });
 }
