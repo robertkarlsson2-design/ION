@@ -21,6 +21,7 @@ import type {
   AstMatchArm,
   AstDataVariant,
   AstStringLitNode,
+  AstExternBlockItem,
   LiteralIntNode,
   LiteralFloatNode,
   LiteralBoolNode,
@@ -282,6 +283,35 @@ export function buildDecl(cst: DeclNode): AstDeclNode {
         effects: cst.effects,
         returnType: cst.returnType,
         attributes: cst.attributes.map(a => ({ name: a.name, args: a.args, span: a.span })),
+        span: cst.span,
+      };
+
+    case 'ExternBlockDecl':
+      return {
+        kind: 'ExternBlockDecl',
+        pub: cst.pub,
+        target: cst.target,
+        items: cst.items.map((item): AstExternBlockItem => {
+          if (item.kind === 'ExternBlockItemFn') {
+            return {
+              kind: 'ExternBlockItemFn',
+              name: item.name,
+              typeParams: item.typeParams,
+              params: item.params.map(p => ({ name: p.name, type_: p.type_, span: p.span })),
+              effects: item.effects,
+              returnType: item.returnType,
+              template: item.template,
+              span: item.span,
+            };
+          }
+          return {
+            kind: 'ExternBlockItemType',
+            name: item.name,
+            typeParams: item.typeParams,
+            template: item.template,
+            span: item.span,
+          };
+        }),
         span: cst.span,
       };
 

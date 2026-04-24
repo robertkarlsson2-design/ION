@@ -275,6 +275,35 @@ export interface AstExternDeclNode {
   readonly span: Span;
 }
 
+export interface AstExternBlockItemFn {
+  readonly kind: 'ExternBlockItemFn';
+  readonly name: string;
+  readonly typeParams: readonly string[];
+  readonly params: readonly AstFnParam[];
+  readonly effects: readonly EffectTag[];
+  readonly returnType: TypeAnnotation | null;
+  readonly template: string;
+  readonly span: Span;
+}
+
+export interface AstExternBlockItemType {
+  readonly kind: 'ExternBlockItemType';
+  readonly name: string;
+  readonly typeParams: readonly string[];
+  readonly template: string;
+  readonly span: Span;
+}
+
+export type AstExternBlockItem = AstExternBlockItemFn | AstExternBlockItemType;
+
+export interface AstExternBlockDeclNode {
+  readonly kind: 'ExternBlockDecl';
+  readonly pub: boolean;
+  readonly target: string;
+  readonly items: readonly AstExternBlockItem[];
+  readonly span: Span;
+}
+
 export interface AstModuleDeclNode {
   readonly kind: 'ModuleDecl';
   readonly pub: boolean;
@@ -290,6 +319,7 @@ export type AstDeclNode =
   | AstTypeAliasDeclNode
   | AstUseDeclNode
   | AstExternDeclNode
+  | AstExternBlockDeclNode
   | AstModuleDeclNode;
 
 export interface AstModule {

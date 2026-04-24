@@ -323,6 +323,36 @@ export interface ExternDeclNode {
   readonly attributes: readonly DeclAttribute[];
 }
 
+export interface ExternBlockItemFn {
+  readonly kind: 'ExternBlockItemFn';
+  readonly name: string;
+  readonly typeParams: readonly string[];
+  readonly params: readonly FnParam[];
+  readonly effects: readonly import('../ast/types.js').EffectTag[];
+  readonly returnType: TypeAnnotation | null;
+  readonly template: string;
+  readonly span: Span;
+}
+
+export interface ExternBlockItemType {
+  readonly kind: 'ExternBlockItemType';
+  readonly name: string;
+  readonly typeParams: readonly string[];
+  readonly template: string;
+  readonly span: Span;
+}
+
+export type ExternBlockItem = ExternBlockItemFn | ExternBlockItemType;
+
+export interface ExternBlockDeclNode {
+  readonly kind: 'ExternBlockDecl';
+  readonly pub: boolean;
+  readonly target: string;
+  readonly items: readonly ExternBlockItem[];
+  readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
+}
+
 export interface ModuleDeclNode {
   readonly kind: 'ModuleDecl';
   readonly pub: boolean;
@@ -339,6 +369,7 @@ export type DeclNode =
   | TypeAliasDeclNode
   | UseDeclNode
   | ExternDeclNode
+  | ExternBlockDeclNode
   | ModuleDeclNode;
 
 export interface ModuleNode {

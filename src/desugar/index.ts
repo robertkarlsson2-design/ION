@@ -7,6 +7,7 @@ import type {
   AstDataVariant,
   AstFnDeclNode,
   AstExternDeclNode,
+  AstExternBlockDeclNode,
   AstStringLitNode,
   AstStringPart,
   AstTextPart,
@@ -217,6 +218,11 @@ function desugarDecl(
     case 'ExternDecl':
       decls.push(desugarExternDecl(decl, ctx));
       break;
+    case 'ExternBlockDecl':
+      for (const item of desugarExternBlockDecl(decl, ctx)) {
+        decls.push(item);
+      }
+      break;
     case 'TypeAliasDecl':
     case 'UseDecl':
       // Type-erased; resolved by binder — dropped
@@ -323,6 +329,59 @@ function desugarExternDecl(decl: AstExternDeclNode, ctx: DesugarCtx): LetNode {
     span: decl.span,
     type: { kind: 'Unit' },
   };
+}
+
+function desugarExternBlockDecl(decl: AstExternBlockDeclNode, ctx: DesugarCtx): LetNode[] {
+  const result: LetNode[] = [];
+  for (const item of decl.items) {
+    if (item.kind === 'ExternBlockItemType') continue;
+
+    const symbolId = ctx.fnDeclIndex.get(item.name) ?? makeSymbolId(`?extern_${item.name}`);
+
+    const paramTypes: IonType[] = item.params.map(p =>
+      p.type_ !== null
+        ? resolveAnnotation(p.type_, ctx.nameIndex, new Map(), [])
+        : ({ kind: 'TypeVar', id: `?param_${p.name}` } as IonType),
+    );
+    const retType: IonType = item.returnType !== null
+      ? resolveAnnotation(item.returnType, ctx.nameIndex, new Map(), [])
+      : { kind: 'Unit' };
+
+    const sig: ForeignSignature = {
+      params: paramTypes,
+      ret: retType,
+      template: item.template,
+    };
+
+    const fnType: FnType = {
+      kind: 'Fn',
+      params: paramTypes,
+      ret: retType,
+      effects: new Set(item.effects),
+    };
+
+    const foreignRef: ForeignRefNode = {
+      kind: 'ForeignRef',
+      target: decl.target,
+      module: '',
+      symbol: item.name,
+      sig,
+      span: item.span,
+      type: fnType,
+    };
+
+    result.push({
+      kind: 'Let',
+      name: item.name,
+      symbolId,
+      bindingType: fnType,
+      value: foreignRef,
+      body: sentinelUnit(item.span),
+      span: item.span,
+      type: { kind: 'Unit' },
+    });
+  }
+  return result;
 }
 
 function desugarDataDecl(

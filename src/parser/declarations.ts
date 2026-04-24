@@ -19,6 +19,10 @@ import type {
   TypeAliasDeclNode,
   UseDeclNode,
   ExternDeclNode,
+  ExternBlockDeclNode,
+  ExternBlockItem,
+  ExternBlockItemFn,
+  ExternBlockItemType,
   ModuleDeclNode,
   DeclNode,
   ModuleNode,
@@ -84,6 +88,13 @@ const _EOF_SPAN: Span = { file: '<eof>', startLine: 1, startCol: 0, endLine: 1, 
 
 function eofToken(): Token {
   return { kind: TokenKind.EOF, text: '', span: _EOF_SPAN };
+}
+
+function extractStringText(node: StringLitNode): string {
+  return (node.parts as StringPart[])
+    .filter((p): p is Extract<StringPart, { kind: 'TextPart' }> => p.kind === 'TextPart')
+    .map(p => p.text)
+    .join('');
 }
 
 function binopKindOf(kind: TokenKind): BinopKind | null {
@@ -248,7 +259,7 @@ class DeclarationParser {
       case TokenKind.KW_USE:
         return this.parseUseDecl(trivia);
       case TokenKind.KW_EXTERN:
-        return this.parseExternDecl(pub, attrs, trivia);
+        return this.parseExternDispatch(pub, attrs, trivia);
       case TokenKind.KW_MODULE:
         return this.parseModuleDecl(pub, trivia);
       default:
@@ -533,13 +544,26 @@ class DeclarationParser {
   // extern declaration
   // -------------------------------------------------------------------------
 
-  /** `[pub] extern fn name(params) [effects] [-> R]` */
-  private parseExternDecl(
+  /** Dispatches between inline `extern fn` and block `extern "target" { … }` forms. */
+  private parseExternDispatch(
     pub: boolean,
     attributes: readonly DeclAttribute[],
     leadingTrivia: readonly TriviaNode[],
-  ): ExternDeclNode {
+  ): ExternDeclNode | ExternBlockDeclNode {
     const kwTok = this.expect(TokenKind.KW_EXTERN);
+    if (this.peekKind() === TokenKind.STRING_START) {
+      return this.parseExternBlockDecl(pub, leadingTrivia, kwTok);
+    }
+    return this.parseExternInlineDecl(pub, attributes, leadingTrivia, kwTok);
+  }
+
+  /** `[pub] extern fn name(params) [effects] [-> R]` */
+  private parseExternInlineDecl(
+    pub: boolean,
+    attributes: readonly DeclAttribute[],
+    leadingTrivia: readonly TriviaNode[],
+    kwTok: Token,
+  ): ExternDeclNode {
     this.expect(TokenKind.KW_FN);
     const nameTok = this.expect(TokenKind.IDENT);
     const params = this.parseFnParams();
@@ -565,6 +589,94 @@ class DeclarationParser {
       span: spanMerge(kwTok.span, endSpan),
       leadingTrivia,
       attributes,
+    };
+  }
+
+  /** `[pub] extern "target" { fn name(params) [effects] [-> R] = "template" [;] … }` */
+  private parseExternBlockDecl(
+    pub: boolean,
+    leadingTrivia: readonly TriviaNode[],
+    kwTok: Token,
+  ): ExternBlockDeclNode {
+    const targetNode = this.parseStringInterp([]);
+    const target = extractStringText(targetNode);
+    this.expect(TokenKind.LBRACE);
+
+    const items: ExternBlockItem[] = [];
+    while (this.peekKind() !== TokenKind.RBRACE && this.peekKind() !== TokenKind.EOF) {
+      if (this.peekKind() === TokenKind.KW_FN) {
+        items.push(this.parseExternBlockItemFn());
+      } else if (this.peekKind() === TokenKind.KW_TYPE) {
+        items.push(this.parseExternBlockItemType());
+      } else {
+        const tok = this.peek();
+        throw new ParseError(
+          `expected 'fn' or 'type' in extern block, got ${tok.kind} ('${tok.text}')`,
+          'P0001',
+          tok.span,
+          `Use 'fn' or 'type' to declare items inside an extern block`,
+          "'fn' or 'type'",
+          `'${tok.kind}'`,
+        );
+      }
+    }
+
+    const closeTok = this.expect(TokenKind.RBRACE);
+    return {
+      kind: 'ExternBlockDecl',
+      pub,
+      target,
+      items,
+      span: spanMerge(kwTok.span, closeTok.span),
+      leadingTrivia,
+    };
+  }
+
+  /** `fn name[<T…>](params) [effects] [-> R] = "template" [;]` inside an extern block. */
+  private parseExternBlockItemFn(): ExternBlockItemFn {
+    const kwTok = this.expect(TokenKind.KW_FN);
+    const nameTok = this.expect(TokenKind.IDENT);
+    const typeParams = this.parseTypeParams();
+    const params = this.parseFnParams();
+    const effects = this.parseEffects();
+    let returnType: TypeAnnotation | null = null;
+    if (this.peekKind() === TokenKind.ARROW) {
+      this.consume();
+      returnType = this.parseTypeAnnotation();
+    }
+    this.expect(TokenKind.EQ);
+    const templateNode = this.parseStringInterp([]);
+    const template = extractStringText(templateNode);
+    if (this.peekKind() === TokenKind.SEMICOLON) this.consume();
+
+    return {
+      kind: 'ExternBlockItemFn',
+      name: nameTok.text,
+      typeParams,
+      params,
+      effects,
+      returnType,
+      template,
+      span: spanMerge(kwTok.span, templateNode.span),
+    };
+  }
+
+  /** `type Name[<T…>] = "template" [;]` inside an extern block. */
+  private parseExternBlockItemType(): ExternBlockItemType {
+    const kwTok = this.expect(TokenKind.KW_TYPE);
+    const nameTok = this.expect(TokenKind.IDENT);
+    const typeParams = this.parseTypeParams();
+    this.expect(TokenKind.EQ);
+    const templateNode = this.parseStringInterp([]);
+    const template = extractStringText(templateNode);
+    if (this.peekKind() === TokenKind.SEMICOLON) this.consume();
+
+    return {
+      kind: 'ExternBlockItemType',
+      name: nameTok.text,
+      typeParams,
+      template,
+      span: spanMerge(kwTok.span, templateNode.span),
     };
   }
 
@@ -1143,6 +1255,10 @@ export type {
   TypeAliasDeclNode,
   UseDeclNode,
   ExternDeclNode,
+  ExternBlockDeclNode,
+  ExternBlockItem,
+  ExternBlockItemFn,
+  ExternBlockItemType,
   ModuleDeclNode,
   DeclNode,
   ModuleNode,
