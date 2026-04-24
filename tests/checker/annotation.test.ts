@@ -20,6 +20,10 @@ function fnAnn(params: TypeAnnotation[], ret: TypeAnnotation): TypeAnnotation {
   return { kind: 'Fn', params, ret, effects: [], span: SPAN };
 }
 
+function tupleAnn(elements: TypeAnnotation[]): TypeAnnotation {
+  return { kind: 'Tuple', elements, span: SPAN };
+}
+
 describe('resolveAnnotation', () => {
   it('Named Int → IntType', () => {
     const errors: CheckError[] = [];
@@ -139,5 +143,40 @@ describe('resolveAnnotation', () => {
       effects: new Set(),
     });
     expect(errors).toHaveLength(0);
+  });
+
+  it('Tuple (Int, Str) → TupleType { elements: [Int, Str] }', () => {
+    const errors: CheckError[] = [];
+    const result = resolveAnnotation(tupleAnn([named('Int'), named('Str')]), new Map(), new Map(), errors);
+    expect(result).toEqual({ kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'Str' }] });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('Tuple (Int, List<Bool>) → TupleType with nested generic', () => {
+    const errors: CheckError[] = [];
+    const result = resolveAnnotation(
+      tupleAnn([named('Int'), generic('List', [named('Bool')])]),
+      new Map(), new Map(), errors,
+    );
+    expect(result).toEqual({
+      kind: 'Tuple',
+      elements: [{ kind: 'Int' }, { kind: 'List', elem: { kind: 'Bool' } }],
+    });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('Empty tuple () → TupleType { elements: [] }', () => {
+    const errors: CheckError[] = [];
+    const result = resolveAnnotation(tupleAnn([]), new Map(), new Map(), errors);
+    expect(result).toEqual({ kind: 'Tuple', elements: [] });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('Tuple with unknown element type → error pushed, element is TypeVar fallback', () => {
+    const errors: CheckError[] = [];
+    const result = resolveAnnotation(tupleAnn([named('Int'), named('Unknown')]), new Map(), new Map(), errors);
+    expect(result).toEqual({ kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'TypeVar', id: 'Unknown' }] });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.kind).toBe('TypeMismatch');
   });
 });

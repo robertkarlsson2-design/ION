@@ -50,6 +50,8 @@ export function applySubst(subst: Substitution, type: IonType): IonType {
       return { kind: 'Result', ok: applySubst(subst, type.ok), err: applySubst(subst, type.err) };
     case 'User':
       return { ...type, args: type.args.map(a => applySubst(subst, a)) };
+    case 'Tuple':
+      return { kind: 'Tuple', elements: type.elements.map(e => applySubst(subst, e)) };
     default:
       return type;
   }
@@ -77,6 +79,7 @@ export function occursIn(id: string, type: IonType): boolean {
     case 'Option': return occursIn(id, type.inner);
     case 'Result': return occursIn(id, type.ok) || occursIn(id, type.err);
     case 'User': return type.args.some(a => occursIn(id, a));
+    case 'Tuple': return type.elements.some(e => occursIn(id, e));
     default: return false;
   }
 }
@@ -159,6 +162,19 @@ export function unify(
     return s;
   }
 
+  if (a.kind === 'Tuple' && b.kind === 'Tuple') {
+    if (a.elements.length !== b.elements.length) {
+      errors.push(makeMismatch(t1, t2, span));
+      return subst;
+    }
+    let s = subst;
+    for (let i = 0; i < a.elements.length; i++) {
+      // Non-null: both arrays have length a.elements.length.
+      s = unify(a.elements[i]!, b.elements[i]!, s, span, errors);
+    }
+    return s;
+  }
+
   errors.push(makeMismatch(t1, t2, span));
   return subst;
 }
@@ -193,6 +209,12 @@ export function typesEqual(a: IonType, b: IonType): boolean {
       a.args.every((arg, i) => typesEqual(arg, b.args[i]!))
     );
   }
+  if (a.kind === 'Tuple' && b.kind === 'Tuple') {
+    return (
+      a.elements.length === b.elements.length &&
+      a.elements.every((e, i) => typesEqual(e, b.elements[i]!))
+    );
+  }
   return false;
 }
 
@@ -216,6 +238,8 @@ export function typeStr(type: IonType): string {
     case 'User':
       if (type.args.length === 0) return type.name;
       return `${type.name}<${type.args.map(typeStr).join(', ')}>`;
+    case 'Tuple':
+      return `(${type.elements.map(typeStr).join(', ')})`;
   }
 }
 

@@ -307,6 +307,17 @@ function parseType(cur: Cursor, ctx: DecoderContext, typeDepth = 0): IonType {
       return { kind: 'Fn', params, ret, effects: new Set(effects) as EffectSet };
     }
 
+    case 'tup': {
+      consume(cur, '<');
+      const elements: IonType[] = [];
+      if (!tryConsume(cur, '>')) {
+        elements.push(parseType(cur, ctx, typeDepth + 1));
+        while (tryConsume(cur, ',')) elements.push(parseType(cur, ctx, typeDepth + 1));
+        consume(cur, '>');
+      }
+      return { kind: 'Tuple', elements };
+    }
+
     default: {
       // User type: name or name<args>
       const name = resolveName(word, ctx);

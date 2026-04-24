@@ -412,6 +412,93 @@ describe('D11: truncated input', () => {
 });
 
 // ---------------------------------------------------------------------------
+// D12 — TupleType wire encoding and decoding
+// ---------------------------------------------------------------------------
+
+describe('D12: TupleType wire roundtrip', () => {
+  it('encodes and decodes a Let with TupleType bindingType', () => {
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      dialects: ['core'],
+      decls: [
+        {
+          kind: 'Let',
+          name: 'pair',
+          symbolId: sid,
+          bindingType: { kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'Str' }] },
+          value: { kind: 'Var', name: 'pair', symbolId: sid, span, type: { kind: 'Unit' } },
+          body: { kind: 'Var', name: 'pair', symbolId: sid, span, type: { kind: 'Unit' } },
+          span,
+          type: { kind: 'Unit' },
+        },
+      ],
+    };
+    const wire = encodeModule(mod);
+    expect(wire).toContain('tup<int,str>');
+    const decoded = decodeModule(wire);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    const letNode = decoded.decls[0];
+    expect(letNode?.kind).toBe('Let');
+    if (letNode?.kind === 'Let') {
+      expect(letNode.bindingType).toEqual({ kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'Str' }] });
+    }
+  });
+
+  it('encodes and decodes an empty tuple tup<>', () => {
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      dialects: ['core'],
+      decls: [
+        {
+          kind: 'Let',
+          name: 'empty',
+          symbolId: sid,
+          bindingType: { kind: 'Tuple', elements: [] },
+          value: { kind: 'Var', name: 'empty', symbolId: sid, span, type: { kind: 'Unit' } },
+          body: { kind: 'Var', name: 'empty', symbolId: sid, span, type: { kind: 'Unit' } },
+          span,
+          type: { kind: 'Unit' },
+        },
+      ],
+    };
+    const wire = encodeModule(mod);
+    expect(wire).toContain('tup<>');
+    const decoded = decodeModule(wire);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    const letNode = decoded.decls[0];
+    if (letNode?.kind === 'Let') {
+      expect(letNode.bindingType).toEqual({ kind: 'Tuple', elements: [] });
+    }
+  });
+
+  it('is byte-stable through a double roundtrip', () => {
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      dialects: ['core'],
+      decls: [
+        {
+          kind: 'Let',
+          name: 'triple',
+          symbolId: sid,
+          bindingType: { kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'Str' }, { kind: 'Bool' }] },
+          value: { kind: 'Var', name: 'triple', symbolId: sid, span, type: { kind: 'Unit' } },
+          body: { kind: 'Var', name: 'triple', symbolId: sid, span, type: { kind: 'Unit' } },
+          span,
+          type: { kind: 'Unit' },
+        },
+      ],
+    };
+    const w1 = encodeModule(mod);
+    const d1 = decodeModule(w1);
+    expect('error' in d1).toBe(false);
+    if ('error' in d1) return;
+    expect(encodeModule(d1)).toBe(w1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // WireDecodeError — class exists and has correct name
 // ---------------------------------------------------------------------------
 
