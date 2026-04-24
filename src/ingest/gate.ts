@@ -1,6 +1,6 @@
 import { execFile, spawn as nodeSpawn } from 'node:child_process';
 import { stat, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -28,6 +28,11 @@ export interface GateResult {
 
 export interface GateConfig {
   readonly ionFiles: readonly string[];
+  /**
+   * Absolute path to the project directory. Callers are responsible for
+   * supplying a trusted, boundary-checked path — runGate resolves it with
+   * path.resolve but does NOT enforce a root-descendant constraint.
+   */
   readonly workDir: string;
   readonly ionBin?: string;
 }
@@ -121,30 +126,51 @@ function defaultExec(file: string, args: readonly string[]): Promise<{ stdout: s
   });
 }
 
+const MAX_SPAWN_OUTPUT_BYTES = 16 * 1024 * 1024; // 16 MB
+
 function defaultSpawn(cmd: string, args: readonly string[], cwd: string): Promise<{ passed: boolean; output: string }> {
-  return new Promise(resolve => {
+  return new Promise(resolvePromise => {
     const child = nodeSpawn(cmd, [...args], { cwd, stdio: 'pipe' });
     const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let truncated = false;
 
-    child.stdout?.on('data', (chunk: Buffer) => { chunks.push(chunk); });
-    child.stderr?.on('data', (chunk: Buffer) => { chunks.push(chunk); });
+    function onData(chunk: Buffer): void {
+      if (truncated) return;
+      totalBytes += chunk.byteLength;
+      if (totalBytes > MAX_SPAWN_OUTPUT_BYTES) {
+        truncated = true;
+        child.kill();
+        resolvePromise({
+          passed: false,
+          output: Buffer.concat(chunks).toString('utf-8') + '\n[output truncated: exceeded 16MB limit]',
+        });
+        return;
+      }
+      chunks.push(chunk);
+    }
+
+    child.stdout?.on('data', onData);
+    child.stderr?.on('data', onData);
 
     const timer = setTimeout(() => {
       child.kill();
-      resolve({ passed: false, output: '[timeout after 5 minutes]' });
+      resolvePromise({ passed: false, output: '[timeout after 5 minutes]' });
     }, 300_000);
 
     child.on('close', (code: number | null) => {
+      if (truncated) return;
       clearTimeout(timer);
-      resolve({
+      resolvePromise({
         passed: code === 0,
         output: Buffer.concat(chunks).toString('utf-8'),
       });
     });
 
     child.on('error', (err: Error) => {
+      if (truncated) return;
       clearTimeout(timer);
-      resolve({ passed: false, output: err.message });
+      resolvePromise({ passed: false, output: err.message });
     });
   });
 }
@@ -308,16 +334,17 @@ export async function runGate(
   _spawn: SpawnFn = defaultSpawn,
 ): Promise<GateResult> {
   const ionBin = config.ionBin ?? 'ion';
+  const workDir = resolve(config.workDir);
 
   const ionCheckErrors = await runIonCheck(config.ionFiles, ionBin, _exec);
 
-  const detectedFramework = await detectFramework(config.workDir);
+  const detectedFramework = await detectFramework(workDir);
 
   let testOutput: string | null = null;
   let testsPassed = true;
 
   if (detectedFramework !== null) {
-    const testResult = await runTests(detectedFramework, config.workDir, _spawn);
+    const testResult = await runTests(detectedFramework, workDir, _spawn);
     testOutput = testResult.output;
     testsPassed = testResult.passed;
   }
