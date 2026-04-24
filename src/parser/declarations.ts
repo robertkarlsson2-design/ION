@@ -946,8 +946,31 @@ class DeclarationParser {
   }
 
   private parseGroupOrLambda(trivia: readonly TriviaNode[]): ExprNode {
+    // Operator section: (+), (-), (*), (/) etc.  →  (_a, _b) -> _a op _b
+    const inner = this.peekAhead(1);
+    if (this.peekAhead(2).kind === TokenKind.RPAREN && binopKindOf(inner.kind) !== null) {
+      return this.parseOpSection(trivia);
+    }
     if (this.isLambdaParamList()) return this.parseLambda(trivia);
     return this.parseGroup(trivia);
+  }
+
+  private parseOpSection(trivia: readonly TriviaNode[]): LambdaExprNode {
+    const open = this.expect(TokenKind.LPAREN);
+    const opTok = this.consume();
+    const close = this.expect(TokenKind.RPAREN);
+    const op = binopKindOf(opTok.kind)!;
+    const sp = spanMerge(open.span, close.span);
+    const paramA: LambdaParam = { name: '_a', type_: null, span: open.span };
+    const paramB: LambdaParam = { name: '_b', type_: null, span: open.span };
+    const body: BinopExprNode = {
+      kind: 'BinopExpr',
+      op,
+      left:  { kind: 'Ident', name: '_a', span: open.span, leadingTrivia: [] },
+      right: { kind: 'Ident', name: '_b', span: open.span, leadingTrivia: [] },
+      span: sp,
+    };
+    return { kind: 'LambdaExpr', params: [paramA, paramB], body, span: sp, leadingTrivia: trivia };
   }
 
   private isLambdaParamList(): boolean {

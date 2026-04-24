@@ -97,6 +97,72 @@ pub extern fn print(msg: Str) !io -> Unit
 
 @foreign("console", "log", "console.log($1)")
 pub extern fn printInt(n: Int) !io -> Unit
+
+@foreign("console", "log", "console.log($1)")
+pub extern fn printFloat(n: Float) !io -> Unit
+
+@foreign("", "reduce", "$1.reduce((a,b)=>a+b,0)")
+pub extern fn sum(list: List<Int>) -> Int
+
+@foreign("", "reduce", "$1.reduce((a,b)=>a*b,1)")
+pub extern fn product(list: List<Int>) -> Int
+
+@foreign("", "at", "$1[0]")
+pub extern fn head(list: List<a>) -> a
+
+@foreign("", "at", "$1[$1.length-1]")
+pub extern fn last(list: List<a>) -> a
+
+@foreign("", "slice", "$1.slice(1)")
+pub extern fn tail(list: List<a>) -> List<a>
+
+@foreign("", "flat", "$1.flat()")
+pub extern fn flatten(list: List<List<a>>) -> List<a>
+
+@foreign("", "sort", "[...$1].sort((a,b)=>a-b)")
+pub extern fn sort(list: List<Int>) -> List<Int>
+
+@foreign("", "sort", "[...$1].sort()")
+pub extern fn sortStrs(list: List<Str>) -> List<Str>
+
+@foreign("", "sort", "[...$1].sort($2)")
+pub extern fn sortBy(list: List<a>, cmp: fn(a, a) -> Int) -> List<a>
+
+@foreign("Set", "from", "[...new Set($1)]")
+pub extern fn unique(list: List<a>) -> List<a>
+
+@foreign("", "map", "$1.map((_,i)=>[$1[i],$2[i]]).slice(0,$1.length<$2.length?$1.length:$2.length)")
+pub extern fn zip(a: List<a>, b: List<b>) -> List<List<a>>
+
+@foreign("", "indexOf", "$1.indexOf($2)")
+pub extern fn indexOf(list: List<a>, item: a) -> Int
+
+@foreign("", "find", "$1.find($2)")
+pub extern fn find(list: List<a>, pred: fn(a) -> Bool) -> a
+
+@foreign("", "findIndex", "$1.findIndex($2)")
+pub extern fn findIndex(list: List<a>, pred: fn(a) -> Bool) -> Int
+
+@foreign("", "includes", "$1.includes($2)")
+pub extern fn strContains(s: Str, sub: Str) -> Bool
+
+@foreign("", "repeat", "$1.repeat($2)")
+pub extern fn repeat(s: Str, n: Int) -> Str
+
+@foreign("", "replace", "$1.replace($2,$3)")
+pub extern fn replace(s: Str, from: Str, to: Str) -> Str
+
+@foreign("", "indexOf", "$1.indexOf($2)")
+pub extern fn strIndexOf(s: Str, sub: Str) -> Int
+
+@foreign("", "toString", "parseFloat($1)")
+pub extern fn toFloat(s: Str) -> Float
+
+@foreign("", "toString", "parseInt($1,10)")
+pub extern fn toInt(s: Str) -> Int
+
+@foreign("", "length", "$1.length")
+pub extern fn strLen(s: Str) -> Int
 `;
 
 let _cached: readonly AstDeclNode[] | null = null;

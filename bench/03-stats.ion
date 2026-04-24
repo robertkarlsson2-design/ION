@@ -1,14 +1,9 @@
-pub fn total(ns: List<Int>) -> Int =
-  fold(ns, 0, (acc, x) -> acc + x)
+pub fn total(ns) = fold(ns, 0, (+))
 
-pub fn mean(ns: List<Int>) -> Int =
-  total(ns) / length(ns)
+pub fn mean(ns) = total(ns) / length(ns)
 
-pub fn maximum(ns: List<Int>) -> Int =
-  fold(ns, 0, (acc, x) -> if x > acc then x else acc)
+pub fn maximum(ns) = fold(ns, 0, (acc, x) -> if x > acc then x else acc)
 
-pub fn minimum(ns: List<Int>) -> Int =
-  fold(ns, 999999, (acc, x) -> if x < acc then x else acc)
+pub fn minimum(ns) = fold(ns, 999999, (acc, x) -> if x < acc then x else acc)
 
-pub fn countIf(ns: List<Int>, pred: fn(Int) -> Bool) -> Int =
-  length(filter(ns, pred))
+pub fn countIf(ns, pred) = ns |> filter(pred) |> length

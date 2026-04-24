@@ -178,10 +178,12 @@ describe('expressions — trivia stripped', () => {
     expect(node.field).toBe('foo');
   });
 
-  it('builds PipelineExpr', () => {
-    const node = asKind(parseExpr('x |> f'), 'PipelineExpr');
-    expect(node.left.kind).toBe('Ident');
-    expect(node.right.kind).toBe('Ident');
+  it('builds PipelineExpr (desugared to CallExpr in builder)', () => {
+    // a |> f  →  f(a)
+    const node = asKind(parseExpr('x |> f'), 'CallExpr');
+    expect(node.callee.kind).toBe('Ident');
+    expect(node.args).toHaveLength(1);
+    expect(node.args[0]!.value.kind).toBe('Ident');
   });
 
   it('builds PropagateExpr', () => {

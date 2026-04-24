@@ -152,13 +152,27 @@ export function buildExpr(cst: ExprNode): AstExprNode {
         span: cst.span,
       };
 
-    case 'PipelineExpr':
+    case 'PipelineExpr': {
+      // Desugar here so checker/desugar see plain CallExpr.
+      // a |> f(b, c)  →  f(a, b, c)
+      // a |> f        →  f(a)
+      const leftArg: AstCallArg = { label: null, value: buildExpr(cst.left), span: cst.left.span };
+      const right = cst.right;
+      if (right.kind === 'CallExpr') {
+        return {
+          kind: 'CallExpr',
+          callee: buildExpr(right.callee),
+          args: [leftArg, ...right.args.map(buildCallArg)],
+          span: cst.span,
+        };
+      }
       return {
-        kind: 'PipelineExpr',
-        left: buildExpr(cst.left),
-        right: buildExpr(cst.right),
+        kind: 'CallExpr',
+        callee: buildExpr(right),
+        args: [leftArg],
         span: cst.span,
       };
+    }
 
     case 'IfElseExpr':
       return {
