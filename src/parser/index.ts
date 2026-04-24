@@ -40,5 +40,6 @@ export type {
   DeclNode,
   ModuleNode,
 } from './cst.js';
-export { parseExpression, ParseError } from './expressions.js';
+export { parseExpression } from './expressions.js';
 export { parseModule, parseDeclaration } from './declarations.js';
+export { ParseError, formatParseError } from './errors.js';

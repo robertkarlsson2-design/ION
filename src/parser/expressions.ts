@@ -33,16 +33,8 @@ import type {
 // Public error type
 // ---------------------------------------------------------------------------
 
-/** Thrown by the parser on the first syntactic error. */
-export class ParseError extends Error {
-  constructor(
-    message: string,
-    readonly span: Span,
-  ) {
-    super(message);
-    this.name = 'ParseError';
-  }
-}
+export { ParseError, formatParseError } from './errors.js';
+import { ParseError } from './errors.js';
 
 // ---------------------------------------------------------------------------
 // Precedence table
@@ -148,8 +140,12 @@ class Parser {
     const tok = this.peek();
     if (tok.kind !== kind) {
       throw new ParseError(
-        `expected ${kind}, got ${tok.kind} ('${tok.text}')`,
+        `expected '${kind}', found '${tok.kind}'`,
+        'P0001',
         tok.span,
+        `Replace '${tok.text}' with the expected '${kind}' token`,
+        `'${kind}'`,
+        `'${tok.kind}'`,
       );
     }
     return this.consume();
@@ -171,7 +167,9 @@ class Parser {
       this.depth--;
       throw new ParseError(
         `expression nesting exceeds maximum depth of ${MAX_PARSE_DEPTH}`,
+        'P0005',
         tok.span,
+        'Reduce the nesting depth of your expression',
       );
     }
     try {
@@ -213,7 +211,14 @@ class Parser {
       case TokenKind.KW_LET: return this.parseLet(trivia);
       case TokenKind.LPAREN: return this.parseGroupOrLambda(trivia);
       default:
-        throw new ParseError(`unexpected token ${tok.kind} ('${tok.text}')`, tok.span);
+        throw new ParseError(
+          `unexpected token ${tok.kind} ('${tok.text}') in expression position`,
+          'P0002',
+          tok.span,
+          `Remove or replace '${tok.text}' with a valid expression`,
+          'a valid expression start token',
+          `'${tok.kind}'`,
+        );
     }
   }
 
@@ -278,7 +283,14 @@ class Parser {
       return node;
     }
 
-    throw new ParseError(`unexpected infix token ${tok.kind}`, tok.span);
+    throw new ParseError(
+      `unexpected infix token ${tok.kind} ('${tok.text}')`,
+      'P0003',
+      tok.span,
+      `Remove or replace '${tok.text}' with a valid infix operator`,
+      'a valid infix operator',
+      `'${tok.kind}'`,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -715,7 +727,14 @@ class Parser {
       return { kind: 'TuplePat', elements, span: spanMerge(open.span, close.span) };
     }
 
-    throw new ParseError(`expected pattern, got ${tok.kind} ('${tok.text}')`, tok.span);
+    throw new ParseError(
+      `expected pattern, got ${tok.kind} ('${tok.text}')`,
+      'P0004',
+      tok.span,
+      `Replace '${tok.text}' with a valid pattern`,
+      'a valid pattern',
+      `'${tok.kind}'`,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -794,13 +813,7 @@ function binopKindOf(kind: TokenKind): BinopKind | null {
  * Throws `ParseError` on the first syntactic error.
  */
 export function parseExpression(tokens: Token[]): ExprNode {
-  try {
-    return new Parser(tokens).parseExpr();
-  } catch (err) {
-    if (err instanceof ParseError) throw err;
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new ParseError(`internal parser error: ${msg}`, _EOF_SPAN);
-  }
+  return new Parser(tokens).parseExpr();
 }
 
 // Re-export CST types needed by consumers
