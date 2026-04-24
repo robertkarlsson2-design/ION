@@ -1,0 +1,8 @@
+module org.example.shapes  "0.1.0"
+// dialects: core, ion-adt
+
+data Shape {
+  Circle(radius: Float)
+  | Rectangle(width: Float, height: Float)
+  | Triangle(base: Float, height: Float)
+}

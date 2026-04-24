@@ -1,0 +1,39 @@
+{
+  "ionir": "1.0",
+  "module": "org.example.consumer",
+  "version": "0.1.0",
+  "dialects": ["core"],
+  "imports": [
+    {
+      "kind": "ModuleRef",
+      "modulePath": ["org", "example", "math"],
+      "symbolId": "consumer:math:0",
+      "span": {"file": "consumer.ion", "startLine": 1, "startCol": 0, "endLine": 1, "endCol": 20},
+      "type": {"kind": "Unit"}
+    },
+    {
+      "kind": "ModuleRef",
+      "modulePath": ["org", "example", "strings"],
+      "symbolId": "consumer:strings:1",
+      "span": {"file": "consumer.ion", "startLine": 2, "startCol": 0, "endLine": 2, "endCol": 23},
+      "type": {"kind": "Unit"}
+    },
+    {
+      "kind": "ModuleRef",
+      "modulePath": ["org", "example", "collections"],
+      "symbolId": "consumer:collections:2",
+      "span": {"file": "consumer.ion", "startLine": 3, "startCol": 0, "endLine": 3, "endCol": 27},
+      "type": {"kind": "Unit"}
+    }
+  ],
+  "data": [],
+  "decls": [
+    {
+      "kind": "Var",
+      "name": "result",
+      "symbolId": "consumer:result:3",
+      "span": {"file": "consumer.ion", "startLine": 5, "startCol": 0, "endLine": 5, "endCol": 6},
+      "type": {"kind": "Bool"}
+    }
+  ]
+}

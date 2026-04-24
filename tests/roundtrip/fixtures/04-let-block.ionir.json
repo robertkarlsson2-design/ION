@@ -1,0 +1,59 @@
+{
+  "ionir": "1.0",
+  "module": "org.example.letchain",
+  "version": "0.1.0",
+  "dialects": ["core"],
+  "imports": [],
+  "data": [],
+  "decls": [
+    {
+      "kind": "Let",
+      "name": "a",
+      "symbolId": "let:a:0",
+      "bindingType": {"kind": "Int"},
+      "value": {
+        "kind": "Literal",
+        "value": {"kind": "Int", "value": 1},
+        "span": {"file": "let.ion", "startLine": 1, "startCol": 8, "endLine": 1, "endCol": 9},
+        "type": {"kind": "Int"}
+      },
+      "body": {
+        "kind": "Let",
+        "name": "b",
+        "symbolId": "let:b:1",
+        "bindingType": {"kind": "Int"},
+        "value": {
+          "kind": "Literal",
+          "value": {"kind": "Int", "value": 2},
+          "span": {"file": "let.ion", "startLine": 2, "startCol": 8, "endLine": 2, "endCol": 9},
+          "type": {"kind": "Int"}
+        },
+        "body": {
+          "kind": "Let",
+          "name": "c",
+          "symbolId": "let:c:2",
+          "bindingType": {"kind": "Str"},
+          "value": {
+            "kind": "Literal",
+            "value": {"kind": "Str", "value": "hello"},
+            "span": {"file": "let.ion", "startLine": 3, "startCol": 8, "endLine": 3, "endCol": 15},
+            "type": {"kind": "Str"}
+          },
+          "body": {
+            "kind": "Var",
+            "name": "a",
+            "symbolId": "let:a:0",
+            "span": {"file": "let.ion", "startLine": 4, "startCol": 2, "endLine": 4, "endCol": 3},
+            "type": {"kind": "Int"}
+          },
+          "span": {"file": "let.ion", "startLine": 3, "startCol": 0, "endLine": 4, "endCol": 3},
+          "type": {"kind": "Int"}
+        },
+        "span": {"file": "let.ion", "startLine": 2, "startCol": 0, "endLine": 4, "endCol": 3},
+        "type": {"kind": "Int"}
+      },
+      "span": {"file": "let.ion", "startLine": 1, "startCol": 0, "endLine": 4, "endCol": 3},
+      "type": {"kind": "Int"}
+    }
+  ]
+}

@@ -42,8 +42,8 @@ import type {
   PatternNode,
 } from './cst.js';
 
-export { ParseError } from './expressions.js';
-import { ParseError } from './expressions.js';
+export { ParseError, formatParseError } from './errors.js';
+import { ParseError } from './errors.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -187,8 +187,12 @@ class DeclarationParser {
     const tok = this.peek();
     if (tok.kind !== kind) {
       throw new ParseError(
-        `expected ${kind}, got ${tok.kind} ('${tok.text}')`,
+        `expected '${kind}', found '${tok.kind}'`,
+        'P0001',
         tok.span,
+        `Replace '${tok.text}' with the expected '${kind}' token`,
+        `'${kind}'`,
+        `'${tok.kind}'`,
       );
     }
     return this.consume();
@@ -250,7 +254,11 @@ class DeclarationParser {
       default:
         throw new ParseError(
           `expected declaration keyword, got ${tok.kind} ('${tok.text}')`,
+          'P0001',
           tok.span,
+          `Replace '${tok.text}' with a declaration keyword (fn, let, data, type, use, extern, module)`,
+          'a declaration keyword',
+          `'${tok.kind}'`,
         );
     }
   }
@@ -394,9 +402,14 @@ class DeclarationParser {
       this.consume();
       variants.push(this.parseDataVariant());
     } else {
+      const varTok = this.peek();
       throw new ParseError(
-        `expected data variant, got ${this.peekKind()} ('${this.peek().text}')`,
-        this.peek().span,
+        `expected data variant, got ${varTok.kind} ('${varTok.text}')`,
+        'P0001',
+        varTok.span,
+        `Add a variant name (identifier) after '='`,
+        'a data variant name (identifier)',
+        `'${varTok.kind}'`,
       );
     }
 
@@ -567,7 +580,9 @@ class DeclarationParser {
       this.depth--;
       throw new ParseError(
         `module nesting exceeds maximum depth of ${MAX_PARSE_DEPTH}`,
+        'P0005',
         tok.span,
+        'Reduce the nesting depth of your module declarations',
       );
     }
     try {
@@ -670,7 +685,9 @@ class DeclarationParser {
       this.depth--;
       throw new ParseError(
         `type annotation nesting exceeds maximum depth of ${MAX_PARSE_DEPTH}`,
+        'P0005',
         tok.span,
+        'Reduce the nesting depth of your type annotations',
       );
     }
     try {
@@ -750,7 +767,9 @@ class DeclarationParser {
       this.depth--;
       throw new ParseError(
         `expression nesting exceeds maximum depth of ${MAX_PARSE_DEPTH}`,
+        'P0005',
         tok.span,
+        'Reduce the nesting depth of your expression',
       );
     }
     try {
@@ -785,7 +804,14 @@ class DeclarationParser {
       case TokenKind.KW_LET: return this.parseLetExpr(trivia);
       case TokenKind.LPAREN: return this.parseGroupOrLambda(trivia);
       default:
-        throw new ParseError(`unexpected token ${tok.kind} ('${tok.text}')`, tok.span);
+        throw new ParseError(
+          `unexpected token ${tok.kind} ('${tok.text}') in expression position`,
+          'P0002',
+          tok.span,
+          `Remove or replace '${tok.text}' with a valid expression`,
+          'a valid expression start token',
+          `'${tok.kind}'`,
+        );
     }
   }
 
@@ -821,7 +847,14 @@ class DeclarationParser {
       const node: BinopExprNode = { kind: 'BinopExpr', op, left, right, span: spanMerge(left.span, right.span) };
       return node;
     }
-    throw new ParseError(`unexpected infix token ${tok.kind}`, tok.span);
+    throw new ParseError(
+      `unexpected infix token ${tok.kind} ('${tok.text}')`,
+      'P0003',
+      tok.span,
+      `Remove or replace '${tok.text}' with a valid infix operator`,
+      'a valid infix operator',
+      `'${tok.kind}'`,
+    );
   }
 
   private parseLiteralInt(trivia: readonly TriviaNode[]): LiteralIntNode {
@@ -1052,7 +1085,14 @@ class DeclarationParser {
       return { kind: 'TuplePat', elements, span: spanMerge(open.span, close.span) };
     }
 
-    throw new ParseError(`expected pattern, got ${tok.kind} ('${tok.text}')`, tok.span);
+    throw new ParseError(
+      `expected pattern, got ${tok.kind} ('${tok.text}')`,
+      'P0004',
+      tok.span,
+      `Replace '${tok.text}' with a valid pattern`,
+      'a valid pattern',
+      `'${tok.kind}'`,
+    );
   }
 
   private parseLetExpr(trivia: readonly TriviaNode[]): LetExprNode {
@@ -1080,13 +1120,7 @@ class DeclarationParser {
  * Throws `ParseError` on the first syntactic error.
  */
 export function parseModule(tokens: Token[]): ModuleNode {
-  try {
-    return new DeclarationParser(tokens).parseModule();
-  } catch (err) {
-    if (err instanceof ParseError) throw err;
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new ParseError(`internal parser error: ${msg}`, _EOF_SPAN);
-  }
+  return new DeclarationParser(tokens).parseModule();
 }
 
 /**
@@ -1094,13 +1128,7 @@ export function parseModule(tokens: Token[]): ModuleNode {
  * Throws `ParseError` on the first syntactic error.
  */
 export function parseDeclaration(tokens: Token[]): DeclNode {
-  try {
-    return new DeclarationParser(tokens).parseDecl();
-  } catch (err) {
-    if (err instanceof ParseError) throw err;
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new ParseError(`internal parser error: ${msg}`, _EOF_SPAN);
-  }
+  return new DeclarationParser(tokens).parseDecl();
 }
 
 // Re-export CST declaration types

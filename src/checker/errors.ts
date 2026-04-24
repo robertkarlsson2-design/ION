@@ -1,6 +1,7 @@
 import type { Span } from '../types.js';
 import type { IonType } from '../ir/types.js';
 import type { EffectTag } from '../ast/types.js';
+import { typeStr } from './unifier.js';
 
 export interface TypeMismatchError {
   readonly kind: 'TypeMismatch';
@@ -16,6 +17,7 @@ export interface UnannotatedTopLevelError {
   readonly kind: 'UnannotatedTopLevel';
   readonly code: 'E0402';
   readonly name: string;
+  readonly expectedAnnotation: string;
   readonly span: Span;
   readonly message: string;
   readonly suggestion: string;
@@ -34,6 +36,7 @@ export interface InvalidPropagateError {
   readonly kind: 'InvalidPropagate';
   readonly code: 'E0404';
   readonly found: IonType;
+  readonly expected: 'Option | Result';
   readonly span: Span;
   readonly message: string;
   readonly suggestion: string;
@@ -43,6 +46,7 @@ export interface EffectMismatchError {
   readonly kind: 'EffectMismatch';
   readonly code: 'E0405';
   readonly unexpected: EffectTag;
+  readonly expected: readonly EffectTag[];
   readonly span: Span;
   readonly message: string;
   readonly suggestion: string;
@@ -67,9 +71,38 @@ export type CheckError =
   | ArityMismatchError;
 
 /**
- * Format a CheckError as a human-readable string with error code, message, span, and suggestion.
- * Output: `error[EXXXX]: <message> at <file>:<line>:<col>\n  suggestion: <suggestion>`
+ * Format a CheckError as a human-readable multiline string with code, message, span, structured
+ * expected/actual fields, and a fix suggestion.
  */
 export function formatCheckError(e: CheckError): string {
-  return `error[${e.code}]: ${e.message} at ${e.span.file}:${e.span.startLine}:${e.span.startCol}\n  suggestion: ${e.suggestion}`;
+  const loc = `${e.span.file}:${e.span.startLine}:${e.span.startCol}`;
+  let out = `error[${e.code}]: ${e.message} at ${loc}`;
+
+  switch (e.kind) {
+    case 'TypeMismatch':
+      out += `\n  expected: ${typeStr(e.expected)}`;
+      out += `\n  found:    ${typeStr(e.found)}`;
+      break;
+    case 'UnannotatedTopLevel':
+      out += `\n  expected annotation: ${e.expectedAnnotation}`;
+      break;
+    case 'NonExhaustiveMatch':
+      out += `\n  missing arms: ${e.missing.join(', ')}`;
+      break;
+    case 'InvalidPropagate':
+      out += `\n  found:    ${typeStr(e.found)}`;
+      out += `\n  expected: ${e.expected}`;
+      break;
+    case 'EffectMismatch':
+      out += `\n  unexpected: ${e.unexpected}`;
+      out += `\n  expected effects: ${e.expected.length === 0 ? '(none declared)' : e.expected.join(', ')}`;
+      break;
+    case 'ArityMismatch':
+      out += `\n  expected: ${e.expected}`;
+      out += `\n  found:    ${e.found}`;
+      break;
+  }
+
+  out += `\n  suggestion: ${e.suggestion}`;
+  return out;
 }

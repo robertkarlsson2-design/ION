@@ -1,0 +1,14 @@
+module org.example.animals  "0.1.0"
+// dialects: core, ion-oop
+
+interface Animal {
+  speak: () -> Str
+}
+class Dog: animals:Animal:0 {
+  name: Str
+  fn speak(): Str {
+    "Woof!"
+  }
+}
+new animals:Dog:2("Rex")
+new animals:Dog:2("Buddy").speak()

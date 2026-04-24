@@ -1,0 +1,90 @@
+{
+  "ionir": "1.0",
+  "module": "org.example.logging",
+  "version": "0.1.0",
+  "dialects": ["core", "ion-effects"],
+  "imports": [],
+  "data": [],
+  "decls": [
+    {
+      "kind": "EffectDecl",
+      "name": "Log",
+      "symbolId": "logging:Log:0",
+      "operations": [
+        {
+          "name": "info",
+          "params": [
+            {
+              "name": "msg",
+              "symbolId": "logging:msg:1",
+              "type": {"kind": "Str"},
+              "span": {"file": "logging.ion", "startLine": 2, "startCol": 8, "endLine": 2, "endCol": 11}
+            }
+          ],
+          "retType": {"kind": "Unit"},
+          "span": {"file": "logging.ion", "startLine": 2, "startCol": 2, "endLine": 2, "endCol": 20}
+        },
+        {
+          "name": "warn",
+          "params": [
+            {
+              "name": "msg",
+              "symbolId": "logging:msg:2",
+              "type": {"kind": "Str"},
+              "span": {"file": "logging.ion", "startLine": 3, "startCol": 8, "endLine": 3, "endCol": 11}
+            }
+          ],
+          "retType": {"kind": "Unit"},
+          "span": {"file": "logging.ion", "startLine": 3, "startCol": 2, "endLine": 3, "endCol": 20}
+        }
+      ],
+      "span": {"file": "logging.ion", "startLine": 1, "startCol": 0, "endLine": 4, "endCol": 1},
+      "type": {"kind": "Unit"}
+    },
+    {
+      "kind": "Handle",
+      "body": {
+        "kind": "Perform",
+        "effectSymbolId": "logging:Log:0",
+        "operation": "info",
+        "args": [
+          {
+            "kind": "Literal",
+            "value": {"kind": "Str", "value": "hello"},
+            "span": {"file": "logging.ion", "startLine": 7, "startCol": 14, "endLine": 7, "endCol": 21},
+            "type": {"kind": "Str"}
+          }
+        ],
+        "span": {"file": "logging.ion", "startLine": 7, "startCol": 2, "endLine": 7, "endCol": 22},
+        "type": {"kind": "Unit"}
+      },
+      "handlers": [
+        {
+          "operation": "info",
+          "params": [
+            {
+              "name": "msg",
+              "symbolId": "logging:hmsg:3",
+              "type": {"kind": "Str"},
+              "span": {"file": "logging.ion", "startLine": 9, "startCol": 7, "endLine": 9, "endCol": 10}
+            }
+          ],
+          "body": {
+            "kind": "Resume",
+            "value": {
+              "kind": "Literal",
+              "value": {"kind": "Null"},
+              "span": {"file": "logging.ion", "startLine": 9, "startCol": 15, "endLine": 9, "endCol": 19},
+              "type": {"kind": "Unit"}
+            },
+            "span": {"file": "logging.ion", "startLine": 9, "startCol": 6, "endLine": 9, "endCol": 20},
+            "type": {"kind": "Unit"}
+          },
+          "span": {"file": "logging.ion", "startLine": 9, "startCol": 2, "endLine": 9, "endCol": 21}
+        }
+      ],
+      "span": {"file": "logging.ion", "startLine": 6, "startCol": 0, "endLine": 11, "endCol": 1},
+      "type": {"kind": "Unit"}
+    }
+  ]
+}

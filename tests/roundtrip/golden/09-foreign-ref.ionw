@@ -1,0 +1,3 @@
+I1
+M org.example.ffi v=0.1.0 d=core
+F ffi:js:Math:sqrt ffi:js:console:log

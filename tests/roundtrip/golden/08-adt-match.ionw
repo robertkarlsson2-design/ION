@@ -1,0 +1,4 @@
+I1
+M org.example.option v=0.1.0 d=core,ion-adt
+D Color Red{} Green{} Blue{}
+F adt(c){Red()->"red";Green()->"green";Blue()->"blue"}

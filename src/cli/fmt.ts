@@ -61,6 +61,20 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 }
 
 // ---------------------------------------------------------------------------
+// Format detection helpers
+// ---------------------------------------------------------------------------
+
+/** Returns true when content starts with "module " — the only valid first token of prettyPrintModule output. Cannot start JSON. */
+function looksLikeSurfaceSyntax(content: string): boolean {
+  return content.startsWith('module ');
+}
+
+/** Returns true when content starts with "I1\n" — the wire version marker. */
+function looksLikeWireFormat(content: string): boolean {
+  return content.startsWith('I1\n');
+}
+
+// ---------------------------------------------------------------------------
 // Per-file formatting
 // ---------------------------------------------------------------------------
 
@@ -104,6 +118,15 @@ async function formatFile(
       // JSON deserialization failed — try wire-format decoding.
       const decoded = decodeModule(original);
       if ('error' in decoded) {
+        // In --check mode, distinguish surface syntax from parse errors.
+        if (mode === 'check') {
+          if (looksLikeSurfaceSyntax(original)) {
+            return { changed: false };
+          }
+          if (looksLikeWireFormat(original)) {
+            return { changed: true };
+          }
+        }
         return { changed: false, error: `failed to parse '${filePath}': ${decoded.error}` };
       }
       mod = decoded;

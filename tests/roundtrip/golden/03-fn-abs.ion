@@ -1,0 +1,4 @@
+module org.example.math  "0.1.0"
+// dialects: core
+
+fn(x: Int, y: Int): Int => add(x, y)

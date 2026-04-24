@@ -1,0 +1,4 @@
+module org.example.minimal  "0.1.0"
+// dialects: core
+
+x

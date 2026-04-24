@@ -210,21 +210,27 @@ describe('runFmt --wire first pass encoding', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F11 — --pretty on a wire-format file exits 0 and contains the module name
+// F11 — --check on a file already in canonical pretty form exits 0
 // ---------------------------------------------------------------------------
 
-describe('runFmt --pretty on wire input', () => {
-  it('F11: --pretty on a wire-format file exits 0 and output contains the module name', async () => {
+describe('runFmt --check on already-pretty file', () => {
+  it('F11: exits 0 when file was previously formatted with --pretty (surface syntax)', async () => {
     const dir = await makeTmp();
-    // Write JSON, convert to wire first.
     const filePath = await writeTmp(dir, 'h.ion', serializeModule(minimalModule));
-    const toWire = await runFmt(['--wire', filePath]);
-    expect(toWire.exitCode).toBe(0);
-    // Now apply --pretty to the wire-format file.
-    const toPretty = await runFmt(['--pretty', filePath]);
-    expect(toPretty.exitCode).toBe(0);
-    const content = await readFile(filePath, 'utf-8');
-    expect(content).toContain('org.example');
+    // First: convert to pretty (surface syntax)
+    const first = await runFmt(['--pretty', filePath]);
+    expect(first.exitCode).toBe(0);
+    const prettyContent = await readFile(filePath, 'utf-8');
+    expect(prettyContent.startsWith('module ')).toBe(true);
+    // Second: --check on the now-surface-syntax file must exit 0
+    const chunks: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      chunks.push(typeof chunk === 'string' ? chunk : chunk.toString());
+      return true;
+    });
+    const result = await runFmt(['--check', filePath]);
+    expect(result.exitCode).toBe(0);
+    expect(chunks.join('')).toBe('');
   });
 });
 

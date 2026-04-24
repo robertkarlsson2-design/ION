@@ -1,0 +1,3 @@
+I1
+M org.example.shapes v=0.1.0 d=core,ion-adt
+D Shape Circle{radius:flt} Rectangle{width:flt,height:flt} Triangle{base:flt,height:flt}

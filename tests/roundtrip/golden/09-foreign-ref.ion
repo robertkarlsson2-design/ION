@@ -1,0 +1,5 @@
+module org.example.ffi  "0.1.0"
+// dialects: core
+
+@foreign("Math::sqrt")
+@foreign("console::log")
