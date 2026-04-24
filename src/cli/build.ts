@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, stat, glob } from 'node:fs/promises';
 import { watch as fsWatch } from 'node:fs';
-import { resolve, relative, join, dirname } from 'node:path';
+import { resolve, relative, join, dirname, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { lex } from '../lexer/index.js';
@@ -181,7 +181,9 @@ export async function collectIonFiles(
   try {
     for (const pattern of config.sources) {
       for await (const file of glob(pattern, { cwd: configDir })) {
-        found.push(resolve(configDir, file));
+        const absPath = resolve(configDir, file);
+        if (!absPath.startsWith(configDir + sep)) continue;
+        found.push(absPath);
       }
     }
   } catch (err) {
@@ -350,12 +352,17 @@ export async function compileFile(
         }],
       };
     }
-    throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    return { inputPath, ioError: `internal compiler error: ${msg}` };
   }
 
   // Compute output path: configDir/outDir/rel-path-with-.js
   const outputRelPath = relPath.replace(/\.ion$/, '.js');
+  const safeOutRoot = resolve(configDir, config.outDir);
   const outputPath = join(configDir, config.outDir, outputRelPath);
+  if (!outputPath.startsWith(safeOutRoot + sep)) {
+    return { inputPath, ioError: `output path escapes outDir boundary` };
+  }
 
   try {
     await mkdir(dirname(outputPath), { recursive: true });
