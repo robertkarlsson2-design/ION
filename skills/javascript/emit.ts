@@ -31,7 +31,7 @@ import type {
   JsClass,
   JsMethod,
 } from './js-ast.js';
-import { printJsModule } from './printer.js';
+import { printJsModule, printJsExpr } from './printer.js';
 
 interface BuildCtx {
   readonly helpers: Map<string, JsNode>;
@@ -274,11 +274,11 @@ function buildOopVirtualCall(node: OopVirtualCallNode, ctx: BuildCtx): JsNode {
 function buildAsyncBlock(node: AsyncBlockNode, ctx: BuildCtx): JsNode {
   // async () => { return body; }  — emit as JsRaw to preserve async keyword
   const bodyNode = buildExpr(node.body, ctx);
-  return { kind: 'JsRaw', code: `async () => {\n  return ${nodeToRawStr(bodyNode)};\n}` };
+  return { kind: 'JsRaw', code: `async () => {\n  return ${printJsExpr(bodyNode)};\n}` };
 }
 
 function buildAwait(node: AwaitNode, ctx: BuildCtx): JsNode {
-  return { kind: 'JsRaw', code: `await ${nodeToRawStr(buildExpr(node.expr, ctx))}` };
+  return { kind: 'JsRaw', code: `await ${printJsExpr(buildExpr(node.expr, ctx))}` };
 }
 
 function buildAdtDecl(node: AdtDeclNode, _ctx: BuildCtx): JsNode[] {
@@ -415,7 +415,7 @@ function buildHandle(node: HandleNode, ctx: BuildCtx): JsNode {
 }
 
 function buildResume(node: ResumeNode, ctx: BuildCtx): JsNode {
-  return { kind: 'JsRaw', code: `/* resume */ ${nodeToRawStr(buildExpr(node.value, ctx))}` };
+  return { kind: 'JsRaw', code: `/* resume */ ${printJsExpr(buildExpr(node.value, ctx))}` };
 }
 
 function ensureEffectPerformHelper(ctx: BuildCtx): void {

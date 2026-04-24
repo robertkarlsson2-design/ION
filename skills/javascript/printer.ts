@@ -52,6 +52,11 @@ function escapeString(s: string): string {
 }
 
 /** Print a JsModule to an ES2022 source string. */
+/** Print a single JsNode expression to a string (for use in raw-code contexts). */
+export function printJsExpr(node: JsNode): string {
+  return printExpr(node, { indent: 0 });
+}
+
 export function printJsModule(mod: JsModule): string {
   const ctx: PrintCtx = { indent: 0 };
   const parts: string[] = ['"use strict";'];
@@ -283,7 +288,7 @@ function printBlock(node: JsBlock & { kind: 'JsBlock' }, ctx: PrintCtx): string 
 
 function printTemplateLit(node: JsTemplateLit, ctx: PrintCtx): string {
   const body = node.parts.map(p => {
-    if (typeof p === 'string') return p.replace(/`/g, '\\`').replace(/\\/g, '\\\\').replace(/\$\{/g, '\\${');
+    if (typeof p === 'string') return p.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
     return `\${${printExpr(p, ctx)}}`;
   }).join('');
   return `\`${body}\``;
