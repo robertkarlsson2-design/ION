@@ -3,6 +3,7 @@ import { runBuild } from './build.js';
 import { runCheck } from './check.js';
 import { runFmt } from './fmt.js';
 import { runGrammar } from './grammar.js';
+import { runIngest } from './ingest.js';
 import { runTokens } from './tokens.js';
 
 const [, , command, ...rest] = process.argv;
@@ -14,6 +15,7 @@ commands:
   check    type-check .ion files
   fmt      format IonIR files
   grammar  output GBNF grammar and IR schema
+  ingest   convert source files to Ion (wire format)
   tokens   count tokens in IonIR files
 `;
 
@@ -23,6 +25,7 @@ async function main(): Promise<number> {
     case 'check':   return (await runCheck(rest)).exitCode;
     case 'fmt':     return (await runFmt(rest)).exitCode;
     case 'grammar': return (await runGrammar(rest)).exitCode;
+    case 'ingest':  return (await runIngest(rest)).exitCode;
     case 'tokens':  return (await runTokens(rest)).exitCode;
     default:
       process.stderr.write(command !== undefined
