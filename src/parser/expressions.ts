@@ -27,6 +27,7 @@ import type {
   AccessorExprNode,
   PropagateExprNode,
   GroupExprNode,
+  ListLitExprNode,
 } from './cst.js';
 
 // ---------------------------------------------------------------------------
@@ -210,6 +211,7 @@ class Parser {
       case TokenKind.KW_MATCH: return this.parseMatch(trivia);
       case TokenKind.KW_LET: return this.parseLet(trivia);
       case TokenKind.LPAREN: return this.parseGroupOrLambda(trivia);
+      case TokenKind.LBRACKET: return this.parseListLit();
       default:
         throw new ParseError(
           `unexpected token ${tok.kind} ('${tok.text}') in expression position`,
@@ -455,6 +457,29 @@ class Parser {
       inner,
       span: spanMerge(open.span, close.span),
       leadingTrivia: trivia,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // List literal  [ expr, expr, ... ]
+  // -------------------------------------------------------------------------
+
+  private parseListLit(): ListLitExprNode {
+    const open = this.expect(TokenKind.LBRACKET);
+    const elements: ExprNode[] = [];
+    while (this.peekKind() !== TokenKind.RBRACKET && this.peekKind() !== TokenKind.EOF) {
+      elements.push(this.parseExpr());
+      if (this.peekKind() === TokenKind.COMMA) {
+        this.consume();
+      } else {
+        break;
+      }
+    }
+    const close = this.expect(TokenKind.RBRACKET);
+    return {
+      kind: 'ListLitExpr',
+      elements,
+      span: spanMerge(open.span, close.span),
     };
   }
 

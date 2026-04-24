@@ -166,6 +166,12 @@ export interface AstPropagateExprNode {
   readonly span: Span;
 }
 
+export interface AstListLitNode {
+  readonly kind: 'ListLit';
+  readonly elements: readonly AstExprNode[];
+  readonly span: Span;
+}
+
 // GroupExprNode is intentionally absent — elided by the builder.
 
 export type AstExprNode =
@@ -184,7 +190,8 @@ export type AstExprNode =
   | AstMatchExprNode
   | AstLetExprNode
   | AstAccessorExprNode
-  | AstPropagateExprNode;
+  | AstPropagateExprNode
+  | AstListLitNode;
 
 // ---------------------------------------------------------------------------
 // Declaration helpers

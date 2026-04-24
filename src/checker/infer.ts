@@ -556,6 +556,19 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
       });
       return freshTypeVar(ctx);
     }
+
+    case 'ListLit': {
+      if (expr.elements.length === 0) {
+        const elem = freshTypeVar(ctx);
+        return { kind: 'List', elem };
+      }
+      const firstElem = expr.elements[0]!;
+      const elemType = inferExpr(firstElem, ctx);
+      for (const el of expr.elements.slice(1)) {
+        inferExpr(el, ctx);
+      }
+      return { kind: 'List', elem: elemType };
+    }
   }
 }
 

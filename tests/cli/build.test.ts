@@ -1,148 +1,53 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { writeFile, mkdir, rm, readFile } from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm, writeFile, mkdir, readFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import {
-  parseArgs,
-  loadConfig,
-  compileFile,
-  buildOnce,
-  runBuild,
-} from '../../src/cli/build.js';
-import type { IonConfig } from '../../src/cli/build.js';
+import { loadConfig } from '../../src/cli/config.js';
+import { resolveOutputPath, runBuild } from '../../src/cli/build.js';
 
 // ---------------------------------------------------------------------------
-// Helpers
+// resolveOutputPath
 // ---------------------------------------------------------------------------
 
-async function makeTempDir(): Promise<string> {
-  const dir = join(tmpdir(), `ion-build-test-${randomUUID()}`);
-  await mkdir(dir, { recursive: true });
-  return dir;
-}
-
-async function writeTempFile(dir: string, name: string, content: string): Promise<string> {
-  const parts = name.split('/');
-  if (parts.length > 1) {
-    await mkdir(join(dir, ...parts.slice(0, -1)), { recursive: true });
-  }
-  const filePath = join(dir, name);
-  await writeFile(filePath, content, 'utf-8');
-  return filePath;
-}
-
-async function writeConfig(dir: string, config: Record<string, unknown>): Promise<void> {
-  await writeFile(join(dir, 'ion.config.json'), JSON.stringify(config), 'utf-8');
-}
-
-function captureOutput(): { getStdout: () => string; getStderr: () => string } {
-  let stdoutBuf = '';
-  let stderrBuf = '';
-  vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
-    stdoutBuf += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf-8');
-    return true;
-  });
-  vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
-    stderrBuf += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf-8');
-    return true;
-  });
-  return {
-    getStdout: () => stdoutBuf,
-    getStderr: () => stderrBuf,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Ion source fixtures
-// ---------------------------------------------------------------------------
-
-const VALID_SRC = 'fn add(a: Int, b: Int) -> Int = a + b\n';
-const VALID_SRC2 = 'fn mul(a: Int, b: Int) -> Int = a * b\n';
-const PARSE_ERROR_SRC = 'fn bad(\n';
-const BIND_ERROR_SRC = 'fn foo(x: Int) -> Int = undeclaredName\n';
-const TYPE_ERROR_SRC = 'fn bad(x: Int) -> Str = x\n';
-
-// ---------------------------------------------------------------------------
-// Setup / teardown
-// ---------------------------------------------------------------------------
-
-let tempDir: string;
-
-beforeEach(async () => {
-  tempDir = await makeTempDir();
-});
-
-afterEach(async () => {
-  vi.restoreAllMocks();
-  await rm(tempDir, { recursive: true, force: true });
-});
-
-// ---------------------------------------------------------------------------
-// parseArgs
-// ---------------------------------------------------------------------------
-
-describe('parseArgs — happy paths', () => {
-  it('returns defaults with no args', () => {
-    const result = parseArgs([]);
-    expect('error' in result).toBe(false);
-    if ('error' in result) return;
-    expect(result.target).toBeNull();
-    expect(result.watch).toBe(false);
-    expect(result.noSourcemap).toBe(false);
-    expect(result.configPath).toContain('ion.config.json');
+describe('resolveOutputPath', () => {
+  it('replaces .ion extension with target extension', () => {
+    const result = resolveOutputPath(
+      '/project/src/foo.ion',
+      '/project/src',
+      '/project/out',
+      '.js',
+    );
+    expect(result).toBe(join('/project/out', 'foo.js'));
   });
 
-  it('parses --target javascript', () => {
-    const result = parseArgs(['--target', 'javascript']);
-    expect('error' in result).toBe(false);
-    if ('error' in result) return;
-    expect(result.target).toBe('javascript');
+  it('preserves subdirectory structure', () => {
+    const result = resolveOutputPath(
+      '/project/src/a/b/c.ion',
+      '/project/src',
+      '/project/out',
+      '.js',
+    );
+    expect(result).toBe(join('/project/out', 'a', 'b', 'c.js'));
   });
 
-  it('parses --watch', () => {
-    const result = parseArgs(['--watch']);
-    expect('error' in result).toBe(false);
-    if ('error' in result) return;
-    expect(result.watch).toBe(true);
+  it('works with .ts extension', () => {
+    const result = resolveOutputPath(
+      '/project/src/util.ion',
+      '/project/src',
+      '/project/dist',
+      '.ts',
+    );
+    expect(result).toBe(join('/project/dist', 'util.ts'));
   });
 
-  it('parses --no-sourcemap', () => {
-    const result = parseArgs(['--no-sourcemap']);
-    expect('error' in result).toBe(false);
-    if ('error' in result) return;
-    expect(result.noSourcemap).toBe(true);
-  });
-
-  it('parses all flags together', () => {
-    const result = parseArgs(['--target', 'javascript', '--watch', '--no-sourcemap']);
-    expect('error' in result).toBe(false);
-    if ('error' in result) return;
-    expect(result.target).toBe('javascript');
-    expect(result.watch).toBe(true);
-    expect(result.noSourcemap).toBe(true);
-  });
-});
-
-describe('parseArgs — errors', () => {
-  it('rejects unknown flags', () => {
-    const result = parseArgs(['--unknown-flag']);
-    expect('error' in result).toBe(true);
-  });
-
-  it('rejects positional arguments', () => {
-    const result = parseArgs(['src/foo.ion']);
-    expect('error' in result).toBe(true);
-  });
-
-  it('rejects --target without a value', () => {
-    const result = parseArgs(['--target']);
-    expect('error' in result).toBe(true);
-  });
-
-  it('rejects --target followed immediately by another flag', () => {
-    const result = parseArgs(['--target', '--watch']);
-    expect('error' in result).toBe(true);
+  it('handles rootDir equal to ionPath directory', () => {
+    const result = resolveOutputPath(
+      '/project/main.ion',
+      '/project',
+      '/out',
+      '.js',
+    );
+    expect(result).toBe(join('/out', 'main.js'));
   });
 });
 
@@ -150,340 +55,279 @@ describe('parseArgs — errors', () => {
 // loadConfig
 // ---------------------------------------------------------------------------
 
-describe('loadConfig — valid config', () => {
-  it('loads minimal config with only target', async () => {
-    await writeConfig(tempDir, { target: 'javascript' });
-    const result = await loadConfig(join(tempDir, 'ion.config.json'), null);
-    expect('error' in result).toBe(false);
-    if ('error' in result) return;
-    expect(result.target).toBe('javascript');
-    expect(result.sources).toEqual(['**/*.ion']);
-    expect(result.outDir).toBe('out');
-    expect(result.version).toBe('0.0.0');
+describe('loadConfig', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'ion-config-test-'));
   });
 
-  it('loads config with all fields', async () => {
-    await writeConfig(tempDir, {
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('parses a valid config', async () => {
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
       target: 'javascript',
-      sources: ['src/**/*.ion'],
-      outDir: 'build',
-      version: '1.2.3',
-    });
-    const result = await loadConfig(join(tempDir, 'ion.config.json'), null);
+      outDir: 'dist',
+      rootDir: 'src',
+    }), 'utf-8');
+
+    const result = await loadConfig(configPath);
     expect('error' in result).toBe(false);
-    if ('error' in result) return;
-    expect(result.sources).toEqual(['src/**/*.ion']);
-    expect(result.outDir).toBe('build');
-    expect(result.version).toBe('1.2.3');
+    if (!('error' in result)) {
+      expect(result.version).toBe('1');
+      expect(result.target).toBe('javascript');
+      expect(result.outDir).toBe('dist');
+      expect(result.rootDir).toBe('src');
+    }
   });
 
-  it('applies targetOverride over config target', async () => {
-    await writeConfig(tempDir, { target: 'javascript' });
-    const result = await loadConfig(join(tempDir, 'ion.config.json'), 'javascript');
-    expect('error' in result).toBe(false);
-    if ('error' in result) return;
-    expect(result.target).toBe('javascript');
-  });
-});
+  it('parses optional fields', async () => {
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
+      target: 'javascript',
+      outDir: 'dist',
+      rootDir: 'src',
+      wireFormat: true,
+      plugins: ['myplugin'],
+      include: ['**/*.ion'],
+      exclude: ['**/*.test.ion'],
+      sourceMap: false,
+    }), 'utf-8');
 
-describe('loadConfig — errors', () => {
-  it('returns error when file is missing', async () => {
-    const result = await loadConfig(join(tempDir, 'ion.config.json'), null);
+    const result = await loadConfig(configPath);
+    expect('error' in result).toBe(false);
+    if (!('error' in result)) {
+      expect(result.wireFormat).toBe(true);
+      expect(result.plugins).toEqual(['myplugin']);
+      expect(result.include).toEqual(['**/*.ion']);
+      expect(result.exclude).toEqual(['**/*.test.ion']);
+      expect(result.sourceMap).toBe(false);
+    }
+  });
+
+  it('returns error for missing target field', async () => {
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
+      outDir: 'dist',
+      rootDir: 'src',
+    }), 'utf-8');
+
+    const result = await loadConfig(configPath);
+    expect('error' in result).toBe(true);
+    if ('error' in result) {
+      expect(result.error).toContain('"target"');
+    }
+  });
+
+  it('returns error for wrong version', async () => {
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '2',
+      target: 'javascript',
+      outDir: 'dist',
+      rootDir: 'src',
+    }), 'utf-8');
+
+    const result = await loadConfig(configPath);
     expect('error' in result).toBe(true);
   });
 
   it('returns error for invalid JSON', async () => {
-    await writeFile(join(tempDir, 'ion.config.json'), 'not json', 'utf-8');
-    const result = await loadConfig(join(tempDir, 'ion.config.json'), null);
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, '{ not valid json }', 'utf-8');
+
+    const result = await loadConfig(configPath);
     expect('error' in result).toBe(true);
   });
 
-  it('returns error when target is missing', async () => {
-    await writeConfig(tempDir, { outDir: 'out' });
-    const result = await loadConfig(join(tempDir, 'ion.config.json'), null);
+  it('returns error for non-existent file', async () => {
+    const result = await loadConfig(join(tmpDir, 'nonexistent.json'));
     expect('error' in result).toBe(true);
   });
 
-  it('returns error for unsupported target', async () => {
-    await writeConfig(tempDir, { target: 'cobol' });
-    const result = await loadConfig(join(tempDir, 'ion.config.json'), null);
-    expect('error' in result).toBe(true);
-    if (!('error' in result)) return;
-    expect(result.error).toContain('cobol');
-  });
+  it('unknown target is allowed (not validated at load time)', async () => {
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
+      target: 'rust',
+      outDir: 'dist',
+      rootDir: 'src',
+    }), 'utf-8');
 
-  it('returns error when sources is not an array', async () => {
-    await writeConfig(tempDir, { target: 'javascript', sources: 'bad' });
-    const result = await loadConfig(join(tempDir, 'ion.config.json'), null);
-    expect('error' in result).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// compileFile
-// ---------------------------------------------------------------------------
-
-describe('compileFile — clean file', () => {
-  it('writes .js output for a valid ion file', async () => {
-    const config: IonConfig = {
-      target: 'javascript',
-      sources: ['**/*.ion'],
-      outDir: 'out',
-      version: '0.0.0',
-    };
-    const inputPath = await writeTempFile(tempDir, 'add.ion', VALID_SRC);
-    const result = await compileFile(inputPath, config, tempDir, true);
-    expect('ioError' in result).toBe(false);
-    expect('diagnostics' in result).toBe(false);
-    if ('ioError' in result || 'diagnostics' in result) return;
-    expect(result.outputPath).toContain('out');
-    expect(result.outputPath).toMatch(/\.js$/);
-    const js = await readFile(result.outputPath, 'utf-8');
-    expect(js.length).toBeGreaterThan(0);
-  });
-
-  it('writes .js.map file when noSourcemap is false', async () => {
-    const config: IonConfig = {
-      target: 'javascript',
-      sources: ['**/*.ion'],
-      outDir: 'out',
-      version: '0.0.0',
-    };
-    const inputPath = await writeTempFile(tempDir, 'add.ion', VALID_SRC);
-    const result = await compileFile(inputPath, config, tempDir, false);
-    if ('ioError' in result || 'diagnostics' in result) {
-      expect.fail('expected CompileSuccess');
-      return;
-    }
-    expect(result.mapPath).not.toBeNull();
-    expect(result.mapPath).toMatch(/\.js\.map$/);
-    const map = await readFile(result.mapPath!, 'utf-8');
-    expect(() => JSON.parse(map)).not.toThrow();
-  });
-
-  it('does not write .js.map when noSourcemap is true', async () => {
-    const config: IonConfig = {
-      target: 'javascript',
-      sources: ['**/*.ion'],
-      outDir: 'out',
-      version: '0.0.0',
-    };
-    const inputPath = await writeTempFile(tempDir, 'add.ion', VALID_SRC);
-    const result = await compileFile(inputPath, config, tempDir, true);
-    if ('ioError' in result || 'diagnostics' in result) {
-      expect.fail('expected CompileSuccess');
-      return;
-    }
-    expect(result.mapPath).toBeNull();
-  });
-});
-
-describe('compileFile — ion files with errors', () => {
-  it('returns CompileDiagnostics for a parse error', async () => {
-    const config: IonConfig = {
-      target: 'javascript',
-      sources: ['**/*.ion'],
-      outDir: 'out',
-      version: '0.0.0',
-    };
-    const inputPath = await writeTempFile(tempDir, 'bad.ion', PARSE_ERROR_SRC);
-    const result = await compileFile(inputPath, config, tempDir, true);
-    expect('diagnostics' in result).toBe(true);
-    if (!('diagnostics' in result)) return;
-    expect(result.diagnostics.length).toBeGreaterThan(0);
-  });
-
-  it('returns CompileDiagnostics for a bind error', async () => {
-    const config: IonConfig = {
-      target: 'javascript',
-      sources: ['**/*.ion'],
-      outDir: 'out',
-      version: '0.0.0',
-    };
-    const inputPath = await writeTempFile(tempDir, 'bind.ion', BIND_ERROR_SRC);
-    const result = await compileFile(inputPath, config, tempDir, true);
-    expect('diagnostics' in result).toBe(true);
-    if (!('diagnostics' in result)) return;
-    expect(result.diagnostics.some(d => d.code === 'B0001')).toBe(true);
-  });
-
-  it('returns CompileDiagnostics for a type error', async () => {
-    const config: IonConfig = {
-      target: 'javascript',
-      sources: ['**/*.ion'],
-      outDir: 'out',
-      version: '0.0.0',
-    };
-    const inputPath = await writeTempFile(tempDir, 'type.ion', TYPE_ERROR_SRC);
-    const result = await compileFile(inputPath, config, tempDir, true);
-    expect('diagnostics' in result).toBe(true);
-    if (!('diagnostics' in result)) return;
-    expect(result.diagnostics.some(d => d.code === 'E0401')).toBe(true);
+    const result = await loadConfig(configPath);
+    expect('error' in result).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// buildOnce
+// runBuild — argument parsing errors
 // ---------------------------------------------------------------------------
 
-describe('buildOnce', () => {
-  it('compiles multiple files in parallel and writes all outputs', async () => {
-    const config: IonConfig = {
+describe('runBuild arg parsing', () => {
+  it('returns exitCode 2 for unknown flag', async () => {
+    const result = await runBuild(['--unknown-flag']);
+    expect(result.exitCode).toBe(2);
+  });
+
+  it('returns exitCode 2 when --config is missing its argument', async () => {
+    const result = await runBuild(['--config']);
+    expect(result.exitCode).toBe(2);
+  });
+
+  it('returns exitCode 2 when --target is missing its argument', async () => {
+    const result = await runBuild(['--target']);
+    expect(result.exitCode).toBe(2);
+  });
+
+  it('returns exitCode 2 when config file does not exist', async () => {
+    const result = await runBuild(['--config', '/nonexistent/ion.config.json']);
+    expect(result.exitCode).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runBuild — end-to-end integration
+// ---------------------------------------------------------------------------
+
+describe('runBuild integration', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'ion-build-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('compiles a minimal .ion file and writes a .js output', async () => {
+    const srcDir = join(tmpDir, 'src');
+    const outDir = join(tmpDir, 'out');
+    await mkdir(srcDir);
+
+    await writeFile(join(srcDir, 'hello.ion'), 'fn id(x: Int) -> Int = x\n', 'utf-8');
+
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
       target: 'javascript',
-      sources: ['**/*.ion'],
       outDir: 'out',
-      version: '0.0.0',
-    };
-    await writeTempFile(tempDir, 'a.ion', VALID_SRC);
-    await writeTempFile(tempDir, 'b.ion', VALID_SRC2);
-    captureOutput();
-    const { hadErrors } = await buildOnce(
-      [join(tempDir, 'a.ion'), join(tempDir, 'b.ion')],
-      config,
-      tempDir,
-      true,
-    );
-    expect(hadErrors).toBe(false);
-    const jsA = await readFile(join(tempDir, 'out', 'a.js'), 'utf-8');
-    const jsB = await readFile(join(tempDir, 'out', 'b.js'), 'utf-8');
-    expect(jsA.length).toBeGreaterThan(0);
-    expect(jsB.length).toBeGreaterThan(0);
+      rootDir: 'src',
+    }), 'utf-8');
+
+    const result = await runBuild(['--config', configPath, '--no-sourcemap']);
+    expect(result.exitCode).toBe(0);
+
+    const output = await readFile(join(outDir, 'hello.js'), 'utf-8');
+    expect(output).toContain('"use strict";');
   });
 
-  it('returns hadErrors true when a file has errors', async () => {
-    const config: IonConfig = {
+  it('excludes *.test.ion files by default', async () => {
+    const srcDir = join(tmpDir, 'src');
+    const outDir = join(tmpDir, 'out');
+    await mkdir(srcDir);
+
+    await writeFile(join(srcDir, 'main.ion'), 'fn id(x: Int) -> Int = x\n', 'utf-8');
+    await writeFile(join(srcDir, 'main.test.ion'), 'fn t(x: Int) -> Int = x\n', 'utf-8');
+
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
       target: 'javascript',
-      sources: ['**/*.ion'],
       outDir: 'out',
-      version: '0.0.0',
-    };
-    await writeTempFile(tempDir, 'good.ion', VALID_SRC);
-    await writeTempFile(tempDir, 'bad.ion', BIND_ERROR_SRC);
-    const { getStdout } = captureOutput();
-    const { hadErrors } = await buildOnce(
-      [join(tempDir, 'good.ion'), join(tempDir, 'bad.ion')],
-      config,
-      tempDir,
-      true,
-    );
-    expect(hadErrors).toBe(true);
-    expect(getStdout()).toContain('error[B0001]');
-  });
-});
+      rootDir: 'src',
+    }), 'utf-8');
 
-// ---------------------------------------------------------------------------
-// runBuild — end-to-end
-// ---------------------------------------------------------------------------
+    await runBuild(['--config', configPath, '--no-sourcemap']);
 
-describe('runBuild — no config', () => {
-  it('exits 2 when ion.config.json is missing', async () => {
-    const origCwd = process.cwd();
-    try {
-      process.chdir(tempDir);
-      const { getStderr } = captureOutput();
-      const { exitCode } = await runBuild([]);
-      expect(exitCode).toBe(2);
-      expect(getStderr()).toContain('error');
-    } finally {
-      process.chdir(origCwd);
-    }
-  });
-});
+    const mainExists = await readFile(join(outDir, 'main.js'), 'utf-8').then(() => true).catch(() => false);
+    const testExists = await readFile(join(outDir, 'main.test.js'), 'utf-8').then(() => true).catch(() => false);
 
-describe('runBuild — clean project', () => {
-  it('exits 0 and writes JS output files', async () => {
-    await writeConfig(tempDir, { target: 'javascript' });
-    await writeTempFile(tempDir, 'src/main.ion', VALID_SRC);
-    const origCwd = process.cwd();
-    try {
-      process.chdir(tempDir);
-      const { getStdout } = captureOutput();
-      const { exitCode } = await runBuild([]);
-      expect(exitCode).toBe(0);
-      const out = getStdout();
-      expect(out).toContain('✓');
-      const js = await readFile(join(tempDir, 'out', 'src', 'main.js'), 'utf-8');
-      expect(js.length).toBeGreaterThan(0);
-    } finally {
-      process.chdir(origCwd);
-    }
+    expect(mainExists).toBe(true);
+    expect(testExists).toBe(false);
   });
 
-  it('exits 0 with --no-sourcemap, no .map files written', async () => {
-    await writeConfig(tempDir, { target: 'javascript' });
-    await writeTempFile(tempDir, 'main.ion', VALID_SRC);
-    const origCwd = process.cwd();
-    try {
-      process.chdir(tempDir);
-      captureOutput();
-      const { exitCode } = await runBuild(['--no-sourcemap']);
-      expect(exitCode).toBe(0);
-      // .js.map should not exist
-      await expect(readFile(join(tempDir, 'out', 'main.js.map'), 'utf-8'))
-        .rejects.toThrow();
-    } finally {
-      process.chdir(origCwd);
-    }
+  it('returns exitCode 1 when a .ion file has a parse error', async () => {
+    const srcDir = join(tmpDir, 'src');
+    await mkdir(srcDir);
+
+    await writeFile(join(srcDir, 'bad.ion'), 'fn ((( broken syntax\n', 'utf-8');
+
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
+      target: 'javascript',
+      outDir: 'out',
+      rootDir: 'src',
+    }), 'utf-8');
+
+    const result = await runBuild(['--config', configPath, '--no-sourcemap']);
+    expect(result.exitCode).toBe(1);
   });
 
-  it('exits 0 with --target javascript override', async () => {
-    await writeConfig(tempDir, { target: 'javascript' });
-    await writeTempFile(tempDir, 'add.ion', VALID_SRC);
-    const origCwd = process.cwd();
-    try {
-      process.chdir(tempDir);
-      captureOutput();
-      const { exitCode } = await runBuild(['--target', 'javascript']);
-      expect(exitCode).toBe(0);
-    } finally {
-      process.chdir(origCwd);
-    }
-  });
-});
+  it('returns exitCode 2 for unsupported target', async () => {
+    const srcDir = join(tmpDir, 'src');
+    await mkdir(srcDir);
 
-describe('runBuild — project with errors', () => {
-  it('exits 1 when a file has compile errors', async () => {
-    await writeConfig(tempDir, { target: 'javascript' });
-    await writeTempFile(tempDir, 'bad.ion', BIND_ERROR_SRC);
-    const origCwd = process.cwd();
-    try {
-      process.chdir(tempDir);
-      const { getStdout } = captureOutput();
-      const { exitCode } = await runBuild([]);
-      expect(exitCode).toBe(1);
-      expect(getStdout()).toContain('error[B0001]');
-    } finally {
-      process.chdir(origCwd);
-    }
-  });
-});
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
+      target: 'cobol',
+      outDir: 'out',
+      rootDir: 'src',
+    }), 'utf-8');
 
-describe('runBuild — argument errors', () => {
-  it('exits 2 for unknown flag', async () => {
-    const { getStderr } = captureOutput();
-    const { exitCode } = await runBuild(['--unknown-flag']);
-    expect(exitCode).toBe(2);
-    expect(getStderr()).toContain('error');
+    const result = await runBuild(['--config', configPath]);
+    expect(result.exitCode).toBe(2);
   });
 
-  it('exits 2 for positional argument', async () => {
-    const { getStderr } = captureOutput();
-    const { exitCode } = await runBuild(['src/foo.ion']);
-    expect(exitCode).toBe(2);
-    expect(getStderr()).toContain('error');
+  it('writes source map file when --no-sourcemap is not set', async () => {
+    const srcDir = join(tmpDir, 'src');
+    const outDir = join(tmpDir, 'out');
+    await mkdir(srcDir);
+
+    await writeFile(join(srcDir, 'fn.ion'), 'fn id(x: Int) -> Int = x\n', 'utf-8');
+
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
+      target: 'javascript',
+      outDir: 'out',
+      rootDir: 'src',
+    }), 'utf-8');
+
+    await runBuild(['--config', configPath]);
+
+    const mapExists = await readFile(join(outDir, 'fn.js.map'), 'utf-8')
+      .then(() => true)
+      .catch(() => false);
+    expect(mapExists).toBe(true);
+
+    const jsContent = await readFile(join(outDir, 'fn.js'), 'utf-8');
+    expect(jsContent).toContain('sourceMappingURL=fn.js.map');
   });
 
-  it('exits 0 with warning when no .ion files are found', async () => {
-    await writeConfig(tempDir, { target: 'javascript' });
-    const origCwd = process.cwd();
-    try {
-      process.chdir(tempDir);
-      const { getStdout } = captureOutput();
-      const { exitCode } = await runBuild([]);
-      expect(exitCode).toBe(0);
-      expect(getStdout()).toContain('warning');
-    } finally {
-      process.chdir(origCwd);
-    }
+  it('--target flag overrides config target', async () => {
+    const srcDir = join(tmpDir, 'src');
+    await mkdir(srcDir);
+
+    const configPath = join(tmpDir, 'ion.config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: '1',
+      target: 'cobol',
+      outDir: 'out',
+      rootDir: 'src',
+    }), 'utf-8');
+
+    // Override with a supported target
+    const result = await runBuild(['--config', configPath, '--target', 'javascript', '--no-sourcemap']);
+    // No .ion files so it should succeed with 0
+    expect(result.exitCode).toBe(0);
   });
 });

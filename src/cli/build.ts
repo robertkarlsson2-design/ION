@@ -1,8 +1,7 @@
-import { readFile, writeFile, mkdir, stat, glob } from 'node:fs/promises';
-import { watch as fsWatch } from 'node:fs';
-import { resolve, relative, join, dirname, sep } from 'node:path';
+import { readFile, writeFile, mkdir, glob } from 'node:fs/promises';
+import { watch } from 'node:fs';
+import { join, resolve, dirname, relative, basename, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-
 import { lex } from '../lexer/index.js';
 import { parseModule, ParseError } from '../parser/declarations.js';
 import { buildModule } from '../ast/builder.js';
@@ -11,12 +10,12 @@ import type { BindError } from '../binder/index.js';
 import { checkModule } from '../checker/index.js';
 import type { CheckError } from '../checker/index.js';
 import { desugarModule } from '../desugar/index.js';
-import { emitJS, emitJSWithSourceMap } from '../../skills/javascript/emit.js';
+import { emitJS } from '../../skills/javascript/emit.js';
+import { loadConfig } from './config.js';
+import type { IonConfig } from './config.js';
+import { generateSourceMap } from '../emit/sourcemap.js';
 import type { Span } from '../types.js';
-
-const MAX_FILE_SIZE = 64 * 1024 * 1024;
-const SUPPORTED_TARGETS = ['javascript'] as const;
-type SupportedTarget = (typeof SUPPORTED_TARGETS)[number];
+import type { IonIRModule } from '../ir/nodes.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -27,32 +26,69 @@ export interface RunResult {
 }
 
 // ---------------------------------------------------------------------------
-// Config types
+// Internal types
 // ---------------------------------------------------------------------------
 
-export interface IonConfig {
-  target: SupportedTarget;
-  sources: string[];
-  outDir: string;
-  version: string;
+interface ParsedArgs {
+  configFile: string;
+  targetOverride: string | null;
+  watchMode: boolean;
+  noSourcemap: boolean;
+  json: boolean;
+}
+
+interface BuildDiagnostic {
+  file: string;
+  code: string;
+  message: string;
+  span: Span;
+  suggestion: string | null;
+}
+
+interface JsonOutput {
+  fileCount: number;
+  errorCount: number;
+  errors: {
+    file: string;
+    code: string;
+    message: string;
+    span: {
+      file: string;
+      startLine: number;
+      startCol: number;
+      endLine: number;
+      endCol: number;
+    };
+    suggestion: string | null;
+  }[];
+}
+
+// ---------------------------------------------------------------------------
+// Target extension map
+// ---------------------------------------------------------------------------
+
+const TARGET_EXT: Record<string, string> = {
+  javascript: '.js',
+  typescript: '.ts',
+};
+
+type EmitFn = (module: IonIRModule) => string;
+
+function getEmitter(target: string): EmitFn | null {
+  if (target === 'javascript') return emitJS;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
 // Argument parsing
 // ---------------------------------------------------------------------------
 
-export interface ParsedArgs {
-  configPath: string;
-  target: string | null;
-  watch: boolean;
-  noSourcemap: boolean;
-}
-
-/** Parse CLI args for `ion build`. Returns { error } on invalid input. */
-export function parseArgs(args: string[]): ParsedArgs | { error: string } {
-  let target: string | null = null;
+function parseArgs(args: string[]): ParsedArgs | { error: string } {
+  let configFile = 'ion.config.json';
+  let targetOverride: string | null = null;
   let watchMode = false;
   let noSourcemap = false;
+  let json = false;
 
   let i = 0;
   while (i < args.length) {
@@ -61,156 +97,105 @@ export function parseArgs(args: string[]): ParsedArgs | { error: string } {
       watchMode = true;
     } else if (arg === '--no-sourcemap') {
       noSourcemap = true;
+    } else if (arg === '--json') {
+      json = true;
+    } else if (arg === '--config') {
+      i++;
+      const val = args[i];
+      if (val === undefined) return { error: '--config requires a path argument' };
+      configFile = val;
     } else if (arg === '--target') {
       i++;
-      const next = args[i];
-      if (next === undefined || next.startsWith('--')) {
-        return { error: '--target requires a value' };
-      }
-      target = next;
-    } else if (arg !== undefined && arg.startsWith('--')) {
-      return { error: `unknown flag: ${arg}` };
+      const val = args[i];
+      if (val === undefined) return { error: '--target requires a language argument' };
+      targetOverride = val;
+    } else if (arg !== undefined && !arg.startsWith('--')) {
+      return { error: `unexpected positional argument: ${arg}` };
     } else if (arg !== undefined) {
-      return { error: 'ion build takes no positional arguments' };
+      return { error: `unknown flag: ${arg}` };
     }
     i++;
   }
 
-  return {
-    configPath: resolve(process.cwd(), 'ion.config.json'),
-    target,
-    watch: watchMode,
-    noSourcemap,
-  };
+  return { configFile, targetOverride, watchMode, noSourcemap, json };
 }
 
 // ---------------------------------------------------------------------------
-// Config loading
-// ---------------------------------------------------------------------------
-
-function isSupportedTarget(t: string): t is SupportedTarget {
-  return (SUPPORTED_TARGETS as readonly string[]).includes(t);
-}
-
-/**
- * Read and validate ion.config.json, applying targetOverride if provided.
- * Returns { error } if the file is missing, malformed, or has an unsupported target.
- */
-export async function loadConfig(
-  configPath: string,
-  targetOverride: string | null,
-): Promise<IonConfig | { error: string }> {
-  let raw: string;
-  try {
-    raw = await readFile(configPath, 'utf-8');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { error: `cannot read ion.config.json: ${msg}` };
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { error: `invalid JSON in ion.config.json: ${msg}` };
-  }
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { error: 'ion.config.json must be a JSON object' };
-  }
-
-  const obj = parsed as Record<string, unknown>;
-
-  const rawTarget = targetOverride ?? obj['target'];
-  if (typeof rawTarget !== 'string') {
-    return { error: 'ion.config.json: "target" field is required and must be a string' };
-  }
-  if (!isSupportedTarget(rawTarget)) {
-    return {
-      error: `ion.config.json: unsupported target "${rawTarget}". Supported targets: ${SUPPORTED_TARGETS.join(', ')}`,
-    };
-  }
-
-  const sources: string[] = [];
-  if (obj['sources'] === undefined) {
-    sources.push('**/*.ion');
-  } else if (Array.isArray(obj['sources'])) {
-    for (const s of obj['sources']) {
-      if (typeof s !== 'string') {
-        return { error: 'ion.config.json: "sources" must be an array of strings' };
-      }
-      sources.push(s);
-    }
-  } else {
-    return { error: 'ion.config.json: "sources" must be an array of strings' };
-  }
-
-  let outDir = 'out';
-  if (obj['outDir'] !== undefined) {
-    if (typeof obj['outDir'] !== 'string') {
-      return { error: 'ion.config.json: "outDir" must be a string' };
-    }
-    outDir = obj['outDir'];
-  }
-
-  let version = '0.0.0';
-  if (obj['version'] !== undefined) {
-    if (typeof obj['version'] !== 'string') {
-      return { error: 'ion.config.json: "version" must be a string' };
-    }
-    version = obj['version'];
-  }
-
-  return { target: rawTarget, sources, outDir, version };
-}
-
-// ---------------------------------------------------------------------------
-// File discovery
+// Output path computation
 // ---------------------------------------------------------------------------
 
 /**
- * Expand source glob patterns (relative to configDir) into absolute file paths.
- * Deduplicates results in case patterns overlap.
+ * Compute the output file path for a compiled .ion file.
+ * Strips rootDir prefix, replaces the .ion extension with ext, and joins with outDir.
  */
-export async function collectIonFiles(
-  config: IonConfig,
-  configDir: string,
-): Promise<string[] | { error: string }> {
-  const found: string[] = [];
-  try {
-    for (const pattern of config.sources) {
-      for await (const file of glob(pattern, { cwd: configDir })) {
-        const absPath = resolve(configDir, file);
-        if (!absPath.startsWith(configDir + sep)) continue;
-        found.push(absPath);
+export function resolveOutputPath(
+  ionPath: string,
+  rootDir: string,
+  outDir: string,
+  ext: string,
+): string {
+  const rel = relative(rootDir, ionPath);
+  const withExt = rel.replace(/\.ion$/, ext);
+  return join(outDir, withExt);
+}
+
+// ---------------------------------------------------------------------------
+// Glob pattern matching
+// ---------------------------------------------------------------------------
+
+function globMatchesPattern(filePath: string, pattern: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/');
+  // Escape regex special chars, leaving * and ? untouched
+  let r = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  // **/ at the start or middle matches any path prefix including empty
+  r = r.replace(/\*\*\//g, '\x00');
+  // remaining ** matches anything
+  r = r.replace(/\*\*/g, '.*');
+  // single * matches within one path component
+  r = r.replace(/\*/g, '[^/]*');
+  // restore **/ as optional path prefix
+  r = r.replace(/\x00/g, '(.*/)?');
+  return new RegExp('^' + r + '$').test(normalized);
+}
+
+// ---------------------------------------------------------------------------
+// File collection
+// ---------------------------------------------------------------------------
+
+async function collectIonFiles(
+  rootDir: string,
+  includePatterns: string[],
+  excludePatterns: string[],
+): Promise<string[]> {
+  const seen = new Set<string>();
+  const files: string[] = [];
+
+  for (const pattern of includePatterns) {
+    for await (const rel of glob(pattern, { cwd: rootDir })) {
+      const abs = resolve(rootDir, rel);
+      if (abs !== rootDir && !abs.startsWith(rootDir + sep)) continue;
+      if (seen.has(abs)) continue;
+      seen.add(abs);
+      const relNorm = rel.replace(/\\/g, '/');
+      if (!excludePatterns.some(ex => globMatchesPattern(relNorm, ex))) {
+        files.push(abs);
       }
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { error: `failed to enumerate .ion files: ${msg}` };
   }
-  return [...new Set(found)];
+
+  return files;
 }
 
 // ---------------------------------------------------------------------------
-// Diagnostics
+// Error mapping
 // ---------------------------------------------------------------------------
 
-interface Diagnostic {
-  file: string;
-  code: string;
-  message: string;
-  span: Span;
-  suggestion: string | null;
-}
-
-function mapBindError(e: BindError, filePath: string): Diagnostic {
+function mapBindError(e: BindError, filePath: string): BuildDiagnostic {
   switch (e.kind) {
     case 'UndefinedName':
       return {
         file: filePath,
-        code: 'B0001',
+        code: 'BD003',
         message: e.message,
         span: e.span,
         suggestion: 'check the spelling or add a declaration',
@@ -218,7 +203,7 @@ function mapBindError(e: BindError, filePath: string): Diagnostic {
     case 'DuplicateBinding':
       return {
         file: filePath,
-        code: 'B0002',
+        code: 'BD003',
         message: e.message,
         span: e.span,
         suggestion: 'rename one of the conflicting bindings',
@@ -226,7 +211,7 @@ function mapBindError(e: BindError, filePath: string): Diagnostic {
     case 'CircularImport':
       return {
         file: filePath,
-        code: 'B0003',
+        code: 'BD003',
         message: e.message,
         span: e.span,
         suggestion: 'break the import cycle by extracting shared code into a common module',
@@ -234,10 +219,10 @@ function mapBindError(e: BindError, filePath: string): Diagnostic {
   }
 }
 
-function mapCheckError(e: CheckError): Diagnostic {
+function mapCheckError(e: CheckError): BuildDiagnostic {
   return {
     file: e.span.file,
-    code: e.code,
+    code: 'BD004',
     message: e.message,
     span: e.span,
     suggestion: e.suggestion,
@@ -245,313 +230,231 @@ function mapCheckError(e: CheckError): Diagnostic {
 }
 
 // ---------------------------------------------------------------------------
-// Per-file compile result types
+// Per-file compilation
 // ---------------------------------------------------------------------------
 
-export interface CompileSuccess {
-  inputPath: string;
+interface CompileFileResult {
   outputPath: string;
-  mapPath: string | null;
+  diagnostics: BuildDiagnostic[];
 }
 
-export interface CompileDiagnostics {
-  inputPath: string;
-  diagnostics: Diagnostic[];
-}
-
-export interface CompileIoError {
-  inputPath: string;
-  ioError: string;
-}
-
-export type CompileResult = CompileSuccess | CompileDiagnostics | CompileIoError;
-
-// ---------------------------------------------------------------------------
-// Per-file compilation pipeline
-// ---------------------------------------------------------------------------
-
-/**
- * Lex → parse → bind → check → desugar → emit a single .ion file.
- * Writes .js (and optionally .js.map) to configDir/outDir/.
- */
-export async function compileFile(
-  inputPath: string,
-  config: IonConfig,
-  configDir: string,
+async function compileFile(
+  ionPath: string,
+  rootDir: string,
+  outDir: string,
+  emitter: EmitFn,
+  target: string,
   noSourcemap: boolean,
-): Promise<CompileResult> {
-  try {
-    const { size } = await stat(inputPath);
-    if (size > MAX_FILE_SIZE) {
-      return {
-        inputPath,
-        ioError: `file too large: '${inputPath}' (${size} bytes, limit ${MAX_FILE_SIZE})`,
-      };
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { inputPath, ioError: `cannot read file '${inputPath}': ${msg}` };
+): Promise<CompileFileResult> {
+  const ext = TARGET_EXT[target] ?? '.js';
+  const outputPath = resolveOutputPath(ionPath, rootDir, outDir, ext);
+
+  if (!outputPath.startsWith(outDir + sep)) {
+    return {
+      outputPath,
+      diagnostics: [{
+        file: ionPath,
+        code: 'BD001',
+        message: `output path escapes outDir: ${outputPath}`,
+        span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: null,
+      }],
+    };
   }
 
   let src: string;
   try {
-    src = await readFile(inputPath, 'utf-8');
+    src = await readFile(ionPath, 'utf-8');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { inputPath, ioError: `cannot read file '${inputPath}': ${msg}` };
+    return {
+      outputPath,
+      diagnostics: [{
+        file: ionPath,
+        code: 'BD001',
+        message: `cannot read file: ${msg}`,
+        span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: null,
+      }],
+    };
   }
 
-  const tokens = lex(src, inputPath);
+  const tokens = lex(src, ionPath);
 
-  let jsSource: string;
-  let mapSource: string | null = null;
-
-  // Relative path from configDir (forward slashes, no .ion extension) used as module path
-  const relPath = relative(configDir, inputPath);
-  const modulePath = relPath.replace(/\.ion$/, '').replace(/\\/g, '/');
-
+  let cst;
   try {
-    const cst = parseModule(tokens);
-    const ast = buildModule(cst);
-
-    const bindResult = bindModule(ast, inputPath);
-    const bindDiags = bindResult.errors.map(e => mapBindError(e, inputPath));
-    const checkResult = checkModule(ast, bindResult, inputPath);
-    const checkDiags = checkResult.errors.map(mapCheckError);
-
-    const allDiags = [...bindDiags, ...checkDiags];
-    if (allDiags.length > 0) {
-      return { inputPath, diagnostics: allDiags };
-    }
-
-    const irModule = desugarModule(
-      ast,
-      bindResult,
-      checkResult,
-      modulePath,
-      config.version,
-    );
-
-    if (!noSourcemap) {
-      const result = emitJSWithSourceMap(irModule, inputPath, src);
-      jsSource = result.source;
-      mapSource = result.map;
-    } else {
-      jsSource = emitJS(irModule);
-    }
+    cst = parseModule(tokens);
   } catch (err) {
     if (err instanceof ParseError) {
       return {
-        inputPath,
+        outputPath,
         diagnostics: [{
-          file: inputPath,
-          code: err.code,
+          file: ionPath,
+          code: 'BD002',
           message: err.message,
           span: err.span,
           suggestion: err.suggestion,
         }],
       };
     }
-    const msg = err instanceof Error ? err.message : String(err);
-    return { inputPath, ioError: `internal compiler error: ${msg}` };
+    throw err;
   }
 
-  // Compute output path: configDir/outDir/rel-path-with-.js
-  const outputRelPath = relPath.replace(/\.ion$/, '.js');
-  const safeOutRoot = resolve(configDir, config.outDir);
-  const outputPath = join(configDir, config.outDir, outputRelPath);
-  if (!outputPath.startsWith(safeOutRoot + sep)) {
-    return { inputPath, ioError: `output path escapes outDir boundary` };
+  const ast = buildModule(cst);
+  const bindResult = bindModule(ast, ionPath);
+  const diagnostics: BuildDiagnostic[] = bindResult.errors.map(e => mapBindError(e, ionPath));
+
+  const checkResult = checkModule(ast, bindResult, ionPath);
+  for (const e of checkResult.errors) {
+    diagnostics.push(mapCheckError(e));
   }
 
+  if (diagnostics.length > 0) {
+    return { outputPath, diagnostics };
+  }
+
+  let emitted: string;
   try {
-    await mkdir(dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, jsSource, 'utf-8');
-
-    let mapPath: string | null = null;
-    if (mapSource !== null) {
-      mapPath = outputPath + '.map';
-      await writeFile(mapPath, mapSource, 'utf-8');
-    }
-
-    return { inputPath, outputPath, mapPath };
+    const ir = desugarModule(ast, bindResult, checkResult, ionPath, '0.0.0');
+    emitted = emitter(ir);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { inputPath, ioError: `failed to write output '${outputPath}': ${msg}` };
+    return {
+      outputPath,
+      diagnostics: [{
+        file: ionPath,
+        code: 'BD005',
+        message: `emit error: ${msg}`,
+        span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: null,
+      }],
+    };
   }
+
+  await mkdir(dirname(outputPath), { recursive: true });
+
+  if (!noSourcemap) {
+    const mapName = basename(outputPath) + '.map';
+    const mapContent = generateSourceMap({
+      sourceFile: ionPath,
+      outputFile: outputPath,
+      sourceContent: src,
+    });
+    await writeFile(outputPath + '.map', mapContent, 'utf-8');
+    emitted += `\n//# sourceMappingURL=${mapName}`;
+  }
+
+  await writeFile(outputPath, emitted, 'utf-8');
+  return { outputPath, diagnostics: [] };
 }
 
 // ---------------------------------------------------------------------------
-// Parallel build
+// Output formatting
 // ---------------------------------------------------------------------------
 
-function printDiagnostic(d: Diagnostic): void {
-  const loc = `${d.span.file}:${d.span.startLine}:${d.span.startCol}`;
-  process.stdout.write(`error[${d.code}]: ${d.message} at ${loc}\n`);
-  if (d.suggestion !== null) {
-    process.stdout.write(`  suggestion: ${d.suggestion}\n`);
-  }
-}
-
-/**
- * Compile all files in parallel. Prints results to stdout/stderr.
- * Returns { hadErrors: true } if any file failed.
- */
-export async function buildOnce(
-  files: string[],
-  config: IonConfig,
-  configDir: string,
-  noSourcemap: boolean,
-): Promise<{ hadErrors: boolean }> {
-  const results = await Promise.all(
-    files.map(f => compileFile(f, config, configDir, noSourcemap)),
-  );
-
-  let hadErrors = false;
-
-  for (const result of results) {
-    if ('ioError' in result) {
-      process.stderr.write(`error: ${result.ioError}\n`);
-      hadErrors = true;
-    } else if ('diagnostics' in result) {
-      for (const d of result.diagnostics) {
-        printDiagnostic(d);
-      }
-      hadErrors = true;
-    } else {
-      const relInput = relative(configDir, result.inputPath);
-      const relOutput = relative(configDir, result.outputPath);
-      process.stdout.write(`✓ ${relInput} → ${relOutput}\n`);
+function formatHuman(diags: BuildDiagnostic[]): string {
+  const lines: string[] = [];
+  for (const d of diags) {
+    const loc = `${d.span.file}:${d.span.startLine}:${d.span.startCol}`;
+    lines.push(`error[${d.code}]: ${d.message} at ${loc}`);
+    if (d.suggestion !== null) {
+      lines.push(`  suggestion: ${d.suggestion}`);
     }
   }
+  return lines.join('\n');
+}
 
-  if (hadErrors) {
-    const errorCount = results.filter(r => 'diagnostics' in r || 'ioError' in r).length;
-    process.stdout.write(`Build failed: ${errorCount} file(s) with errors\n`);
-  }
-
-  return { hadErrors };
+function formatJson(fileCount: number, diags: BuildDiagnostic[]): string {
+  const output: JsonOutput = {
+    fileCount,
+    errorCount: diags.length,
+    errors: diags.map(d => ({
+      file: d.file,
+      code: d.code,
+      message: d.message,
+      span: {
+        file: d.span.file,
+        startLine: d.span.startLine,
+        startCol: d.span.startCol,
+        endLine: d.span.endLine,
+        endCol: d.span.endCol,
+      },
+      suggestion: d.suggestion,
+    })),
+  };
+  return JSON.stringify(output, null, 2);
 }
 
 // ---------------------------------------------------------------------------
-// Watch mode
+// Build execution
 // ---------------------------------------------------------------------------
 
-/**
- * Run an initial build, then watch configDir for changes and rebuild incrementally.
- * Debounces file-system events in a 50 ms window.
- * Never resolves — the process exits via signal or watcher error.
- *
- * Note: Node's fs.watch recursive mode has known reliability issues on Linux;
- * this is the same trade-off made by tsc --watch.
- */
-export async function watchBuild(
-  configDir: string,
-  initialConfig: IonConfig,
+async function runBuildOnce(
+  config: IonConfig,
+  resolvedRootDir: string,
+  resolvedOutDir: string,
+  emitter: EmitFn,
+  target: string,
   noSourcemap: boolean,
-): Promise<never> {
-  let currentConfig = initialConfig;
+  json: boolean,
+): Promise<{ fileCount: number; diagnostics: BuildDiagnostic[] }> {
+  const includePatterns = config.include ?? ['**/*.ion'];
+  const excludePatterns = config.exclude ?? ['**/*.test.ion'];
 
-  const initFiles = await collectIonFiles(currentConfig, configDir);
-  if ('error' in initFiles) {
-    process.stderr.write(`error: ${initFiles.error}\n`);
-    process.exit(2);
+  let ionFiles: string[];
+  try {
+    ionFiles = await collectIonFiles(resolvedRootDir, includePatterns, excludePatterns);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      fileCount: 0,
+      diagnostics: [{
+        file: resolvedRootDir,
+        code: 'BD001',
+        message: `failed to enumerate .ion files: ${msg}`,
+        span: { file: resolvedRootDir, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: null,
+      }],
+    };
   }
-  let currentFiles: string[] = initFiles;
 
-  await buildOnce(currentFiles, currentConfig, configDir, noSourcemap);
-  process.stdout.write('[watch] watching for changes...\n');
+  if (ionFiles.length === 0) {
+    if (!json) {
+      process.stdout.write('warning: no .ion files found\n');
+    }
+    return { fileCount: 0, diagnostics: [] };
+  }
 
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  const pendingFiles = new Set<string>();
-  let pendingConfigReload = false;
-
-  const watcher = fsWatch(
-    configDir,
-    { recursive: true },
-    (eventType, filename: string | Buffer | null) => {
-      if (filename === null || filename === undefined) return;
-      const name = typeof filename === 'string' ? filename : filename.toString('utf-8');
-
-      if (name === 'ion.config.json') {
-        pendingConfigReload = true;
-      } else if (name.endsWith('.ion')) {
-        pendingFiles.add(resolve(configDir, name));
-      } else {
-        return;
-      }
-
-      if (debounceTimer !== null) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-
-        if (pendingConfigReload) {
-          pendingConfigReload = false;
-          pendingFiles.clear();
-          void (async () => {
-            const configPath = resolve(configDir, 'ion.config.json');
-            const reloaded = await loadConfig(configPath, null);
-            if ('error' in reloaded) {
-              process.stderr.write(`[watch] config error: ${reloaded.error}\n`);
-              return;
-            }
-            currentConfig = reloaded;
-            const files = await collectIonFiles(currentConfig, configDir);
-            if ('error' in files) {
-              process.stderr.write(`[watch] ${files.error}\n`);
-              return;
-            }
-            currentFiles = files;
-            process.stdout.write('[watch] config reloaded, rebuilding all...\n');
-            await buildOnce(currentFiles, currentConfig, configDir, noSourcemap);
-          })();
-        } else if (pendingFiles.size > 0) {
-          const toRebuild = [...pendingFiles];
-          pendingFiles.clear();
-          void (async () => {
-            for (const f of toRebuild) {
-              process.stdout.write(`[watch] rebuilding ${relative(configDir, f)}...\n`);
-              const result = await compileFile(f, currentConfig, configDir, noSourcemap);
-              if ('ioError' in result) {
-                process.stderr.write(`[watch] error: ${result.ioError}\n`);
-              } else if ('diagnostics' in result) {
-                process.stdout.write(
-                  `[watch] errors in ${relative(configDir, result.inputPath)}\n`,
-                );
-                for (const d of result.diagnostics) {
-                  printDiagnostic(d);
-                }
-              } else {
-                const relIn = relative(configDir, result.inputPath);
-                const relOut = relative(configDir, result.outputPath);
-                process.stdout.write(`[watch] rebuilt ${relIn} → ${relOut}\n`);
-              }
-            }
-          })();
-        }
-      }, 50);
-    },
+  const results = await Promise.all(
+    ionFiles.map(f => compileFile(f, resolvedRootDir, resolvedOutDir, emitter, target, noSourcemap)),
   );
 
-  watcher.on('error', (err: Error) => {
-    process.stderr.write(`[watch] watcher error: ${err.message}\n`);
-    process.exit(2);
-  });
+  const allDiags = results.flatMap(r => r.diagnostics);
 
-  return new Promise<never>(() => {
-    // Intentionally never resolves; process exits via signal or watcher error
-  });
+  if (!json) {
+    const errCount = allDiags.length;
+    const okCount = ionFiles.length - results.filter(r => r.diagnostics.length > 0).length;
+    if (errCount > 0) {
+      process.stdout.write(formatHuman(allDiags) + '\n');
+    }
+    process.stdout.write(`${okCount} file(s) compiled, ${errCount} error(s)\n`);
+  } else {
+    process.stdout.write(formatJson(ionFiles.length, allDiags) + '\n');
+  }
+
+  return { fileCount: ionFiles.length, diagnostics: allDiags };
 }
 
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
-const USAGE = 'usage: ion build [--target <lang>] [--watch] [--no-sourcemap]\n';
+const USAGE = 'usage: ion build [--config <path>] [--target <lang>] [--watch] [--no-sourcemap] [--json]\n';
 
 /**
  * Runs the `ion build` command.
- * Returns { exitCode } where 0 = success, 1 = compile errors, 2 = config/I-O error.
+ * Returns { exitCode } where 0 = success, 1 = compile errors, 2 = config/arg error.
+ * In watch mode, the returned promise never resolves (process stays alive until killed).
  */
 export async function runBuild(args: string[]): Promise<RunResult> {
   const parsed = parseArgs(args);
@@ -561,31 +464,66 @@ export async function runBuild(args: string[]): Promise<RunResult> {
     return { exitCode: 2 };
   }
 
-  const configDir = dirname(parsed.configPath);
-  const config = await loadConfig(parsed.configPath, parsed.target);
+  const configPath = resolve(parsed.configFile);
+  const config = await loadConfig(configPath);
   if ('error' in config) {
     process.stderr.write(`error: ${config.error}\n`);
     return { exitCode: 2 };
   }
 
-  const files = await collectIonFiles(config, configDir);
-  if ('error' in files) {
-    process.stderr.write(`error: ${files.error}\n`);
+  const target = parsed.targetOverride ?? config.target;
+  const emitter = getEmitter(target);
+  if (emitter === null) {
+    process.stderr.write(`error: unsupported target: ${target}\n`);
+    process.stderr.write('supported targets: javascript\n');
     return { exitCode: 2 };
   }
 
-  if (files.length === 0) {
-    process.stdout.write('warning: no .ion files found\n');
-    return { exitCode: 0 };
+  const configDir = dirname(configPath);
+  const resolvedRootDir = resolve(configDir, config.rootDir);
+  const resolvedOutDir = resolve(configDir, config.outDir);
+
+  if (!parsed.watchMode) {
+    const { diagnostics } = await runBuildOnce(
+      config,
+      resolvedRootDir,
+      resolvedOutDir,
+      emitter,
+      target,
+      parsed.noSourcemap,
+      parsed.json,
+    );
+    return { exitCode: diagnostics.length > 0 ? 1 : 0 };
   }
 
-  if (parsed.watch) {
-    await watchBuild(configDir, config, parsed.noSourcemap);
-    // unreachable: watchBuild returns Promise<never>
-  }
+  // Watch mode: initial build then watch for changes
+  await runBuildOnce(config, resolvedRootDir, resolvedOutDir, emitter, target, parsed.noSourcemap, false);
 
-  const { hadErrors } = await buildOnce(files, config, configDir, parsed.noSourcemap);
-  return { exitCode: hadErrors ? 1 : 0 };
+  // Return a promise that keeps the process alive via the fs.Watch handle
+  return new Promise(() => {
+    const watcher = watch(resolvedRootDir, { recursive: true }, (eventType, filename) => {
+      if (typeof filename !== 'string') return;
+      if (!filename.endsWith('.ion')) return;
+
+      const ionPath = resolve(resolvedRootDir, filename);
+      if (!ionPath.startsWith(resolvedRootDir + sep)) return;
+      compileFile(ionPath, resolvedRootDir, resolvedOutDir, emitter, target, parsed.noSourcemap)
+        .then(result => {
+          if (result.diagnostics.length > 0) {
+            process.stdout.write(`[watch] error in ${ionPath}\n`);
+            process.stdout.write(formatHuman(result.diagnostics) + '\n');
+          } else {
+            process.stdout.write(`[watch] rebuilt ${ionPath}\n`);
+          }
+        })
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(`[watch] fatal error rebuilding ${ionPath}: ${msg}\n`);
+        });
+    });
+    // Keep the watcher referenced so the process stays alive
+    watcher.ref();
+  });
 }
 
 // ---------------------------------------------------------------------------
