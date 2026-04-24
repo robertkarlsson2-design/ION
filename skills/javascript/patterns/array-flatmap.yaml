@@ -1,0 +1,41 @@
+id: array-flatmap
+language: javascript
+match:
+  nodeType: call_expression
+  children:
+    - pattern:
+        nodeType: member_expression
+        children:
+          - pattern:
+              capture: $OBJ
+          - pattern:
+              text: flatMap
+    - pattern:
+        nodeType: arguments
+        children:
+          - pattern:
+              capture: $ARG
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name:
+      metavar: $OBJ
+      field: text
+    symbolId:
+      metavar: $OBJ
+      field: text
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $ARG
+        field: text
+      symbolId:
+        metavar: $ARG
+        field: text
+      type:
+        kind: Never
+  type:
+    kind: Never

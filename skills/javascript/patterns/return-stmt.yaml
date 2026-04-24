@@ -1,0 +1,17 @@
+id: return-stmt
+language: javascript
+match:
+  nodeType: return_statement
+  children:
+    - pattern:
+        capture: $EXPR
+emit:
+  kind: Var
+  name:
+    metavar: $EXPR
+    field: text
+  symbolId:
+    metavar: $EXPR
+    field: text
+  type:
+    kind: Never

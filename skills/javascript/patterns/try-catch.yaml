@@ -1,0 +1,22 @@
+id: try-catch
+language: javascript
+match:
+  nodeType: try_statement
+  children:
+    - pattern:
+        nodeType: statement_block
+        capture: $BODY
+    - pattern:
+        nodeType: catch_clause
+        capture: $HANDLER
+emit:
+  kind: Case
+  scrutinee:
+    kind: Literal
+    value:
+      kind: Null
+    type:
+      kind: Never
+  arms: []
+  type:
+    kind: Never

@@ -1,0 +1,28 @@
+id: if-else
+language: javascript
+match:
+  nodeType: if_statement
+  children:
+    - pattern:
+        capture: $COND
+    - pattern:
+        nodeType: statement_block
+        capture: $THEN
+    - pattern:
+        nodeType: else_clause
+        capture: $ELSE
+emit:
+  kind: Case
+  scrutinee:
+    kind: Var
+    name:
+      metavar: $COND
+      field: text
+    symbolId:
+      metavar: $COND
+      field: text
+    type:
+      kind: Never
+  arms: []
+  type:
+    kind: Never

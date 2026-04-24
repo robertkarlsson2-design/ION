@@ -1,0 +1,10 @@
+id: undefined-literal
+language: javascript
+match:
+  text: "undefined"
+emit:
+  kind: Literal
+  value:
+    kind: Null
+  type:
+    kind: Never

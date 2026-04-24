@@ -1,0 +1,22 @@
+id: throw-stmt
+language: javascript
+match:
+  nodeType: throw_statement
+  children:
+    - pattern:
+        capture: $EXPR
+emit:
+  kind: Effect
+  effectTag: io
+  body:
+    kind: Var
+    name:
+      metavar: $EXPR
+      field: text
+    symbolId:
+      metavar: $EXPR
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never

@@ -1,0 +1,26 @@
+id: ternary
+language: javascript
+match:
+  nodeType: ternary_expression
+  children:
+    - pattern:
+        capture: $COND
+    - pattern:
+        capture: $THEN
+    - pattern:
+        capture: $ELSE
+emit:
+  kind: Case
+  scrutinee:
+    kind: Var
+    name:
+      metavar: $COND
+      field: text
+    symbolId:
+      metavar: $COND
+      field: text
+    type:
+      kind: Never
+  arms: []
+  type:
+    kind: Never
