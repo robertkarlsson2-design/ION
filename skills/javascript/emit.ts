@@ -173,6 +173,12 @@ function emitCase(node: CaseNode, ctx: EmitCtx): EmittedExpr {
     const body = emitExpr(arm.body, inner2);
     const pat = arm.pattern;
     const varBinding = pat.kind === 'Var' ? `${ind2}const ${pat.name} = ${scrutinee};\n` : '';
+    const ctorFieldBindings = pat.kind === 'Constructor'
+      ? pat.fields
+          .filter(f => f.kind === 'Var')
+          .map(f => (f.kind === 'Var' ? `${ind2}const ${f.name} = ${scrutinee}.${f.name};\n` : ''))
+          .join('')
+      : '';
 
     if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
       const prefix = clauses.length === 0 ? '' : ' else ';
@@ -181,7 +187,7 @@ function emitCase(node: CaseNode, ctx: EmitCtx): EmittedExpr {
       const cond = emitPatternCond(pat, scrutinee);
       const guard = arm.guard !== undefined ? ` && ${emitExpr(arm.guard, inner2)}` : '';
       const kw = clauses.length === 0 ? 'if ' : ' else if ';
-      clauses.push(`${kw}(${cond}${guard}) {\n${varBinding}${ind2}return ${body};\n${ind1}}`);
+      clauses.push(`${kw}(${cond}${guard}) {\n${varBinding}${ctorFieldBindings}${ind2}return ${body};\n${ind1}}`);
     }
   }
 
@@ -291,7 +297,7 @@ function emitAdtMatch(node: AdtMatchNode, ctx: EmitCtx): EmittedExpr {
 function emitPerform(node: PerformNode, ctx: EmitCtx): EmittedExpr {
   ensureEffectPerformHelper(ctx);
   const args = node.args.map(a => emitExpr(a, ctx)).join(', ');
-  const payload = node.args.length > 0 ? `{ ${args} }` : '{}';
+  const payload = `[${args}]`;
   return wrapEmitted(`(() => { throw new EffectPerform("${node.operation}", ${payload}); })()`);
 }
 
@@ -306,7 +312,7 @@ function emitHandle(node: HandleNode, ctx: EmitCtx): EmittedExpr {
 
   const handlerClauses = node.handlers.map(h => {
     const bindings = h.params
-      .map(p => `${ind2}  const ${p.name} = _e.payload.${p.name};`)
+      .map((p, i) => `${ind2}  const ${p.name} = _e.payload[${i}];`)
       .join('\n');
     const hBody = emitExpr(h.body, { indent: inner2.indent + 1, helpers: ctx.helpers });
     const ind3 = indentStr({ indent: inner2.indent + 1, helpers: ctx.helpers });
