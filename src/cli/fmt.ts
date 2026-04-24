@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, stat } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { deserializeModule, IonIRSerdeError } from '../ir/serde.js';
 import { encodeModule } from '../wire/encoder.js';
@@ -63,6 +63,8 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 // Per-file formatting
 // ---------------------------------------------------------------------------
 
+const MAX_FILE_SIZE = 64 * 1024 * 1024; // 64 MB — IonIR files are typically kilobytes
+
 /**
  * Format a single file. Returns whether the file content was already canonical.
  * In 'check' mode, never writes. In 'pretty'/'wire' modes, writes if changed.
@@ -76,6 +78,16 @@ async function formatFile(
   mode: 'pretty' | 'wire' | 'check',
   opts: PrettyOptions,
 ): Promise<{ changed: boolean; error?: string }> {
+  try {
+    const { size } = await stat(filePath);
+    if (size > MAX_FILE_SIZE) {
+      return { changed: false, error: `file too large: '${filePath}' (${size} bytes, limit ${MAX_FILE_SIZE})` };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { changed: false, error: `cannot read file '${filePath}': ${msg}` };
+  }
+
   let original: string;
   try {
     original = await readFile(filePath, 'utf-8');
