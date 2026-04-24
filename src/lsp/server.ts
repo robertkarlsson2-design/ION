@@ -59,20 +59,6 @@ connection.onHover(params => {
     }
   }
 
-  if (tok.kind === TokenKind.IDENT && doc.bindResult !== null) {
-    const key = spanKey(tok.span);
-    const symbolId = doc.bindResult.resolutionMap.get(key);
-    if (symbolId !== undefined) {
-      const info = doc.bindResult.symbolTable.symbols.get(symbolId);
-      if (info?.typeAnnotation != null) {
-        return {
-          contents: { kind: 'markdown', value: `\`${info.name}\`` },
-          range: ionSpanToRange(tok.span),
-        };
-      }
-    }
-  }
-
   return null;
 });
 
