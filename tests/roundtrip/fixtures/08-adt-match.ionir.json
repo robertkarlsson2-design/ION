@@ -1,0 +1,85 @@
+{
+  "ionir": "1.0",
+  "module": "org.example.option",
+  "version": "0.1.0",
+  "dialects": ["core", "ion-adt"],
+  "imports": [],
+  "data": [
+    {
+      "kind": "AdtDecl",
+      "name": "Color",
+      "symbolId": "option:Color:0",
+      "variants": [
+        {
+          "tag": "Red",
+          "symbolId": "option:Red:1",
+          "fields": [],
+          "span": {"file": "option.ion", "startLine": 2, "startCol": 2, "endLine": 2, "endCol": 5}
+        },
+        {
+          "tag": "Green",
+          "symbolId": "option:Green:2",
+          "fields": [],
+          "span": {"file": "option.ion", "startLine": 3, "startCol": 2, "endLine": 3, "endCol": 7}
+        },
+        {
+          "tag": "Blue",
+          "symbolId": "option:Blue:3",
+          "fields": [],
+          "span": {"file": "option.ion", "startLine": 4, "startCol": 2, "endLine": 4, "endCol": 6}
+        }
+      ],
+      "span": {"file": "option.ion", "startLine": 1, "startCol": 0, "endLine": 5, "endCol": 1},
+      "type": {"kind": "Unit"}
+    }
+  ],
+  "decls": [
+    {
+      "kind": "AdtMatch",
+      "scrutinee": {
+        "kind": "Var",
+        "name": "c",
+        "symbolId": "option:c:4",
+        "span": {"file": "option.ion", "startLine": 7, "startCol": 6, "endLine": 7, "endCol": 7},
+        "type": {"kind": "User", "name": "Color", "symbolId": "option:Color:0", "args": []}
+      },
+      "arms": [
+        {
+          "tag": "Red",
+          "bindings": [],
+          "body": {
+            "kind": "Literal",
+            "value": {"kind": "Str", "value": "red"},
+            "span": {"file": "option.ion", "startLine": 8, "startCol": 8, "endLine": 8, "endCol": 13},
+            "type": {"kind": "Str"}
+          },
+          "span": {"file": "option.ion", "startLine": 8, "startCol": 2, "endLine": 8, "endCol": 14}
+        },
+        {
+          "tag": "Green",
+          "bindings": [],
+          "body": {
+            "kind": "Literal",
+            "value": {"kind": "Str", "value": "green"},
+            "span": {"file": "option.ion", "startLine": 9, "startCol": 10, "endLine": 9, "endCol": 17},
+            "type": {"kind": "Str"}
+          },
+          "span": {"file": "option.ion", "startLine": 9, "startCol": 2, "endLine": 9, "endCol": 18}
+        },
+        {
+          "tag": "Blue",
+          "bindings": [],
+          "body": {
+            "kind": "Literal",
+            "value": {"kind": "Str", "value": "blue"},
+            "span": {"file": "option.ion", "startLine": 10, "startCol": 9, "endLine": 10, "endCol": 15},
+            "type": {"kind": "Str"}
+          },
+          "span": {"file": "option.ion", "startLine": 10, "startCol": 2, "endLine": 10, "endCol": 16}
+        }
+      ],
+      "span": {"file": "option.ion", "startLine": 7, "startCol": 0, "endLine": 11, "endCol": 1},
+      "type": {"kind": "Str"}
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+module org.example.letchain  "0.1.0"
+// dialects: core
+
+let a: Int = 1
+let b: Int = 2
+let c: Str = "hello"
+a

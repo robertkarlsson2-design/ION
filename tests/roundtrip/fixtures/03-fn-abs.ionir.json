@@ -1,0 +1,68 @@
+{
+  "ionir": "1.0",
+  "module": "org.example.math",
+  "version": "0.1.0",
+  "dialects": ["core"],
+  "imports": [],
+  "data": [],
+  "decls": [
+    {
+      "kind": "Abs",
+      "params": [
+        {
+          "name": "x",
+          "symbolId": "math:x:0",
+          "type": {"kind": "Int"},
+          "span": {"file": "math.ion", "startLine": 1, "startCol": 4, "endLine": 1, "endCol": 5}
+        },
+        {
+          "name": "y",
+          "symbolId": "math:y:1",
+          "type": {"kind": "Int"},
+          "span": {"file": "math.ion", "startLine": 1, "startCol": 12, "endLine": 1, "endCol": 13}
+        }
+      ],
+      "body": {
+        "kind": "App",
+        "callee": {
+          "kind": "Var",
+          "name": "add",
+          "symbolId": "math:add:2",
+          "span": {"file": "math.ion", "startLine": 2, "startCol": 2, "endLine": 2, "endCol": 5},
+          "type": {
+            "kind": "Fn",
+            "params": [{"kind": "Int"}, {"kind": "Int"}],
+            "ret": {"kind": "Int"},
+            "effects": []
+          }
+        },
+        "args": [
+          {
+            "kind": "Var",
+            "name": "x",
+            "symbolId": "math:x:0",
+            "span": {"file": "math.ion", "startLine": 2, "startCol": 6, "endLine": 2, "endCol": 7},
+            "type": {"kind": "Int"}
+          },
+          {
+            "kind": "Var",
+            "name": "y",
+            "symbolId": "math:y:1",
+            "span": {"file": "math.ion", "startLine": 2, "startCol": 9, "endLine": 2, "endCol": 10},
+            "type": {"kind": "Int"}
+          }
+        ],
+        "span": {"file": "math.ion", "startLine": 2, "startCol": 2, "endLine": 2, "endCol": 11},
+        "type": {"kind": "Int"}
+      },
+      "captures": [],
+      "span": {"file": "math.ion", "startLine": 1, "startCol": 0, "endLine": 3, "endCol": 1},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Int"}, {"kind": "Int"}],
+        "ret": {"kind": "Int"},
+        "effects": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+module org.example.logging  "0.1.0"
+// dialects: core, ion-effects
+
+effect Log {
+  info(msg: Str): Unit
+  warn(msg: Str): Unit
+}
+handle {
+  perform logging:Log:0.info("hello")
+} with {
+  info(msg: Str) => resume(null)
+}

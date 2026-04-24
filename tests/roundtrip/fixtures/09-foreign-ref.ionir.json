@@ -1,0 +1,46 @@
+{
+  "ionir": "1.0",
+  "module": "org.example.ffi",
+  "version": "0.1.0",
+  "dialects": ["core"],
+  "imports": [],
+  "data": [],
+  "decls": [
+    {
+      "kind": "ForeignRef",
+      "target": "js",
+      "module": "Math",
+      "symbol": "sqrt",
+      "sig": {
+        "params": [{"kind": "Float"}],
+        "ret": {"kind": "Float"},
+        "template": "Math.sqrt(${0})"
+      },
+      "span": {"file": "ffi.ion", "startLine": 1, "startCol": 0, "endLine": 1, "endCol": 30},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Float"}],
+        "ret": {"kind": "Float"},
+        "effects": []
+      }
+    },
+    {
+      "kind": "ForeignRef",
+      "target": "js",
+      "module": "console",
+      "symbol": "log",
+      "sig": {
+        "params": [{"kind": "Str"}],
+        "ret": {"kind": "Unit"},
+        "template": "console.log(${0})"
+      },
+      "span": {"file": "ffi.ion", "startLine": 2, "startCol": 0, "endLine": 2, "endCol": 30},
+      "type": {
+        "kind": "Fn",
+        "params": [{"kind": "Str"}],
+        "ret": {"kind": "Unit"},
+        "effects": ["io"]
+      }
+    }
+  ]
+}

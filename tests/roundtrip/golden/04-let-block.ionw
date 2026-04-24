@@ -1,0 +1,3 @@
+I1
+M org.example.letchain v=0.1.0 d=core
+F let a:int=1;let b:int=2;let c:str="hello";a

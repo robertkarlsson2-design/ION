@@ -1,0 +1,14 @@
+module org.example.option  "0.1.0"
+// dialects: core, ion-adt
+
+data Color {
+  Red
+  | Green
+  | Blue
+}
+
+match c {
+  Red => "red"
+  Green => "green"
+  Blue => "blue"
+}
