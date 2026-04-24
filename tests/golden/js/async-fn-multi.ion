@@ -1,0 +1,2 @@
+fn getA() !async -> Str = "a"
+fn getB() !async -> Str = "b"

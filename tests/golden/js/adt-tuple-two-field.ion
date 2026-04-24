@@ -1,0 +1,1 @@
+data Pair = Pair(Int, Int)

@@ -1,0 +1,2 @@
+data Color = Red | Green | Blue
+fn colorName(c: Color) -> Str = match c | Red -> "red" | Green -> "green" | Blue -> "blue"

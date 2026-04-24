@@ -1,0 +1,2 @@
+@foreign("", "toUpperCase", "$1.toUpperCase()")
+extern fn toUpper(s: Str) -> Str

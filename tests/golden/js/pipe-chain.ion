@@ -1,0 +1,4 @@
+fn inc(x: Int) -> Int = x + 1
+fn dbl(x: Int) -> Int = x + x
+fn dec(x: Int) -> Int = x - 1
+fn pipeline(x: Int) -> Int = x |> inc |> dbl |> dec

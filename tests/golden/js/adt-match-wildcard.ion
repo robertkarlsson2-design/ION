@@ -1,0 +1,2 @@
+data Status = Active | Inactive | Banned
+fn isActive(s: Status) -> Bool = match s | Active -> true | _ -> false

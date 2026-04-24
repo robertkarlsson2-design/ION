@@ -1,0 +1,1 @@
+fn process(x: Int) !async !io -> Int = x

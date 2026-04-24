@@ -1,0 +1,2 @@
+@foreign("console", "log", "console.log($1)")
+extern fn consoleLog(msg: Str) !io -> Unit

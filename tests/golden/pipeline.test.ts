@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
+import { join, basename } from 'node:path';
 import { lex } from '../../src/lexer/index.js';
 import { parseModule } from '../../src/parser/declarations.js';
 import { buildModule } from '../../src/ast/builder.js';
@@ -22,7 +22,10 @@ function compileIonToJs(ionPath: string): string {
   return emitJS(ir);
 }
 
-const CASES = ['hello', 'data-class', 'multi-fn'];
+const CASES = readdirSync(GOLDEN_DIR)
+  .filter(f => f.endsWith('.ion'))
+  .map(f => basename(f, '.ion'))
+  .sort();
 
 describe('golden: full pipeline lex → desugar → emitJS', () => {
   for (const name of CASES) {

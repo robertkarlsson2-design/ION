@@ -1,0 +1,1 @@
+data Wrap<A> = Wrap(A)

@@ -1,0 +1,1 @@
+fn addOneViaLambda(x: Int) -> Int = x |> (n -> n + 1)

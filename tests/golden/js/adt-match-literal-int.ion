@@ -1,0 +1,1 @@
+fn describe(n: Int) -> Str = match n | 0 -> "zero" | 1 -> "one" | _ -> "many"

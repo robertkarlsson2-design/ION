@@ -1,0 +1,3 @@
+@foreign("console", "log", "console.log($1, $2)")
+extern fn logTwo(a: Str, b: Str) !io -> Unit
+fn logPair() !io -> Unit = logTwo("hello", "world")

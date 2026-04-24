@@ -1,0 +1,2 @@
+@foreign("Math", "abs", "Math.abs($1)")
+extern fn mathAbs(x: Int) -> Int

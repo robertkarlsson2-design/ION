@@ -1,0 +1,4 @@
+@foreign("Math", "floor", "Math.floor($1)")
+extern fn floor(x: Float) -> Int
+@foreign("Math", "ceil", "Math.ceil($1)")
+extern fn ceil(x: Float) -> Int

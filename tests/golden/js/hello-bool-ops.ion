@@ -1,0 +1,3 @@
+fn and(a: Bool, b: Bool) -> Bool = a && b
+fn or(a: Bool, b: Bool) -> Bool = a || b
+fn neg(b: Bool) -> Bool = !b

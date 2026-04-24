@@ -1,0 +1,1 @@
+fn greeting() -> Str = "hello"

@@ -1,0 +1,5 @@
+fn a(x: Int) -> Int = x + 1
+fn b(x: Int) -> Int = x + x
+fn c(x: Int) -> Int = x - 1
+fn d(x: Int) -> Int = x * 2
+fn fourStep(x: Int) -> Int = x |> a |> b |> c |> d

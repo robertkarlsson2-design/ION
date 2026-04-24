@@ -1,0 +1,2 @@
+data SafeResult<A> = Good(A) | Bad(Str)
+fn succeed(x: Int) -> SafeResult<Int> = Good(x)

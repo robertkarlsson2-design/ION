@@ -1,0 +1,3 @@
+data SafeResult<A> = Good(A) | Bad(Str)
+fn first(x: Int) -> SafeResult<Int> = Good(x)
+fn second(x: Int) -> SafeResult<Int> = match first(x) | Good(_) -> Good(x) | Bad(_) -> Bad("fail")

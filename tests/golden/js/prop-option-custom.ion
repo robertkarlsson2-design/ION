@@ -1,0 +1,2 @@
+data Maybe<A> = Nothing | Just(A)
+fn just(x: Int) -> Maybe<Int> = Just(x)

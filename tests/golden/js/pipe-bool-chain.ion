@@ -1,0 +1,2 @@
+fn not(b: Bool) -> Bool = !b
+fn twoNots(b: Bool) -> Bool = b |> not |> not

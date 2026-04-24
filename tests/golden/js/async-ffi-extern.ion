@@ -1,0 +1,3 @@
+@foreign("Promise", "resolve", "Promise.resolve($1)")
+extern fn promiseResolve(x: Int) !async -> Int
+fn wrap(x: Int) !async -> Int = promiseResolve(x)
