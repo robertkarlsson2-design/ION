@@ -10,7 +10,8 @@
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.15",
     "vscode-languageserver": "^9.0.1",
-    "vscode-languageserver-textdocument": "^1.0.12"
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "yaml": "^2.0.0"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",
