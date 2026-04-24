@@ -51,6 +51,40 @@ export function freshTypeVar(ctx: InferCtx): TypeVar {
   return { kind: 'TypeVar', id: `$t${ctx.counter.value++}` };
 }
 
+/**
+ * Instantiate a polymorphic type by replacing each named TypeVar (user-written
+ * names like 'a', 'b', 'elem') with a fresh generated TypeVar. Generated vars
+ * ($t0, $t1, …) are left untouched. This must be called whenever a polymorphic
+ * function's type is looked up at a call site, so that separate calls don't
+ * accidentally share the same TypeVar IDs in the substitution map.
+ */
+function instantiate(type: IonType, ctx: InferCtx): IonType {
+  const mapping = new Map<string, TypeVar>();
+
+  function go(t: IonType): IonType {
+    switch (t.kind) {
+      case 'TypeVar': {
+        if (t.id.startsWith('$')) return t;
+        const hit = mapping.get(t.id);
+        if (hit !== undefined) return hit;
+        const fresh = freshTypeVar(ctx);
+        mapping.set(t.id, fresh);
+        return fresh;
+      }
+      case 'List': return { ...t, elem: go(t.elem) };
+      case 'Option': return { ...t, inner: go(t.inner) };
+      case 'Map': return { ...t, key: go(t.key), value: go(t.value) };
+      case 'Result': return { ...t, ok: go(t.ok), err: go(t.err) };
+      case 'Fn': return { ...t, params: t.params.map(go), ret: go(t.ret) };
+      case 'Tuple': return { ...t, elements: t.elements.map(go) };
+      case 'User': return { ...t, args: t.args.map(go) };
+      default: return t;
+    }
+  }
+
+  return go(type);
+}
+
 // ---------------------------------------------------------------------------
 // Declaration type registration (pass 1)
 // ---------------------------------------------------------------------------
@@ -344,7 +378,8 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
     case 'Ident': {
       const symId = ctx.resolutionMap.get(spanKey(expr.span));
       if (symId === undefined) return freshTypeVar(ctx);
-      return applySubst(ctx.subst, ctx.typeEnv.get(symId) ?? freshTypeVar(ctx));
+      const stored = applySubst(ctx.subst, ctx.typeEnv.get(symId) ?? freshTypeVar(ctx));
+      return instantiate(stored, ctx);
     }
 
     case 'BinopExpr': {
