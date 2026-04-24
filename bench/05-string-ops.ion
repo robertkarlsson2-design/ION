@@ -1,0 +1,11 @@
+pub fn wordCount(text: Str) -> Int =
+  length(filter(split(trim(text), " "), (w) -> w != ""))
+
+pub fn capitalize(words: List<Str>) -> Str =
+  joinWith(map(words, (w) -> toUpper(w)), " ")
+
+pub fn csvRow(fields: List<Str>) -> Str =
+  joinWith(fields, ",")
+
+pub fn hasKeyword(text: Str, keyword: Str) -> Bool =
+  any(split(toLower(text), " "), (w) -> w == toLower(keyword))
