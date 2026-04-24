@@ -23,6 +23,10 @@ export function resolveAnnotation(
       if (prim !== null) return prim;
       const tv = typeParamEnv.get(ann.name);
       if (tv !== undefined) return tv;
+      // Convention: lowercase names are implicit type variables (a, b, t, elem, acc, …)
+      if (/^[a-z]/.test(ann.name)) {
+        return { kind: 'TypeVar', id: ann.name };
+      }
       const sid = nameIndex.get(ann.name);
       if (sid === undefined) {
         errors.push({

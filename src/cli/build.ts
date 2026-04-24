@@ -14,6 +14,7 @@ import { emitJS } from '../../skills/javascript/emit.js';
 import { loadConfig } from './config.js';
 import type { IonConfig } from './config.js';
 import { generateSourceMap } from '../emit/sourcemap.js';
+import { getPreludeDecls } from '../prelude/index.js';
 import type { Span } from '../types.js';
 import type { IonIRModule } from '../ir/nodes.js';
 
@@ -300,7 +301,9 @@ async function compileFile(
     throw err;
   }
 
-  const ast = buildModule(cst);
+  const rawAst = buildModule(cst);
+  // Prepend prelude declarations so every module sees map, filter, fold, etc.
+  const ast = { ...rawAst, decls: [...getPreludeDecls(), ...rawAst.decls] };
   const bindResult = bindModule(ast, ionPath);
   const diagnostics: BuildDiagnostic[] = bindResult.errors.map(e => mapBindError(e, ionPath));
 
