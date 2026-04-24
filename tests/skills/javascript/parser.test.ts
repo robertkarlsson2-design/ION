@@ -60,6 +60,19 @@ describe('parseJavaScript', () => {
     ).not.toThrow();
   });
 
+  it('throws RangeError when source exceeds maxSourceBytes', () => {
+    expect(() =>
+      parseJavaScript('const x = 1;', { maxSourceBytes: 5 }),
+    ).toThrow(RangeError);
+  });
+
+  it('accepts source exactly at maxSourceBytes limit', () => {
+    const source = 'x;';
+    expect(() =>
+      parseJavaScript(source, { maxSourceBytes: source.length }),
+    ).not.toThrow();
+  });
+
   it('isNodeOfType narrows to the correct type', () => {
     const result = parseJavaScript('function foo() {}');
     const child = result.root.namedChildren[0];

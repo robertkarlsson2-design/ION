@@ -14,9 +14,13 @@ const _jsLanguage = await Language.load(
 const _parser = new Parser();
 _parser.setLanguage(_jsLanguage);
 
+const MAX_SOURCE_BYTES = 10 * 1024 * 1024; // 10 MB default
+
 export interface JsParseOptions {
   /** Source file path, used in diagnostics. */
   readonly filepath?: string;
+  /** Maximum allowed source size in bytes. Defaults to 10 MB. */
+  readonly maxSourceBytes?: number;
 }
 
 export interface JsErrorNode {
@@ -104,8 +108,12 @@ function collectErrors(node: Node, out: JsErrorNode[]): void {
 /** Parse JavaScript source text into an error-tolerant CST. */
 export function parseJavaScript(
   source: string,
-  _options?: JsParseOptions,
+  options?: JsParseOptions,
 ): JsParseResult {
+  const limit = options?.maxSourceBytes ?? MAX_SOURCE_BYTES;
+  if (source.length > limit) {
+    throw new RangeError(`Source exceeds maximum size of ${limit} bytes`);
+  }
   const tree = _parser.parse(source);
   const errors: JsErrorNode[] = [];
   collectErrors(tree.rootNode, errors);
