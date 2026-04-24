@@ -14,6 +14,8 @@ import type {
   ModuleRefNode,
 } from '../ir/nodes.js';
 
+const MAX_WALK_DEPTH = 500;
+
 /**
  * Run the three-layer ingestion pipeline on `source`.
  * Layer order: pattern matchers → LLM fallback. Tracks which layer handled each construct.
@@ -25,9 +27,27 @@ export async function runPipeline(
   const traces: ConstructTrace[] = [];
   const errors: IngestError[] = [];
 
-  const root = config.plugin.parse(source);
+  let root: ReturnType<typeof config.plugin.parse>;
+  try {
+    root = config.plugin.parse(source);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const dummyNode: CSTNode = {
+      type: 'error',
+      text: '',
+      isNamed: false,
+      startPosition: { row: 0, column: 0 },
+      endPosition: { row: 0, column: 0 },
+      children: [],
+    };
+    errors.push({ message: `Plugin parse threw: ${message}`, cstNode: dummyNode });
+    const module = assembleModule([], config);
+    const stats = computeStats([], errors);
+    return { module, traces, stats, errors };
+  }
+
   for (const child of root.children.filter(c => c.isNamed)) {
-    await walkNode(child, source, config, traces, errors);
+    await walkNode(child, source, config, traces, errors, 0);
   }
 
   const module = assembleModule(traces, config);
@@ -47,10 +67,23 @@ async function walkNode(
   config: PipelineConfig,
   traces: ConstructTrace[],
   errors: IngestError[],
+  depth: number,
 ): Promise<boolean> {
+  if (depth > MAX_WALK_DEPTH) {
+    errors.push({ message: `CST depth limit exceeded at node type '${node.type}'`, cstNode: node });
+    return false;
+  }
+
   // Step 1: try pattern matchers (consume whole subtree on first match)
   for (const pattern of config.patterns) {
-    const ionNode = pattern.match(node);
+    let ionNode: IonIRNode | null;
+    try {
+      ionNode = pattern.match(node);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push({ message: `Pattern matcher threw: ${message}`, cstNode: node });
+      continue;
+    }
     if (ionNode !== null) {
       traces.push({ layer: 'pattern', cstNode: node, ionNode });
       return true;
@@ -64,7 +97,7 @@ async function walkNode(
   const unhandled: CSTNode[] = [];
 
   for (const child of namedChildren) {
-    const handled = await walkNode(child, source, config, childTraces, childErrors);
+    const handled = await walkNode(child, source, config, childTraces, childErrors, depth + 1);
     if (!handled) {
       unhandled.push(child);
     }
@@ -72,10 +105,17 @@ async function walkNode(
 
   // Step 3: LLM fallback when children remain unhandled
   if (unhandled.length > 0 && config.llmFallback !== undefined) {
-    const ionNode = await config.llmFallback.translate(
-      node,
-      extractContext(source, node),
-    );
+    let ionNode: IonIRNode | null;
+    try {
+      ionNode = await config.llmFallback.translate(
+        node,
+        extractContext(source, node),
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push({ message: `LLM fallback threw: ${message}`, cstNode: node });
+      ionNode = null;
+    }
     if (ionNode !== null) {
       // LLM translates the whole subtree — discard child results
       traces.push({ layer: 'llm', cstNode: node, ionNode });

@@ -372,4 +372,56 @@ describe('E: edge cases', () => {
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.stats.llm).toBe(0);
   });
+
+  it('E4: plugin.parse throws → IngestResult with parse error, no crash', async () => {
+    const throwingPlugin: IngestPlugin = {
+      language: 'test',
+      parse: () => { throw new Error('parse exploded'); },
+    };
+    const result = await runPipeline('source', {
+      plugin: throwingPlugin,
+      patterns: [],
+      moduleName: 'test.module',
+    });
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toMatch(/parse exploded/);
+    expect(result.traces).toHaveLength(0);
+  });
+
+  it('E5: pattern.match throws → error pushed for that node, pipeline continues', async () => {
+    const throwingMatcher: PatternMatcher = {
+      match: () => { throw new Error('matcher exploded'); },
+    };
+    const root = makeRoot([makeLeaf('a'), makeLeaf('b')]);
+    const result = await run(root, { patterns: [throwingMatcher] });
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.some(e => e.message.includes('matcher exploded'))).toBe(true);
+  });
+
+  it('E6: llmFallback.translate rejects → error pushed for that node, pipeline continues', async () => {
+    const throwingLlm: LLMFallbackHandler = {
+      translate: async () => { throw new Error('llm exploded'); },
+    };
+    const leaf = makeLeaf('leaf');
+    const parent = makeParent('parent', [leaf]);
+    const root = makeRoot([parent]);
+    const result = await run(root, { llmFallback: throwingLlm });
+
+    expect(result.errors.some(e => e.message.includes('llm exploded'))).toBe(true);
+    expect(result.traces).toHaveLength(0);
+  });
+
+  it('E7: CST depth exceeding MAX_WALK_DEPTH produces depth-limit error, not stack overflow', async () => {
+    // Build a deeply nested chain of 600 nodes (> MAX_WALK_DEPTH=500)
+    let deepNode: CSTNode = makeLeaf('deep');
+    for (let i = 0; i < 600; i++) {
+      deepNode = makeParent('level', [deepNode], i);
+    }
+    const root = makeRoot([deepNode]);
+    const result = await run(root);
+
+    expect(result.errors.some(e => e.message.includes('depth limit'))).toBe(true);
+  });
 });
