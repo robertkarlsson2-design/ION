@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emitJS } from '../../skills/javascript/emit.js';
+import { emitJS, emitJSWithSourceMap } from '../../skills/javascript/emit.js';
 import type {
   IonIRModule,
   IonIRNode,
@@ -460,5 +460,40 @@ describe('emitJS', () => {
     expect(out).toContain('(() => {');
     expect(out).toContain('const tmp = 10;');
     expect(out).toContain('return tmp;');
+  });
+});
+
+describe('emitJSWithSourceMap', () => {
+  it('produces a non-empty map string that is valid ECMA v3 JSON', () => {
+    const mod = makeModule([makeLet('x', makeLiteralInt(42))]);
+    const { source, map } = emitJSWithSourceMap(mod, '/src/users.ion', 'let x = 42\n');
+    expect(source).toContain('const x = 42;');
+    expect(map.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(map);
+    expect(parsed.version).toBe(3);
+    expect(Array.isArray(parsed.sources)).toBe(true);
+    expect(typeof parsed.mappings).toBe('string');
+  });
+
+  it('source output is identical to emitJS', () => {
+    const mod = makeModule([
+      makeLet('a', makeLiteralInt(1)),
+      makeLet('b', makeLiteralInt(2)),
+    ]);
+    const plain = emitJS(mod);
+    const { source } = emitJSWithSourceMap(mod, '/src/test.ion', '');
+    expect(source).toBe(plain);
+  });
+
+  it('map has required ECMA v3 fields', () => {
+    const mod = makeModule([makeLet('greeting', makeLiteralStr('hello'))]);
+    const { map } = emitJSWithSourceMap(mod, '/src/greet.ion', 'let greeting = "hello"\n');
+    const parsed = JSON.parse(map);
+    expect(parsed.version).toBe(3);
+    expect(Array.isArray(parsed.names)).toBe(true);
+    expect(Array.isArray(parsed.sources)).toBe(true);
+    expect(Array.isArray(parsed.sourcesContent)).toBe(true);
+    expect(typeof parsed.mappings).toBe('string');
+    expect(typeof parsed.file).toBe('string');
   });
 });

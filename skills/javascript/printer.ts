@@ -22,6 +22,7 @@ import type {
   JsSwitchCase,
   JsThrow,
   JsTryCatch,
+  JsBlock,
   JsAssign,
   JsLineComment,
   JsTemplateLit,
@@ -29,6 +30,8 @@ import type {
   JsInstanceof,
   JsRaw,
 } from './js-ast.js';
+import type { Span } from '../../src/types.js';
+import type { SourceMapping } from '../../src/emit/sourcemap.js';
 
 interface PrintCtx {
   readonly indent: number;
@@ -296,4 +299,653 @@ function printTemplateLit(node: JsTemplateLit, ctx: PrintCtx): string {
 
 function printBinary(node: JsBinary, ctx: PrintCtx): string {
   return `${printExpr(node.left, ctx)} ${node.op} ${printExpr(node.right, ctx)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Source-map-aware printer (writer-based)
+// ---------------------------------------------------------------------------
+
+/** Mutable output buffer that tracks current line/col and collects SourceMappings. */
+class WriterImpl {
+  private _buf = '';
+  line = 0;
+  col = 0;
+  readonly mappings: SourceMapping[] = [];
+
+  write(text: string): void {
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === '\n') {
+        this.line++;
+        this.col = 0;
+      } else {
+        this.col++;
+      }
+    }
+    this._buf += text;
+  }
+
+  /** Record a mapping at the current position if span is present. */
+  recordSpan(span: Span | undefined, sourceFile: string): void {
+    if (span === undefined) return;
+    this.mappings.push({
+      generatedLine: this.line,
+      generatedCol: this.col,
+      sourceFile,
+      sourceLine: span.startLine - 1,
+      sourceCol: span.startCol,
+    });
+  }
+
+  toString(): string {
+    return this._buf;
+  }
+}
+
+interface TrackCtx {
+  readonly indent: number;
+  readonly sourceFile: string;
+  readonly w: WriterImpl;
+}
+
+function tInd(ctx: TrackCtx): string {
+  return '  '.repeat(ctx.indent);
+}
+
+function tNest(ctx: TrackCtx): TrackCtx {
+  return { indent: ctx.indent + 1, sourceFile: ctx.sourceFile, w: ctx.w };
+}
+
+function wrtConst(node: JsConst, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('const ');
+  ctx.w.write(node.name);
+  ctx.w.write(' = ');
+  wrtExpr(node.value, ctx);
+  ctx.w.write(';');
+}
+
+function wrtClass(node: JsClass, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  const inner = tNest(ctx);
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('class ');
+  ctx.w.write(node.name);
+  if (node.superClass !== undefined) {
+    ctx.w.write(' extends ');
+    ctx.w.write(node.superClass);
+  }
+  ctx.w.write(' {\n');
+  wrtMethod(node.ctor, inner);
+  for (const m of node.methods) {
+    ctx.w.write('\n\n');
+    wrtMethod(m, inner);
+  }
+  ctx.w.write('\n');
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('}');
+}
+
+function wrtMethod(node: JsMethod, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  const inner = tNest(ctx);
+  ctx.w.write(tInd(ctx));
+  if (node.isStatic) ctx.w.write('static ');
+  ctx.w.write(node.name);
+  ctx.w.write('(');
+  ctx.w.write(node.params.join(', '));
+  ctx.w.write(')');
+  if (node.body.length === 0) {
+    ctx.w.write(' {}');
+  } else {
+    ctx.w.write(' {\n');
+    for (let i = 0; i < node.body.length; i++) {
+      if (i > 0) ctx.w.write('\n');
+      wrtStmt(node.body[i], inner);
+    }
+    ctx.w.write('\n');
+    ctx.w.write(tInd(ctx));
+    ctx.w.write('}');
+  }
+}
+
+function wrtArrow(node: JsArrow, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  if (node.params.length === 0) {
+    ctx.w.write('() => ');
+  } else if (node.params.length === 1) {
+    ctx.w.write(node.params[0]);
+    ctx.w.write(' => ');
+  } else {
+    ctx.w.write('(');
+    ctx.w.write(node.params.join(', '));
+    ctx.w.write(') => ');
+  }
+  if (node.body.kind === 'JsObject') {
+    ctx.w.write('(');
+    wrtExpr(node.body, ctx);
+    ctx.w.write(')');
+  } else {
+    wrtExpr(node.body, ctx);
+  }
+}
+
+function wrtCall(node: JsCall, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  if (node.callee.kind === 'JsArrow') {
+    ctx.w.write('(');
+    wrtExpr(node.callee, ctx);
+    ctx.w.write(')');
+  } else {
+    wrtExpr(node.callee, ctx);
+  }
+  ctx.w.write('(');
+  for (let i = 0; i < node.args.length; i++) {
+    if (i > 0) ctx.w.write(', ');
+    wrtExpr(node.args[i], ctx);
+  }
+  ctx.w.write(')');
+}
+
+function wrtNew(node: JsNew, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  ctx.w.write('new ');
+  ctx.w.write(node.className);
+  ctx.w.write('(');
+  for (let i = 0; i < node.args.length; i++) {
+    if (i > 0) ctx.w.write(', ');
+    wrtExpr(node.args[i], ctx);
+  }
+  ctx.w.write(')');
+}
+
+function wrtMember(node: JsMember, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  wrtExpr(node.receiver, ctx);
+  ctx.w.write('.');
+  ctx.w.write(node.member);
+}
+
+function wrtSubscript(node: JsSubscript, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  wrtExpr(node.receiver, ctx);
+  ctx.w.write('[');
+  wrtExpr(node.index, ctx);
+  ctx.w.write(']');
+}
+
+function wrtObject(node: JsObject, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  if (node.props.length === 0) {
+    ctx.w.write('{}');
+    return;
+  }
+  ctx.w.write('{ ');
+  for (let i = 0; i < node.props.length; i++) {
+    if (i > 0) ctx.w.write(', ');
+    const p = node.props[i];
+    if (p.shorthand) {
+      ctx.w.write(p.key);
+    } else {
+      ctx.w.write(p.key);
+      ctx.w.write(': ');
+      wrtExpr(p.value, ctx);
+    }
+  }
+  ctx.w.write(' }');
+}
+
+function wrtArray(node: JsArray, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  ctx.w.write('[');
+  for (let i = 0; i < node.elems.length; i++) {
+    if (i > 0) ctx.w.write(', ');
+    wrtExpr(node.elems[i], ctx);
+  }
+  ctx.w.write(']');
+}
+
+function wrtIife(node: JsIife, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  const inner = tNest(ctx);
+  ctx.w.write('(() => {\n');
+  for (let i = 0; i < node.body.length; i++) {
+    if (i > 0) ctx.w.write('\n');
+    wrtStmt(node.body[i], inner);
+  }
+  ctx.w.write('\n');
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('})()');
+}
+
+function wrtIfElse(node: JsIfElse, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  const inner = tNest(ctx);
+  for (let i = 0; i < node.branches.length; i++) {
+    const branch = node.branches[i];
+    if (i === 0) {
+      ctx.w.write(tInd(ctx));
+      ctx.w.write('if (');
+    } else {
+      ctx.w.write(' else if (');
+    }
+    wrtExpr(branch.cond, ctx);
+    ctx.w.write(') {\n');
+    for (let j = 0; j < branch.body.length; j++) {
+      if (j > 0) ctx.w.write('\n');
+      wrtStmt(branch.body[j], inner);
+    }
+    ctx.w.write('\n');
+    ctx.w.write(tInd(ctx));
+    ctx.w.write('}');
+  }
+  if (node.elseBranch !== undefined) {
+    ctx.w.write(' else {\n');
+    for (let j = 0; j < node.elseBranch.length; j++) {
+      if (j > 0) ctx.w.write('\n');
+      wrtStmt(node.elseBranch[j], inner);
+    }
+    ctx.w.write('\n');
+    ctx.w.write(tInd(ctx));
+    ctx.w.write('}');
+  }
+}
+
+function wrtSwitch(node: JsSwitch, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  const inner = tNest(ctx);
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('switch (');
+  wrtExpr(node.expr, ctx);
+  ctx.w.write(') {\n');
+  for (let i = 0; i < node.cases.length; i++) {
+    if (i > 0) ctx.w.write('\n');
+    wrtSwitchCase(node.cases[i], inner);
+  }
+  ctx.w.write('\n');
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('}');
+}
+
+function wrtSwitchCase(node: JsSwitchCase, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  const inner = tNest(ctx);
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('case "');
+  ctx.w.write(node.label);
+  ctx.w.write('": {\n');
+  for (let i = 0; i < node.body.length; i++) {
+    if (i > 0) ctx.w.write('\n');
+    wrtStmt(node.body[i], inner);
+  }
+  ctx.w.write('\n');
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('}');
+}
+
+function wrtTryCatch(node: JsTryCatch, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  const inner = tNest(ctx);
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('try {\n');
+  for (let i = 0; i < node.tryBody.length; i++) {
+    if (i > 0) ctx.w.write('\n');
+    wrtStmt(node.tryBody[i], inner);
+  }
+  ctx.w.write('\n');
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('} catch (');
+  ctx.w.write(node.catchParam);
+  ctx.w.write(') {\n');
+  for (let i = 0; i < node.catchBody.length; i++) {
+    if (i > 0) ctx.w.write('\n');
+    wrtStmt(node.catchBody[i], inner);
+  }
+  ctx.w.write('\n');
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('}');
+}
+
+function wrtBlock(node: JsBlock, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  const inner = tNest(ctx);
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('{\n');
+  for (let i = 0; i < node.stmts.length; i++) {
+    if (i > 0) ctx.w.write('\n');
+    wrtStmt(node.stmts[i], inner);
+  }
+  ctx.w.write('\n');
+  ctx.w.write(tInd(ctx));
+  ctx.w.write('}');
+}
+
+function wrtTemplateLit(node: JsTemplateLit, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  ctx.w.write('`');
+  for (const part of node.parts) {
+    if (typeof part === 'string') {
+      ctx.w.write(part.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${'));
+    } else {
+      ctx.w.write('${');
+      wrtExpr(part, ctx);
+      ctx.w.write('}');
+    }
+  }
+  ctx.w.write('`');
+}
+
+function wrtBinary(node: JsBinary, ctx: TrackCtx): void {
+  ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+  wrtExpr(node.left, ctx);
+  ctx.w.write(' ');
+  ctx.w.write(node.op);
+  ctx.w.write(' ');
+  wrtExpr(node.right, ctx);
+}
+
+/** Write a JsNode as a statement (with leading indent for statement forms). */
+function wrtStmt(node: JsNode, ctx: TrackCtx): void {
+  switch (node.kind) {
+    case 'JsConst': wrtConst(node, ctx); break;
+    case 'JsReturn': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(tInd(ctx));
+      ctx.w.write('return ');
+      wrtExpr(node.value, ctx);
+      ctx.w.write(';');
+      break;
+    }
+    case 'JsThrow': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(tInd(ctx));
+      ctx.w.write('throw ');
+      wrtExpr(node.value, ctx);
+      ctx.w.write(';');
+      break;
+    }
+    case 'JsAssign': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(tInd(ctx));
+      wrtExpr(node.lhs, ctx);
+      ctx.w.write(' = ');
+      wrtExpr(node.rhs, ctx);
+      ctx.w.write(';');
+      break;
+    }
+    case 'JsLineComment': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(tInd(ctx));
+      ctx.w.write('// ');
+      ctx.w.write(node.text);
+      break;
+    }
+    case 'JsIfElse': wrtIfElse(node, ctx); break;
+    case 'JsTryCatch': wrtTryCatch(node, ctx); break;
+    case 'JsSwitch': wrtSwitch(node, ctx); break;
+    case 'JsBlock': wrtBlock(node, ctx); break;
+    default: {
+      ctx.w.write(tInd(ctx));
+      wrtExpr(node, ctx);
+      ctx.w.write(';');
+    }
+  }
+}
+
+/** Write a JsNode as a pure expression (no leading indent). */
+function wrtExpr(node: JsNode, ctx: TrackCtx): void {
+  switch (node.kind) {
+    case 'JsConst': wrtConst(node, ctx); break;
+    case 'JsClass': wrtClass(node, ctx); break;
+    case 'JsArrow': wrtArrow(node, ctx); break;
+    case 'JsCall': wrtCall(node, ctx); break;
+    case 'JsNew': wrtNew(node, ctx); break;
+    case 'JsIdent': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(node.name);
+      break;
+    }
+    case 'JsNumber': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(String(node.value));
+      break;
+    }
+    case 'JsString': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write('"');
+      ctx.w.write(escapeString(node.value));
+      ctx.w.write('"');
+      break;
+    }
+    case 'JsBool': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(node.value ? 'true' : 'false');
+      break;
+    }
+    case 'JsNull': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write('null');
+      break;
+    }
+    case 'JsMember': wrtMember(node, ctx); break;
+    case 'JsSubscript': wrtSubscript(node, ctx); break;
+    case 'JsObject': wrtObject(node, ctx); break;
+    case 'JsObjectProp': {
+      if (node.shorthand) {
+        ctx.w.write(node.key);
+      } else {
+        ctx.w.write(node.key);
+        ctx.w.write(': ');
+        wrtExpr(node.value, ctx);
+      }
+      break;
+    }
+    case 'JsArray': wrtArray(node, ctx); break;
+    case 'JsIife': wrtIife(node, ctx); break;
+    case 'JsIfElse': wrtIfElse(node, ctx); break;
+    case 'JsReturn': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write('return ');
+      wrtExpr(node.value, ctx);
+      ctx.w.write(';');
+      break;
+    }
+    case 'JsSwitch': wrtSwitch(node, ctx); break;
+    case 'JsSwitchCase': wrtSwitchCase(node, ctx); break;
+    case 'JsThrow': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write('throw ');
+      wrtExpr(node.value, ctx);
+      ctx.w.write(';');
+      break;
+    }
+    case 'JsTryCatch': wrtTryCatch(node, ctx); break;
+    case 'JsBlock': wrtBlock(node, ctx); break;
+    case 'JsAssign': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      wrtExpr(node.lhs, ctx);
+      ctx.w.write(' = ');
+      wrtExpr(node.rhs, ctx);
+      break;
+    }
+    case 'JsLineComment': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write('// ');
+      ctx.w.write(node.text);
+      break;
+    }
+    case 'JsTemplateLit': wrtTemplateLit(node, ctx); break;
+    case 'JsBinary': wrtBinary(node, ctx); break;
+    case 'JsInstanceof': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      wrtExpr(node.expr, ctx);
+      ctx.w.write(' instanceof ');
+      ctx.w.write(node.className);
+      break;
+    }
+    case 'JsRaw': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(node.code);
+      break;
+    }
+    default: wrtNode(node, ctx); break;
+  }
+}
+
+/** Write a JsNode as a top-level declaration. */
+function wrtNode(node: JsNode, ctx: TrackCtx): void {
+  switch (node.kind) {
+    case 'JsConst': wrtConst(node, ctx); break;
+    case 'JsClass': wrtClass(node, ctx); break;
+    case 'JsMethod': wrtMethod(node, ctx); break;
+    case 'JsArrow': wrtArrow(node, ctx); break;
+    case 'JsCall': wrtCall(node, ctx); break;
+    case 'JsNew': wrtNew(node, ctx); break;
+    case 'JsIdent': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(node.name);
+      break;
+    }
+    case 'JsNumber': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(String(node.value));
+      break;
+    }
+    case 'JsString': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write('"');
+      ctx.w.write(escapeString(node.value));
+      ctx.w.write('"');
+      break;
+    }
+    case 'JsBool': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(node.value ? 'true' : 'false');
+      break;
+    }
+    case 'JsNull': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write('null');
+      break;
+    }
+    case 'JsMember': wrtMember(node, ctx); break;
+    case 'JsSubscript': wrtSubscript(node, ctx); break;
+    case 'JsObject': wrtObject(node, ctx); break;
+    case 'JsObjectProp': {
+      if (node.shorthand) {
+        ctx.w.write(node.key);
+      } else {
+        ctx.w.write(node.key);
+        ctx.w.write(': ');
+        wrtExpr(node.value, ctx);
+      }
+      break;
+    }
+    case 'JsArray': wrtArray(node, ctx); break;
+    case 'JsIife': wrtIife(node, ctx); break;
+    case 'JsIfElse': wrtIfElse(node, ctx); break;
+    case 'JsReturn': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(tInd(ctx));
+      ctx.w.write('return ');
+      wrtExpr(node.value, ctx);
+      ctx.w.write(';');
+      break;
+    }
+    case 'JsSwitch': wrtSwitch(node, ctx); break;
+    case 'JsSwitchCase': wrtSwitchCase(node, ctx); break;
+    case 'JsThrow': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(tInd(ctx));
+      ctx.w.write('throw ');
+      wrtExpr(node.value, ctx);
+      ctx.w.write(';');
+      break;
+    }
+    case 'JsTryCatch': wrtTryCatch(node, ctx); break;
+    case 'JsBlock': wrtBlock(node, ctx); break;
+    case 'JsAssign': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(tInd(ctx));
+      wrtExpr(node.lhs, ctx);
+      ctx.w.write(' = ');
+      wrtExpr(node.rhs, ctx);
+      ctx.w.write(';');
+      break;
+    }
+    case 'JsLineComment': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(tInd(ctx));
+      ctx.w.write('// ');
+      ctx.w.write(node.text);
+      break;
+    }
+    case 'JsTemplateLit': wrtTemplateLit(node, ctx); break;
+    case 'JsBinary': wrtBinary(node, ctx); break;
+    case 'JsInstanceof': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      wrtExpr(node.expr, ctx);
+      ctx.w.write(' instanceof ');
+      ctx.w.write(node.className);
+      break;
+    }
+    case 'JsRaw': {
+      ctx.w.recordSpan(node.ionSpan, ctx.sourceFile);
+      ctx.w.write(node.code);
+      break;
+    }
+    case 'JsModule': {
+      // Nested module — write recursively (rare in practice).
+      ctx.w.write('"use strict";\n');
+      for (const n of [...node.helpers, ...node.dataDecls, ...node.bodyDecls]) {
+        wrtNode(n, ctx);
+        ctx.w.write('\n');
+      }
+      break;
+    }
+  }
+}
+
+/**
+ * Print a JsModule to source string while collecting SourceMappings for each
+ * node whose ionSpan is set.
+ *
+ * The returned `source` is identical to `printJsModule(mod)`.
+ */
+export function printJsModuleWithMappings(
+  mod: JsModule,
+  ionSourceFile: string,
+): { source: string; mappings: SourceMapping[] } {
+  const w = new WriterImpl();
+  const ctx: TrackCtx = { indent: 0, sourceFile: ionSourceFile, w };
+
+  w.write('"use strict";');
+
+  if (mod.helpers.length > 0) {
+    w.write('\n');
+    for (let i = 0; i < mod.helpers.length; i++) {
+      if (i > 0) w.write('\n');
+      wrtNode(mod.helpers[i], ctx);
+    }
+  }
+
+  if (mod.dataDecls.length > 0) {
+    w.write('\n');
+    for (let i = 0; i < mod.dataDecls.length; i++) {
+      if (i > 0) w.write('\n');
+      wrtNode(mod.dataDecls[i], ctx);
+    }
+  }
+
+  if (mod.bodyDecls.length > 0) {
+    w.write('\n');
+    for (let i = 0; i < mod.bodyDecls.length; i++) {
+      if (i > 0) w.write('\n');
+      wrtNode(mod.bodyDecls[i], ctx);
+    }
+  }
+
+  w.write('\n');
+
+  return { source: w.toString(), mappings: w.mappings };
 }
