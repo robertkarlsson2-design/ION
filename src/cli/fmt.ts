@@ -2,6 +2,7 @@ import { readFile, writeFile, stat } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { deserializeModule, IonIRSerdeError } from '../ir/serde.js';
 import { encodeModule } from '../wire/encoder.js';
+import { decodeModule } from '../wire/decoder.js';
 import { prettyPrintModule, type PrettyOptions } from '../wire/pretty.js';
 
 // ---------------------------------------------------------------------------
@@ -68,10 +69,7 @@ const MAX_FILE_SIZE = 64 * 1024 * 1024; // 64 MB — IonIR files are typically k
 /**
  * Format a single file. Returns whether the file content was already canonical.
  * In 'check' mode, never writes. In 'pretty'/'wire' modes, writes if changed.
- *
- * NOTE: Only JSON-serialized IonIRModule input is supported. Wire-format input
- * cannot be read back (no wire decoder exists yet). Attempting to read a wire-
- * formatted file as input will produce an IonIRSerdeError.
+ * Accepts both JSON-serialized IonIRModule and wire-format input.
  */
 async function formatFile(
   filePath: string,
@@ -98,14 +96,23 @@ async function formatFile(
 
   let formatted: string;
   try {
-    const mod = deserializeModule(original);
-    formatted = mode === 'wire'
-      ? encodeModule(mod)
-      : prettyPrintModule(mod, opts);
-  } catch (err) {
-    if (err instanceof IonIRSerdeError) {
-      return { changed: false, error: `failed to deserialize '${filePath}': ${err.message}` };
+    let mod;
+    try {
+      mod = deserializeModule(original);
+    } catch (err) {
+      if (!(err instanceof IonIRSerdeError)) throw err;
+      // JSON deserialization failed — try wire-format decoding.
+      const decoded = decodeModule(original);
+      if ('error' in decoded) {
+        return { changed: false, error: `failed to parse '${filePath}': ${decoded.error}` };
+      }
+      mod = decoded;
     }
+    // In --check mode, preserve the input's canonical form:
+    // wire input is checked against encodeModule; everything else against prettyPrintModule.
+    const useWire = mode === 'wire' || (mode === 'check' && original.startsWith('I1\n'));
+    formatted = useWire ? encodeModule(mod) : prettyPrintModule(mod, opts);
+  } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { changed: false, error: `failed to format '${filePath}': ${msg}` };
   }

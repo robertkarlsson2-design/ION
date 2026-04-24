@@ -1,0 +1,424 @@
+import { describe, it, expect } from 'vitest';
+import { decodeModule, WireDecodeError } from '../../src/wire/decoder.js';
+import { encodeModule } from '../../src/wire/encoder.js';
+import { makeSymbolId } from '../../src/types.js';
+import type { IonIRModule } from '../../src/ir/nodes.js';
+import type { Span } from '../../src/types.js';
+
+// ---------------------------------------------------------------------------
+// Shared fixtures
+// ---------------------------------------------------------------------------
+
+const span: Span = { file: 'test.ion', startLine: 1, startCol: 0, endLine: 1, endCol: 1 };
+const sid = makeSymbolId('test:x:0');
+
+function makeMinimal(): IonIRModule {
+  return {
+    ionir: '1.0',
+    module: 'test.module',
+    version: '1.0.0',
+    dialects: [],
+    imports: [],
+    data: [],
+    decls: [],
+  };
+}
+
+// A module where all node.type fields are primitive (Unit) so pool construction
+// is unaffected by the placeholder types used by the decoder.
+const roundTripModule: IonIRModule = {
+  ionir: '1.0',
+  module: 'org.example',
+  version: '0.1.0',
+  dialects: ['core'],
+  imports: [],
+  data: [],
+  decls: [
+    {
+      kind: 'Let',
+      name: 'result',
+      symbolId: sid,
+      bindingType: { kind: 'Int' },
+      value: {
+        kind: 'App',
+        callee: { kind: 'Var', name: 'add', symbolId: sid, span, type: { kind: 'Unit' } },
+        args: [
+          { kind: 'Literal', value: { kind: 'Int', value: 1 }, span, type: { kind: 'Int' } },
+          { kind: 'Literal', value: { kind: 'Int', value: 2 }, span, type: { kind: 'Int' } },
+        ],
+        span,
+        type: { kind: 'Unit' },
+      },
+      body: { kind: 'Var', name: 'result', symbolId: sid, span, type: { kind: 'Unit' } },
+      span,
+      type: { kind: 'Unit' },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// D1 — minimal module (no pools, no sections)
+// ---------------------------------------------------------------------------
+
+describe('D1: minimal module', () => {
+  it('decodes a bare I1/M module', () => {
+    const wire = 'I1\nM test.module v=1.0.0\n';
+    const result = decodeModule(wire);
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(result.module).toBe('test.module');
+    expect(result.version).toBe('1.0.0');
+    expect(result.dialects).toEqual([]);
+    expect(result.imports).toHaveLength(0);
+    expect(result.data).toHaveLength(0);
+    expect(result.decls).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D2 — symbol pool alias resolution
+// ---------------------------------------------------------------------------
+
+describe('D2: symbol pool', () => {
+  it('resolves sym-pool aliases in identifiers', () => {
+    // Build a module with a poolable name and encode it.
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      dialects: ['core'],
+      decls: [
+        {
+          kind: 'Var',
+          name: 'longIdentifierName',
+          symbolId: sid,
+          span,
+          type: { kind: 'Unit' },
+        },
+        {
+          kind: 'Var',
+          name: 'longIdentifierName',
+          symbolId: sid,
+          span,
+          type: { kind: 'Unit' },
+        },
+        {
+          kind: 'Var',
+          name: 'longIdentifierName',
+          symbolId: sid,
+          span,
+          type: { kind: 'Unit' },
+        },
+      ],
+    };
+    const wire = encodeModule(mod);
+    const decoded = decodeModule(wire);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    // All three decls should resolve to the original name.
+    expect(decoded.decls[0]).toMatchObject({ kind: 'Var', name: 'longIdentifierName' });
+    expect(decoded.decls[1]).toMatchObject({ kind: 'Var', name: 'longIdentifierName' });
+    expect(decoded.decls[2]).toMatchObject({ kind: 'Var', name: 'longIdentifierName' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D3 — type pool alias resolution
+// ---------------------------------------------------------------------------
+
+describe('D3: type pool', () => {
+  it('resolves type-pool aliases in type expressions', () => {
+    const complexType = {
+      kind: 'Fn' as const,
+      params: [{ kind: 'Int' as const }],
+      ret: { kind: 'Str' as const },
+      effects: new Set<string>(),
+    };
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      dialects: ['core'],
+      decls: [
+        { kind: 'Let', name: 'a', symbolId: sid, bindingType: complexType, value: { kind: 'Var', name: 'a', symbolId: sid, span, type: { kind: 'Unit' } }, body: { kind: 'Var', name: 'a', symbolId: sid, span, type: { kind: 'Unit' } }, span, type: { kind: 'Unit' } },
+        { kind: 'Let', name: 'b', symbolId: sid, bindingType: complexType, value: { kind: 'Var', name: 'b', symbolId: sid, span, type: { kind: 'Unit' } }, body: { kind: 'Var', name: 'b', symbolId: sid, span, type: { kind: 'Unit' } }, span, type: { kind: 'Unit' } },
+        { kind: 'Let', name: 'c', symbolId: sid, bindingType: complexType, value: { kind: 'Var', name: 'c', symbolId: sid, span, type: { kind: 'Unit' } }, body: { kind: 'Var', name: 'c', symbolId: sid, span, type: { kind: 'Unit' } }, span, type: { kind: 'Unit' } },
+      ],
+    };
+    const wire = encodeModule(mod);
+    const decoded = decodeModule(wire);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    // The Let nodes should have the correct bindingType resolved.
+    const letNode = decoded.decls[0];
+    expect(letNode).toBeDefined();
+    if (letNode?.kind === 'Let') {
+      expect(letNode.bindingType).toMatchObject({ kind: 'Fn' });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D4 — imports (X section)
+// ---------------------------------------------------------------------------
+
+describe('D4: imports (X section)', () => {
+  it('decodes module imports', () => {
+    const imp = {
+      kind: 'ModuleRef' as const,
+      modulePath: ['org', 'utils'],
+      symbolId: makeSymbolId('utils:fn:0'),
+      span,
+      type: { kind: 'Unit' as const },
+    };
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      dialects: ['core'],
+      imports: [imp],
+      decls: [],
+    };
+    const wire = encodeModule(mod);
+    const decoded = decodeModule(wire);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    expect(decoded.imports).toHaveLength(1);
+    expect(decoded.imports[0]?.modulePath).toEqual(['org', 'utils']);
+    expect(decoded.imports[0]?.symbolId).toBe('utils:fn:0');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D5 — data declarations (D section)
+// ---------------------------------------------------------------------------
+
+describe('D5: data declarations (D section)', () => {
+  it('decodes ADT declarations with variants', () => {
+    const adt = {
+      kind: 'AdtDecl' as const,
+      name: 'Color',
+      symbolId: sid,
+      variants: [
+        { tag: 'Red', symbolId: sid, fields: [], span },
+        {
+          tag: 'Rgb',
+          symbolId: sid,
+          fields: [
+            { name: 'r', symbolId: sid, type: { kind: 'Int' as const }, span },
+            { name: 'g', symbolId: sid, type: { kind: 'Int' as const }, span },
+          ],
+          span,
+        },
+      ],
+      span,
+      type: { kind: 'Unit' as const },
+    };
+    const mod: IonIRModule = { ...makeMinimal(), dialects: ['core', 'ion-adt'], data: [adt], decls: [] };
+    const wire = encodeModule(mod);
+    const decoded = decodeModule(wire);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    expect(decoded.data).toHaveLength(1);
+    expect(decoded.data[0]?.name).toBe('Color');
+    expect(decoded.data[0]?.variants).toHaveLength(2);
+    expect(decoded.data[0]?.variants[0]?.tag).toBe('Red');
+    expect(decoded.data[0]?.variants[1]?.tag).toBe('Rgb');
+    expect(decoded.data[0]?.variants[1]?.fields).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D6 — Let, Var, Abs, App, Literal, Case nodes in F section
+// ---------------------------------------------------------------------------
+
+describe('D6: core nodes', () => {
+  it('decodes Let/Var/Abs/App/Literal/Case nodes', () => {
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      dialects: ['core'],
+      decls: [
+        // Let: let x:int=42;x
+        {
+          kind: 'Let',
+          name: 'x',
+          symbolId: sid,
+          bindingType: { kind: 'Int' },
+          value: { kind: 'Literal', value: { kind: 'Int', value: 42 }, span, type: { kind: 'Int' } },
+          body: { kind: 'Var', name: 'x', symbolId: sid, span, type: { kind: 'Int' } },
+          span,
+          type: { kind: 'Int' },
+        },
+        // Abs: (n:int)->n
+        {
+          kind: 'Abs',
+          params: [{ name: 'n', symbolId: sid, type: { kind: 'Int' }, span }],
+          body: { kind: 'Var', name: 'n', symbolId: sid, span, type: { kind: 'Int' } },
+          captures: [],
+          span,
+          type: { kind: 'Unit' },
+        },
+        // App: add(1,2)
+        {
+          kind: 'App',
+          callee: { kind: 'Var', name: 'add', symbolId: sid, span, type: { kind: 'Unit' } },
+          args: [
+            { kind: 'Literal', value: { kind: 'Int', value: 1 }, span, type: { kind: 'Int' } },
+            { kind: 'Literal', value: { kind: 'Int', value: 2 }, span, type: { kind: 'Int' } },
+          ],
+          span,
+          type: { kind: 'Int' },
+        },
+        // Case: match(x){_->0}
+        {
+          kind: 'Case',
+          scrutinee: { kind: 'Var', name: 'x', symbolId: sid, span, type: { kind: 'Int' } },
+          arms: [
+            {
+              pattern: { kind: 'Wildcard', span },
+              body: { kind: 'Literal', value: { kind: 'Int', value: 0 }, span, type: { kind: 'Int' } },
+              span,
+            },
+          ],
+          span,
+          type: { kind: 'Int' },
+        },
+      ],
+    };
+    const wire = encodeModule(mod);
+    const decoded = decodeModule(wire);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    expect(decoded.decls).toHaveLength(4);
+    expect(decoded.decls[0]?.kind).toBe('Let');
+    expect(decoded.decls[1]?.kind).toBe('Abs');
+    expect(decoded.decls[2]?.kind).toBe('App');
+    expect(decoded.decls[3]?.kind).toBe('Case');
+    // Verify Let structure
+    if (decoded.decls[0]?.kind === 'Let') {
+      expect(decoded.decls[0].name).toBe('x');
+      expect(decoded.decls[0].bindingType).toEqual({ kind: 'Int' });
+    }
+    // Verify Abs params
+    if (decoded.decls[1]?.kind === 'Abs') {
+      expect(decoded.decls[1].params[0]?.name).toBe('n');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D7 — ForeignRef node
+// ---------------------------------------------------------------------------
+
+describe('D7: ForeignRef node', () => {
+  it('decodes ffi: prefixed ForeignRef nodes', () => {
+    const mod: IonIRModule = {
+      ...makeMinimal(),
+      dialects: ['core'],
+      decls: [
+        {
+          kind: 'ForeignRef',
+          target: 'js',
+          module: 'console',
+          symbol: 'log',
+          sig: { params: [{ kind: 'Str' }], ret: { kind: 'Unit' }, template: '$1.log($2)' },
+          span,
+          type: { kind: 'Unit' },
+        },
+      ],
+    };
+    const wire = encodeModule(mod);
+    const decoded = decodeModule(wire);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    expect(decoded.decls[0]?.kind).toBe('ForeignRef');
+    if (decoded.decls[0]?.kind === 'ForeignRef') {
+      expect(decoded.decls[0].target).toBe('js');
+      expect(decoded.decls[0].module).toBe('console');
+      expect(decoded.decls[0].symbol).toBe('log');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D8 — Round-trip byte stability
+// ---------------------------------------------------------------------------
+
+describe('D8: round-trip byte stability', () => {
+  it('encodeModule(decodeModule(encodeModule(m))) === encodeModule(m)', () => {
+    const w1 = encodeModule(roundTripModule);
+    const decoded = decodeModule(w1);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    const w2 = encodeModule(decoded);
+    expect(w2).toBe(w1);
+  });
+
+  it('is also stable for the minimal module', () => {
+    const minimal: IonIRModule = {
+      ionir: '1.0',
+      module: 'org.example',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: [{ kind: 'Var', name: 'x', symbolId: sid, span, type: { kind: 'Int' } }],
+    };
+    const w1 = encodeModule(minimal);
+    const decoded = decodeModule(w1);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    expect(encodeModule(decoded)).toBe(w1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D9 — Non-wire input returns error
+// ---------------------------------------------------------------------------
+
+describe('D9: non-wire input', () => {
+  it('returns { error } for a JSON string without throwing', () => {
+    const json = JSON.stringify({ ionir: '1.0', module: 'x', version: '1.0', dialects: [] });
+    const result = decodeModule(json);
+    expect('error' in result).toBe(true);
+    expect(() => decodeModule(json)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D10 — Wrong version header
+// ---------------------------------------------------------------------------
+
+describe('D10: wrong version header', () => {
+  it('returns { error } for I2 header', () => {
+    const wire = 'I2\nM test.module v=1.0.0\n';
+    const result = decodeModule(wire);
+    expect('error' in result).toBe(true);
+    if ('error' in result) {
+      expect(result.error).toContain('I1');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D11 — Truncated / malformed input
+// ---------------------------------------------------------------------------
+
+describe('D11: truncated input', () => {
+  it('returns { error } for a wire file missing the M line', () => {
+    const result = decodeModule('I1\n');
+    expect('error' in result).toBe(true);
+  });
+
+  it('returns { error } for a truncated F section node', () => {
+    const wire = 'I1\nM test.module v=1.0.0\nF let x:\n';
+    const result = decodeModule(wire);
+    expect('error' in result).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WireDecodeError — class exists and has correct name
+// ---------------------------------------------------------------------------
+
+describe('WireDecodeError', () => {
+  it('has name WireDecodeError', () => {
+    const e = new WireDecodeError('test');
+    expect(e.name).toBe('WireDecodeError');
+    expect(e).toBeInstanceOf(Error);
+  });
+});

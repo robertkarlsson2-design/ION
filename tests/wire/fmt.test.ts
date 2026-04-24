@@ -191,11 +191,11 @@ describe('runFmt --pretty on already-formatted file', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F10 — --wire first pass produces expected wire encoding
+// F10 — --wire first pass produces expected wire encoding; second pass succeeds
 // ---------------------------------------------------------------------------
 
 describe('runFmt --wire first pass encoding', () => {
-  it('F10: first pass produces expected wire encoding matching encodeModule', async () => {
+  it('F10: first pass produces expected wire encoding; second pass on wire input exits 0', async () => {
     const dir = await makeTmp();
     const filePath = await writeTmp(dir, 'g.ion', serializeModule(minimalModule));
     const first = await runFmt(['--wire', filePath]);
@@ -203,9 +203,45 @@ describe('runFmt --wire first pass encoding', () => {
     const wireContent = await readFile(filePath, 'utf-8');
     const expected = encodeModule(minimalModule);
     expect(wireContent).toBe(expected);
-    // Second pass: wire output is not valid JSON → deserialization fails with exit 1
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    // Second pass: wire input is now supported via decodeModule → exit 0.
     const second = await runFmt(['--wire', filePath]);
-    expect(second.exitCode).toBe(1);
+    expect(second.exitCode).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F11 — --pretty on a wire-format file exits 0 and contains the module name
+// ---------------------------------------------------------------------------
+
+describe('runFmt --pretty on wire input', () => {
+  it('F11: --pretty on a wire-format file exits 0 and output contains the module name', async () => {
+    const dir = await makeTmp();
+    // Write JSON, convert to wire first.
+    const filePath = await writeTmp(dir, 'h.ion', serializeModule(minimalModule));
+    const toWire = await runFmt(['--wire', filePath]);
+    expect(toWire.exitCode).toBe(0);
+    // Now apply --pretty to the wire-format file.
+    const toPretty = await runFmt(['--pretty', filePath]);
+    expect(toPretty.exitCode).toBe(0);
+    const content = await readFile(filePath, 'utf-8');
+    expect(content).toContain('org.example');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F12 — --check on a canonically-encoded wire file exits 0
+// ---------------------------------------------------------------------------
+
+describe('runFmt --check on canonical wire file', () => {
+  it('F12: --check exits 0 when a wire file is already in canonical form', async () => {
+    const dir = await makeTmp();
+    // Start from JSON, encode to wire.
+    const filePath = await writeTmp(dir, 'i.ion', serializeModule(minimalModule));
+    await runFmt(['--wire', filePath]);
+    // Second --wire pass encodes from wire → same output → no change.
+    await runFmt(['--wire', filePath]);
+    // --check should now exit 0 (file is already canonical).
+    const check = await runFmt(['--check', filePath]);
+    expect(check.exitCode).toBe(0);
   });
 });
