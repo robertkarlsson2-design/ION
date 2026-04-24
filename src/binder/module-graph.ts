@@ -28,7 +28,7 @@ type StackFrame =
   | { type: 'enter'; node: string; path: string[] }
   | { type: 'exit'; node: string };
 
-const nullSpan: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
+export const nullSpan: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
 
 /**
  * Iterative three-color DFS cycle detection across a merged module graph.
