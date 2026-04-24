@@ -22,6 +22,7 @@ import type {
   JsSwitchCase,
   JsThrow,
   JsTryCatch,
+  JsBlock,
   JsAssign,
   JsLineComment,
   JsTemplateLit,
