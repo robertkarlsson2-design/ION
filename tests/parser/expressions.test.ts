@@ -416,6 +416,18 @@ describe('trivia preservation', () => {
     const node = asKind(parseExpression(tokens), 'LiteralBool') as LiteralBoolNode;
     expect(node.leadingTrivia.some(t => t.kind === 'LineComment')).toBe(true);
   });
+
+  it('line comment before null literal is attached', () => {
+    const tokens = lex('// n\nnull', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'LiteralNull') as LiteralNullNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'LineComment')).toBe(true);
+  });
+
+  it('leading whitespace is attached to string literal', () => {
+    const tokens = lex('  "hello"', 'test.ion');
+    const node = asKind(parseExpression(tokens), 'StringLit') as StringLitNode;
+    expect(node.leadingTrivia.some(t => t.kind === 'Whitespace')).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
