@@ -1,0 +1,48 @@
+id: try-catch-to-result
+language: javascript
+match:
+  nodeType: try_statement
+  children:
+    - pattern:
+        nodeType: statement_block
+        capture: $TRY_BODY
+    - pattern:
+        nodeType: catch_clause
+        capture: $CATCH
+conditions:
+  - kind: has-children
+    count: 2
+emit:
+  kind: AdtMatch
+  scrutinee:
+    kind: Var
+    name: tryResult
+    symbolId: tryResult
+    type:
+      kind: Never
+  arms:
+    - ctor: Ok
+      binding: _
+      body:
+        kind: Var
+        name:
+          metavar: $TRY_BODY
+          field: text
+        symbolId:
+          metavar: $TRY_BODY
+          field: text
+        type:
+          kind: Never
+    - ctor: Err
+      body:
+        kind: Var
+        name:
+          metavar: $CATCH
+          field: text
+        symbolId:
+          metavar: $CATCH
+          field: text
+        type:
+          kind: Never
+  type:
+    kind: Never

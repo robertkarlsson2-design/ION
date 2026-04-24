@@ -1,0 +1,31 @@
+id: new-expression
+language: javascript
+match:
+  nodeType: new_expression
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $CLASS
+    - pattern:
+        nodeType: arguments
+        capture: $ARGS
+emit:
+  kind: OopNew
+  className:
+    metavar: $CLASS
+    field: text
+  symbolId:
+    metavar: $CLASS
+    field: text
+  args:
+    kind: Var
+    name:
+      metavar: $ARGS
+      field: text
+    symbolId:
+      metavar: $ARGS
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never

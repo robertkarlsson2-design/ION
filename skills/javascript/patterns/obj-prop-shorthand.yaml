@@ -1,0 +1,15 @@
+id: obj-prop-shorthand
+language: javascript
+match:
+  nodeType: object
+  children:
+    - pattern:
+        capture: $$$PROPS
+      isSequence: true
+emit:
+  kind: Constructor
+  ctorName: record
+  symbolId: record
+  args: []
+  type:
+    kind: Never

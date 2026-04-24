@@ -1,0 +1,29 @@
+id: promise-then-catch
+language: javascript
+match:
+  nodeType: call_expression
+  children:
+    - pattern:
+        nodeType: member_expression
+        capture: $CHAIN
+    - pattern:
+        nodeType: arguments
+        capture: $ON_REJECTED
+conditions:
+  - kind: is-type
+    var: $CHAIN
+    type: member_expression
+emit:
+  kind: Await
+  value:
+    kind: Var
+    name:
+      metavar: $CHAIN
+      field: text
+    symbolId:
+      metavar: $CHAIN
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never

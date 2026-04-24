@@ -1,0 +1,26 @@
+id: optional-chaining
+language: javascript
+match:
+  nodeType: member_expression
+  children:
+    - pattern:
+        capture: $OBJ
+    - pattern:
+        capture: $PROP
+emit:
+  kind: Accessor
+  receiver:
+    kind: Var
+    name:
+      metavar: $OBJ
+      field: text
+    symbolId:
+      metavar: $OBJ
+      field: text
+    type:
+      kind: Never
+  member:
+    metavar: $PROP
+    field: text
+  type:
+    kind: Never

@@ -1,0 +1,33 @@
+id: export-default
+language: javascript
+match:
+  nodeType: export_statement
+  children:
+    - pattern:
+        capture: $EXPR
+conditions:
+  - kind: has-children
+    count: 1
+emit:
+  kind: Let
+  name: default
+  symbolId: default
+  bindingType:
+    kind: Never
+  value:
+    kind: Var
+    name:
+      metavar: $EXPR
+      field: text
+    symbolId:
+      metavar: $EXPR
+      field: text
+    type:
+      kind: Never
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int

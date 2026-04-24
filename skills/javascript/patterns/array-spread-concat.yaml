@@ -1,0 +1,31 @@
+id: array-spread-concat
+language: javascript
+match:
+  nodeType: array
+  children:
+    - pattern:
+        nodeType: spread_element
+        capture: $FIRST
+    - pattern:
+        capture: $$$REST
+      isSequence: true
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: concat
+    symbolId: concat
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $FIRST
+        field: text
+      symbolId:
+        metavar: $FIRST
+        field: text
+      type:
+        kind: Never
+  type:
+    kind: Never

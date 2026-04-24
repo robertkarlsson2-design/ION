@@ -1,0 +1,31 @@
+id: named-import
+language: javascript
+match:
+  nodeType: import_statement
+  children:
+    - pattern:
+        nodeType: named_imports
+        capture: $NAMES
+    - pattern:
+        nodeType: string
+        capture: $MODULE
+emit:
+  kind: ModuleRef
+  modulePath:
+    metavar: $MODULE
+    field: text
+  symbolId:
+    metavar: $MODULE
+    field: text
+  names:
+    kind: Var
+    name:
+      metavar: $NAMES
+      field: text
+    symbolId:
+      metavar: $NAMES
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never
