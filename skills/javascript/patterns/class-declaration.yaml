@@ -1,0 +1,31 @@
+id: class-declaration
+language: javascript
+match:
+  nodeType: class_declaration
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: class_body
+        capture: $BODY
+emit:
+  kind: OopClass
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  body:
+    kind: Var
+    name:
+      metavar: $BODY
+      field: text
+    symbolId:
+      metavar: $BODY
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never

@@ -1,0 +1,31 @@
+id: obj-spread-merge
+language: javascript
+match:
+  nodeType: object
+  children:
+    - pattern:
+        nodeType: spread_element
+        capture: $SPREAD
+    - pattern:
+        capture: $$$REST
+      isSequence: true
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: merge
+    symbolId: merge
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $SPREAD
+        field: text
+      symbolId:
+        metavar: $SPREAD
+        field: text
+      type:
+        kind: Never
+  type:
+    kind: Never

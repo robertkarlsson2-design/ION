@@ -1,0 +1,41 @@
+id: null-undefined-guard
+language: javascript
+match:
+  nodeType: binary_expression
+  children:
+    - pattern:
+        capture: $LEFT
+    - pattern:
+        capture: $RIGHT
+emit:
+  kind: Case
+  scrutinee:
+    kind: Var
+    name:
+      metavar: $LEFT
+      field: text
+    symbolId:
+      metavar: $LEFT
+      field: text
+    type:
+      kind: Never
+  arms:
+    - pattern:
+        kind: Constructor
+        ctorName: Some
+        symbolId: Some
+        args: []
+        type:
+          kind: Never
+      body:
+        kind: Var
+        name:
+          metavar: $RIGHT
+          field: text
+        symbolId:
+          metavar: $RIGHT
+          field: text
+        type:
+          kind: Never
+  type:
+    kind: Never

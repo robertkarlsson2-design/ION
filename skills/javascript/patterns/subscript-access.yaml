@@ -1,0 +1,26 @@
+id: subscript-access
+language: javascript
+match:
+  nodeType: subscript_expression
+  children:
+    - pattern:
+        capture: $OBJ
+    - pattern:
+        capture: $KEY
+emit:
+  kind: Accessor
+  receiver:
+    kind: Var
+    name:
+      metavar: $OBJ
+      field: text
+    symbolId:
+      metavar: $OBJ
+      field: text
+    type:
+      kind: Never
+  member:
+    metavar: $KEY
+    field: text
+  type:
+    kind: Never

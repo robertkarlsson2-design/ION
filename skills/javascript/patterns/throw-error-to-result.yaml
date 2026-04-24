@@ -1,0 +1,23 @@
+id: throw-error-to-result
+language: javascript
+match:
+  nodeType: throw_statement
+  children:
+    - pattern:
+        capture: $EXPR
+emit:
+  kind: Constructor
+  ctorName: Err
+  symbolId: Err
+  args:
+    - kind: Var
+      name:
+        metavar: $EXPR
+        field: text
+      symbolId:
+        metavar: $EXPR
+        field: text
+      type:
+        kind: Never
+  type:
+    kind: Never

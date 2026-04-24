@@ -1,0 +1,31 @@
+id: default-import
+language: javascript
+match:
+  nodeType: import_statement
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: string
+        capture: $MODULE
+emit:
+  kind: ModuleRef
+  modulePath:
+    metavar: $MODULE
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  names:
+    kind: Var
+    name:
+      metavar: $NAME
+      field: text
+    symbolId:
+      metavar: $NAME
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never

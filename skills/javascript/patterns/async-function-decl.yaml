@@ -44,6 +44,8 @@ emit:
           field: text
         type:
           kind: Never
+      type:
+        kind: Never
     type:
       kind: Never
   body:

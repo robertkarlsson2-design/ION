@@ -1,0 +1,21 @@
+id: await-expression
+language: javascript
+match:
+  nodeType: await_expression
+  children:
+    - pattern:
+        capture: $EXPR
+emit:
+  kind: Await
+  value:
+    kind: Var
+    name:
+      metavar: $EXPR
+      field: text
+    symbolId:
+      metavar: $EXPR
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never

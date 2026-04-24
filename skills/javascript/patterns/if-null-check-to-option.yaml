@@ -1,0 +1,42 @@
+id: if-null-check-to-option
+language: javascript
+match:
+  nodeType: if_statement
+  children:
+    - pattern:
+        capture: $COND
+    - pattern:
+        nodeType: statement_block
+        capture: $THEN
+emit:
+  kind: Case
+  scrutinee:
+    kind: Var
+    name:
+      metavar: $COND
+      field: text
+    symbolId:
+      metavar: $COND
+      field: text
+    type:
+      kind: Never
+  arms:
+    - pattern:
+        kind: Constructor
+        ctorName: None
+        symbolId: None
+        args: []
+        type:
+          kind: Never
+      body:
+        kind: Var
+        name:
+          metavar: $THEN
+          field: text
+        symbolId:
+          metavar: $THEN
+          field: text
+        type:
+          kind: Never
+  type:
+    kind: Never

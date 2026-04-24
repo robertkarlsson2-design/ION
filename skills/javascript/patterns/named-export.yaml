@@ -1,0 +1,18 @@
+id: named-export
+language: javascript
+match:
+  nodeType: export_statement
+  children:
+    - pattern:
+        nodeType: export_clause
+        capture: $CLAUSE
+emit:
+  kind: Var
+  name:
+    metavar: $CLAUSE
+    field: text
+  symbolId:
+    metavar: $CLAUSE
+    field: text
+  type:
+    kind: Never

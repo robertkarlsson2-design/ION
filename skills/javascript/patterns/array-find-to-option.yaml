@@ -1,0 +1,38 @@
+id: array-find-to-option
+language: javascript
+match:
+  nodeType: call_expression
+  children:
+    - pattern:
+        nodeType: member_expression
+        capture: $CALLEE
+    - pattern:
+        nodeType: arguments
+        capture: $ARGS
+conditions:
+  - kind: node-text-contains
+    text: ".find"
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name:
+      metavar: $CALLEE
+      field: text
+    symbolId:
+      metavar: $CALLEE
+      field: text
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $ARGS
+        field: text
+      symbolId:
+        metavar: $ARGS
+        field: text
+      type:
+        kind: Never
+  type:
+    kind: Never

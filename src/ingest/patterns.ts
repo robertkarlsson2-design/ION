@@ -72,7 +72,8 @@ export type Condition =
   | { readonly kind: 'has-children'; readonly count: number }
   | { readonly kind: 'is-type'; readonly var: string; readonly type: string }
   | { readonly kind: 'not-mutated-in'; readonly var: string; readonly scope: string }
-  | { readonly kind: 'text-equals'; readonly var: string; readonly value: string };
+  | { readonly kind: 'text-equals'; readonly var: string; readonly value: string }
+  | { readonly kind: 'node-text-contains'; readonly text: string };
 
 /** Emit spec mirrors IonIR node shape with metavar references. */
 export type EmitSpec = Record<string, unknown>;
@@ -129,6 +130,7 @@ export async function loadPatterns(skillDir: string): Promise<PatternMatcher[]> 
 /** Compile a single parsed PatternRule into a PatternMatcher (exposed for unit tests). */
 export function compileRule(rule: PatternRule): PatternMatcher {
   return {
+    ruleId: rule.id,
     match(node: CSTNode): IonIRNode | null {
       try {
         const bindings = new Map<string, CSTNode | CSTNode[]>();
@@ -224,11 +226,17 @@ function parseCondition(raw: unknown): Condition {
     }
     return { kind: 'not-mutated-in', var: c['var'] as string, scope: c['scope'] as string };
   }
+<<<<<<< HEAD
   if (kind === 'text-equals') {
     if (typeof c['var'] !== 'string' || typeof c['value'] !== 'string') {
       throw new Error("text-equals condition requires string 'var' and 'value'");
     }
     return { kind: 'text-equals', var: c['var'] as string, value: c['value'] as string };
+=======
+  if (kind === 'node-text-contains') {
+    if (typeof c['text'] !== 'string') throw new Error("node-text-contains condition requires string 'text'");
+    return { kind: 'node-text-contains', text: c['text'] as string };
+>>>>>>> 73bed2c (WIP: fixing complete [3ae83b9d-4666-4b78-932c-3d0afb87c669])
   }
   throw new Error(`unknown condition kind: ${String(kind)}`);
 }
@@ -363,10 +371,15 @@ function evaluateCondition(cond: Condition, bindings: Bindings, node: CSTNode): 
       // Stubbed as always-true until binder integration is complete.
       return true;
     }
+<<<<<<< HEAD
     case 'text-equals': {
       const bound = bindings.get(cond.var);
       if (!bound || Array.isArray(bound)) return false;
       return (bound as CSTNode).text === cond.value;
+=======
+    case 'node-text-contains': {
+      return node.text.includes(cond.text);
+>>>>>>> 73bed2c (WIP: fixing complete [3ae83b9d-4666-4b78-932c-3d0afb87c669])
     }
   }
 }
