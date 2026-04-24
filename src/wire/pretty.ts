@@ -286,6 +286,10 @@ export function prettyPrintNode(node: IonIRNode, depth = 0, opts?: PrettyOptions
       return `handle {\n${inner}${bodyStr}\n${prefix}} ${withBlock}`;
     }
     case 'Resume': return `resume(${prettyPrintNode(node.value, depth, opts)})`;
+    case 'ListLit': {
+      const elems = node.elements.map(el => prettyPrintNode(el, depth, opts)).join(', ');
+      return `[${elems}]`;
+    }
     default: return assertNever(node);
   }
 }

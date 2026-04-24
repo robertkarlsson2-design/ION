@@ -205,6 +205,13 @@ export function buildExpr(cst: ExprNode): AstExprNode {
     case 'GroupExpr':
       // Elide the group wrapper; use the inner node's span.
       return buildExpr(cst.inner);
+
+    case 'ListLitExpr':
+      return {
+        kind: 'ListLit',
+        elements: cst.elements.map(buildExpr),
+        span: cst.span,
+      };
   }
 }
 
