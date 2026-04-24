@@ -352,6 +352,11 @@ class Binder {
       case 'PropagateExpr':
         this.resolveExpr(expr.inner, scope, idPrefix);
         break;
+
+      default: {
+        const _exhaustive: never = expr;
+        throw new Error(`Unhandled expr kind: ${(_exhaustive as AstExprNode).kind}`);
+      }
     }
   }
 
