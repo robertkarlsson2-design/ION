@@ -1,0 +1,56 @@
+id: typed-function-decl
+language: typescript
+# Matches: function add(x: number, y: number): number { return x + y; }
+# tree-sitter-typescript: function_declaration with typed formal_parameters
+# and a return type_annotation.
+match:
+  nodeType: function_declaration
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: formal_parameters
+        capture: $PARAMS
+    - pattern:
+        nodeType: type_annotation
+        capture: $RETURN_TYPE
+    - pattern:
+        nodeType: statement_block
+        capture: $BODY
+conditions:
+  - kind: has-child
+    nodeType: type_annotation
+emit:
+  kind: Let
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  bindingType:
+    kind: Never
+  value:
+    kind: Abs
+    params: []
+    captures: []
+    body:
+      kind: Var
+      name:
+        metavar: $BODY
+        field: text
+      symbolId:
+        metavar: $BODY
+        field: text
+      type:
+        kind: Never
+    type:
+      kind: Never
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int

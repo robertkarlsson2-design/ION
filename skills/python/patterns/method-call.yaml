@@ -1,0 +1,38 @@
+id: method-call
+language: python
+# Matches: obj.method(args)
+# Emits:   OopVirtualCall { receiver: obj, method: method, args }
+# Python tree-sitter: call -> (attribute -> (identifier, identifier), argument_list)
+match:
+  nodeType: call
+  children:
+    - pattern:
+        nodeType: attribute
+        children:
+          - pattern:
+              capture: $OBJ
+          - pattern:
+              nodeType: identifier
+              capture: $METHOD
+    - pattern:
+        nodeType: argument_list
+        children:
+          - pattern:
+              capture: $$$ARGS
+            isSequence: true
+emit:
+  kind: OopVirtualCall
+  receiver:
+    kind: Var
+    name:
+      metavar: $OBJ
+      field: text
+    symbolId:
+      metavar: $OBJ
+      field: text
+    type:
+      kind: Never
+  method:
+    metavar: $METHOD
+    field: text
+  args: []

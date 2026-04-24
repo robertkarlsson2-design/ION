@@ -1,0 +1,60 @@
+id: zip-call
+language: python
+# Matches: list(zip(a, b))
+# Emits:   zip(a, b)  — Ion prelude `zip`
+match:
+  nodeType: call
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $LIST_FN
+    - pattern:
+        nodeType: argument_list
+        children:
+          - pattern:
+              nodeType: call
+              children:
+                - pattern:
+                    nodeType: identifier
+                    capture: $ZIP_FN
+                - pattern:
+                    nodeType: argument_list
+                    children:
+                      - pattern:
+                          capture: $A
+                      - pattern:
+                          capture: $B
+conditions:
+  - kind: text-equals
+    var: $LIST_FN
+    value: "list"
+  - kind: text-equals
+    var: $ZIP_FN
+    value: "zip"
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: zip
+    symbolId: zip
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $A
+        field: text
+      symbolId:
+        metavar: $A
+        field: text
+      type:
+        kind: Never
+    - kind: Var
+      name:
+        metavar: $B
+        field: text
+      symbolId:
+        metavar: $B
+        field: text
+      type:
+        kind: Never

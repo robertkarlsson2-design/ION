@@ -1,0 +1,39 @@
+id: str-call
+language: python
+# Matches: str(expr)
+# Emits:   toString(expr)  — Ion prelude `toString`
+match:
+  nodeType: call
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $FN
+    - pattern:
+        nodeType: argument_list
+        children:
+          - pattern:
+              capture: $ARG
+conditions:
+  - kind: text-equals
+    var: $FN
+    value: "str"
+  - kind: has-children
+    count: 1
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: toString
+    symbolId: toString
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $ARG
+        field: text
+      symbolId:
+        metavar: $ARG
+        field: text
+      type:
+        kind: Never

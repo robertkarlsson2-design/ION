@@ -1,0 +1,32 @@
+id: access-modifier-field
+language: typescript
+# Matches class fields with access modifiers
+# tree-sitter-typescript node: public_field_definition
+# e.g. private name: string;  /  public age: number = 0;
+# Ion treatment: access modifiers are dropped — Ion fields are public by default.
+# The field name and type are preserved.
+match:
+  nodeType: public_field_definition
+  children:
+    - pattern:
+        capture: $MODIFIER
+    - pattern:
+        nodeType: property_identifier
+        capture: $NAME
+    - pattern:
+        nodeType: type_annotation
+        capture: $TYPE
+conditions:
+  - kind: is-one-of
+    var: $MODIFIER
+    values: ["public", "private", "protected"]
+emit:
+  kind: Var
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  type:
+    kind: Never

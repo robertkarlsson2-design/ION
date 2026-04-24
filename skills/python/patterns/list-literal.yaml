@@ -1,0 +1,15 @@
+id: list-literal
+language: python
+# Matches: [a, b, c]
+# Emits:   [a, b, c]  (Ion ListLit)
+match:
+  nodeType: list
+  children:
+    - pattern:
+        capture: $$$ELEMENTS
+      isSequence: true
+emit:
+  kind: ListLit
+  elements: []
+  type:
+    kind: Never

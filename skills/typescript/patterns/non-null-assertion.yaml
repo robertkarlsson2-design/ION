@@ -1,0 +1,23 @@
+id: non-null-assertion
+language: typescript
+# Matches: expr!  (TypeScript non-null assertion operator)
+# tree-sitter-typescript node: non_null_expression
+# Children: <expression> + ! token
+# Ion treatment: drop the assertion — emit only the inner expression.
+# Ion uses Option<T> to represent nullable values explicitly; the ! operator
+# is a TS-only escape hatch with no Ion equivalent.
+match:
+  nodeType: non_null_expression
+  children:
+    - pattern:
+        capture: $EXPR
+emit:
+  kind: Var
+  name:
+    metavar: $EXPR
+    field: text
+  symbolId:
+    metavar: $EXPR
+    field: text
+  type:
+    kind: Never

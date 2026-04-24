@@ -1,0 +1,20 @@
+id: import-stmt
+language: python
+# Matches: import module
+# Emits:   ModuleRef pointing at the module path
+# Python import_statement: dotted_name child gives the module name.
+match:
+  nodeType: import_statement
+  children:
+    - pattern:
+        capture: $MODULE
+emit:
+  kind: ModuleRef
+  modulePath:
+    metavar: $MODULE
+    field: text
+  symbolId:
+    metavar: $MODULE
+    field: text
+  type:
+    kind: Never

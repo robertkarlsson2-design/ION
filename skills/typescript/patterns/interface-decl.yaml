@@ -1,0 +1,24 @@
+id: interface-decl
+language: typescript
+# Matches: interface Foo { x: number; y: string; }
+# tree-sitter-typescript node: interface_declaration
+# Children: type_identifier (name) + object_type (body with property_signature children)
+match:
+  nodeType: interface_declaration
+  children:
+    - pattern:
+        nodeType: type_identifier
+        capture: $NAME
+    - pattern:
+        nodeType: object_type
+        capture: $BODY
+emit:
+  kind: OopInterface
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  fields: []
+  methods: []

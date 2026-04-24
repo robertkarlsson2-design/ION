@@ -1,0 +1,52 @@
+id: typed-const
+language: typescript
+# Matches: const x: number = 5  (const declaration with explicit type annotation)
+# tree-sitter-typescript node: lexical_declaration → variable_declarator
+# The variable_declarator has: identifier + type_annotation + <value>
+# This pattern is TypeScript-specific because plain JS const-decl (in JS patterns)
+# does not include a type_annotation child.
+match:
+  nodeType: lexical_declaration
+  children:
+    - pattern:
+        nodeType: variable_declarator
+        children:
+          - pattern:
+              nodeType: identifier
+              capture: $NAME
+          - pattern:
+              nodeType: type_annotation
+              capture: $TYPE
+          - pattern:
+              capture: $VALUE
+conditions:
+  - kind: has-child
+    nodeType: type_annotation
+emit:
+  kind: Let
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  # bindingType is resolved from $TYPE by the ingestion engine; Never is a placeholder.
+  bindingType:
+    kind: Never
+  value:
+    kind: Var
+    name:
+      metavar: $VALUE
+      field: text
+    symbolId:
+      metavar: $VALUE
+      field: text
+    type:
+      kind: Never
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int

@@ -1,0 +1,45 @@
+id: type-alias
+language: typescript
+# Matches: type Alias = SomeType
+# tree-sitter-typescript node: type_alias_declaration
+# Children: type_identifier (name) + type_parameters? + <type node> (rhs)
+# Ion treatment: drop the alias — emit the RHS as a comment marker only.
+# The ingestion pipeline cannot represent type aliases in Ion IR directly;
+# they are stripped and the underlying type is used at each use-site.
+match:
+  nodeType: type_alias_declaration
+  children:
+    - pattern:
+        nodeType: type_identifier
+        capture: $NAME
+    - pattern:
+        capture: $RHS
+conditions:
+  - kind: has-children
+    count: 2
+emit:
+  # Emit as a unit literal with a type annotation so downstream passes can
+  # see the alias name, even though no runtime value is produced.
+  kind: Let
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  bindingType:
+    kind: Never
+  value:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int

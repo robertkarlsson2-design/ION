@@ -1,0 +1,26 @@
+id: lambda-expr
+language: python
+match:
+  nodeType: lambda
+  children:
+    - pattern:
+        nodeType: lambda_parameters
+        capture: $PARAMS
+    - pattern:
+        capture: $BODY
+emit:
+  kind: Abs
+  params: []
+  captures: []
+  body:
+    kind: Var
+    name:
+      metavar: $BODY
+      field: text
+    symbolId:
+      metavar: $BODY
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never

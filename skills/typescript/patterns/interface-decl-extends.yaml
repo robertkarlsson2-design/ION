@@ -1,0 +1,32 @@
+id: interface-decl-extends
+language: typescript
+# Matches: interface Foo extends Bar { x: number; }
+# tree-sitter-typescript: interface_declaration with extends_type_clause child
+match:
+  nodeType: interface_declaration
+  children:
+    - pattern:
+        nodeType: type_identifier
+        capture: $NAME
+    - pattern:
+        nodeType: extends_type_clause
+        capture: $EXTENDS
+    - pattern:
+        nodeType: object_type
+        capture: $BODY
+conditions:
+  - kind: has-children
+    count: 3
+emit:
+  kind: OopInterface
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  superClass:
+    metavar: $EXTENDS
+    field: text
+  fields: []
+  methods: []

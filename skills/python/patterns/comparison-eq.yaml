@@ -1,0 +1,45 @@
+id: comparison-eq
+language: python
+# Matches: a == b
+# Emits:   a == b  (Ion __eq__ binary op)
+# Python comparison_operator nodes contain the operator as a child text node.
+match:
+  nodeType: comparison_operator
+  children:
+    - pattern:
+        capture: $LEFT
+    - pattern:
+        capture: $OP
+    - pattern:
+        capture: $RIGHT
+conditions:
+  - kind: text-equals
+    var: $OP
+    value: "=="
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: __eq__
+    symbolId: __eq__
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $LEFT
+        field: text
+      symbolId:
+        metavar: $LEFT
+        field: text
+      type:
+        kind: Never
+    - kind: Var
+      name:
+        metavar: $RIGHT
+        field: text
+      symbolId:
+        metavar: $RIGHT
+        field: text
+      type:
+        kind: Never

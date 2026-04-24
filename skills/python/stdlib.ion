@@ -1,0 +1,546 @@
+// Python standard library extern declarations.
+// Module: python.stdlib  Version: 0.1.0
+// Each declaration maps an Ion name to a Python API via @foreign(module, symbol, template).
+// Use module="" for builtins (no import needed at runtime).
+// For stdlib modules, use the module's actual dotted name.
+
+// ---------------------------------------------------------------------------
+// Builtins (module = "")
+// ---------------------------------------------------------------------------
+
+@foreign("", "print", "print($1)")
+pub extern fn printStr(msg: Str) !io -> Unit
+
+@foreign("", "print", "print($1)")
+pub extern fn printInt(n: Int) !io -> Unit
+
+@foreign("", "print", "print($1)")
+pub extern fn printFloat(x: Float) !io -> Unit
+
+@foreign("", "print", "print($1)")
+pub extern fn printBool(b: Bool) !io -> Unit
+
+@foreign("", "len", "len($1)")
+pub extern fn lenStr(s: Str) -> Int
+
+@foreign("", "len", "len($1)")
+pub extern fn lenList(lst: List<Str>) -> Int
+
+@foreign("", "range", "list(range($1))")
+pub extern fn rangeTo(n: Int) -> List<Int>
+
+@foreign("", "range", "list(range($1, $2))")
+pub extern fn rangeFromTo(lo: Int, hi: Int) -> List<Int>
+
+@foreign("", "range", "list(range($1, $2, $3))")
+pub extern fn rangeStep(lo: Int, hi: Int, step: Int) -> List<Int>
+
+@foreign("", "sorted", "sorted($1)")
+pub extern fn sortedList(lst: List<Str>) -> List<Str>
+
+@foreign("", "sorted", "sorted($1, key=$2)")
+pub extern fn sortedBy(lst: List<Str>, key: fn(Str) -> Str) -> List<Str>
+
+@foreign("", "sorted", "sorted($1, reverse=True)")
+pub extern fn sortedDesc(lst: List<Str>) -> List<Str>
+
+@foreign("", "reversed", "list(reversed($1))")
+pub extern fn reversedList(lst: List<Str>) -> List<Str>
+
+@foreign("", "enumerate", "list(enumerate($1))")
+pub extern fn enumerateList(lst: List<Str>) -> List<Str>
+
+@foreign("", "zip", "list(zip($1, $2))")
+pub extern fn zipLists(a: List<Str>, b: List<Str>) -> List<Str>
+
+@foreign("", "map", "list(map($2, $1))")
+pub extern fn mapList(lst: List<Str>, f: fn(Str) -> Str) -> List<Str>
+
+@foreign("", "filter", "list(filter($2, $1))")
+pub extern fn filterList(lst: List<Str>, pred: fn(Str) -> Bool) -> List<Str>
+
+@foreign("", "sum", "sum($1)")
+pub extern fn sumList(lst: List<Int>) -> Int
+
+@foreign("", "sum", "sum($1)")
+pub extern fn sumFloats(lst: List<Float>) -> Float
+
+@foreign("", "min", "min($1)")
+pub extern fn minList(lst: List<Int>) -> Int
+
+@foreign("", "min", "min($1, $2)")
+pub extern fn min2(a: Int, b: Int) -> Int
+
+@foreign("", "max", "max($1)")
+pub extern fn maxList(lst: List<Int>) -> Int
+
+@foreign("", "max", "max($1, $2)")
+pub extern fn max2(a: Int, b: Int) -> Int
+
+@foreign("", "abs", "abs($1)")
+pub extern fn absInt(n: Int) -> Int
+
+@foreign("", "abs", "abs($1)")
+pub extern fn absFloat(x: Float) -> Float
+
+@foreign("", "round", "round($1)")
+pub extern fn roundFloat(x: Float) -> Int
+
+@foreign("", "round", "round($1, $2)")
+pub extern fn roundTo(x: Float, digits: Int) -> Float
+
+@foreign("", "int", "int($1)")
+pub extern fn toInt(x: Float) -> Int
+
+@foreign("", "int", "int($1)")
+pub extern fn strToInt(s: Str) -> Int
+
+@foreign("", "float", "float($1)")
+pub extern fn toFloat(x: Int) -> Float
+
+@foreign("", "float", "float($1)")
+pub extern fn strToFloat(s: Str) -> Float
+
+@foreign("", "str", "str($1)")
+pub extern fn toString(x: Int) -> Str
+
+@foreign("", "bool", "bool($1)")
+pub extern fn toBool(x: Int) -> Bool
+
+@foreign("", "list", "list($1)")
+pub extern fn toList(iterable: Str) -> List<Str>
+
+@foreign("", "dict", "dict($1)")
+pub extern fn toDict(pairs: List<Str>) -> Str
+
+@foreign("", "set", "set($1)")
+pub extern fn toSet(lst: List<Str>) -> Str
+
+@foreign("", "tuple", "tuple($1)")
+pub extern fn toTuple(lst: List<Str>) -> Str
+
+@foreign("", "isinstance", "isinstance($1, $2)")
+pub extern fn isinstance(val: Str, typ: Str) -> Bool
+
+@foreign("", "type", "type($1)")
+pub extern fn typeOf(val: Str) -> Str
+
+@foreign("", "id", "id($1)")
+pub extern fn idOf(val: Str) -> Int
+
+@foreign("", "hash", "hash($1)")
+pub extern fn hashOf(val: Str) -> Int
+
+@foreign("", "repr", "repr($1)")
+pub extern fn reprOf(val: Str) -> Str
+
+@foreign("", "input", "input($1)")
+pub extern fn inputPrompt(prompt: Str) !io -> Str
+
+@foreign("", "input", "input()")
+pub extern fn inputLine() !io -> Str
+
+@foreign("", "open", "open($1, $2)")
+pub extern fn openFile(path: Str, mode: Str) !io -> Str
+
+@foreign("", "open", "open($1)")
+pub extern fn openFileRead(path: Str) !io -> Str
+
+// ---------------------------------------------------------------------------
+// String methods (template-based, module = "")
+// ---------------------------------------------------------------------------
+
+@foreign("", "upper", "$1.upper()")
+pub extern fn strUpper(s: Str) -> Str
+
+@foreign("", "lower", "$1.lower()")
+pub extern fn strLower(s: Str) -> Str
+
+@foreign("", "strip", "$1.strip()")
+pub extern fn strStrip(s: Str) -> Str
+
+@foreign("", "lstrip", "$1.lstrip()")
+pub extern fn strLstrip(s: Str) -> Str
+
+@foreign("", "rstrip", "$1.rstrip()")
+pub extern fn strRstrip(s: Str) -> Str
+
+@foreign("", "split", "$1.split($2)")
+pub extern fn strSplit(s: Str, sep: Str) -> List<Str>
+
+@foreign("", "split", "$1.split()")
+pub extern fn strSplitWhitespace(s: Str) -> List<Str>
+
+@foreign("", "join", "$2.join($1)")
+pub extern fn strJoin(lst: List<Str>, sep: Str) -> Str
+
+@foreign("", "replace", "$1.replace($2, $3)")
+pub extern fn strReplace(s: Str, old: Str, new_: Str) -> Str
+
+@foreign("", "startswith", "$1.startswith($2)")
+pub extern fn strStartsWith(s: Str, prefix: Str) -> Bool
+
+@foreign("", "endswith", "$1.endswith($2)")
+pub extern fn strEndsWith(s: Str, suffix: Str) -> Bool
+
+@foreign("", "find", "$1.find($2)")
+pub extern fn strFind(s: Str, sub: Str) -> Int
+
+@foreign("", "index", "$1.index($2)")
+pub extern fn strIndex(s: Str, sub: Str) -> Int
+
+@foreign("", "count", "$1.count($2)")
+pub extern fn strCount(s: Str, sub: Str) -> Int
+
+@foreign("", "format", "$1.format($2)")
+pub extern fn strFormat(s: Str, arg: Str) -> Str
+
+@foreign("", "encode", "$1.encode($2)")
+pub extern fn strEncode(s: Str, encoding: Str) -> Str
+
+@foreign("", "zfill", "$1.zfill($2)")
+pub extern fn strZfill(s: Str, width: Int) -> Str
+
+@foreign("", "center", "$1.center($2)")
+pub extern fn strCenter(s: Str, width: Int) -> Str
+
+@foreign("", "ljust", "$1.ljust($2)")
+pub extern fn strLjust(s: Str, width: Int) -> Str
+
+@foreign("", "rjust", "$1.rjust($2)")
+pub extern fn strRjust(s: Str, width: Int) -> Str
+
+@foreign("", "isdigit", "$1.isdigit()")
+pub extern fn strIsDigit(s: Str) -> Bool
+
+@foreign("", "isalpha", "$1.isalpha()")
+pub extern fn strIsAlpha(s: Str) -> Bool
+
+@foreign("", "isalnum", "$1.isalnum()")
+pub extern fn strIsAlnum(s: Str) -> Bool
+
+@foreign("", "isspace", "$1.isspace()")
+pub extern fn strIsSpace(s: Str) -> Bool
+
+// ---------------------------------------------------------------------------
+// math
+// ---------------------------------------------------------------------------
+
+@foreign("math", "floor", "__import__(\"math\").floor($1)")
+pub extern fn mathFloor(x: Float) -> Int
+
+@foreign("math", "ceil", "__import__(\"math\").ceil($1)")
+pub extern fn mathCeil(x: Float) -> Int
+
+@foreign("math", "sqrt", "__import__(\"math\").sqrt($1)")
+pub extern fn mathSqrt(x: Float) -> Float
+
+@foreign("math", "pow", "__import__(\"math\").pow($1, $2)")
+pub extern fn mathPow(base: Float, exp: Float) -> Float
+
+@foreign("math", "log", "__import__(\"math\").log($1)")
+pub extern fn mathLog(x: Float) -> Float
+
+@foreign("math", "log2", "__import__(\"math\").log2($1)")
+pub extern fn mathLog2(x: Float) -> Float
+
+@foreign("math", "log10", "__import__(\"math\").log10($1)")
+pub extern fn mathLog10(x: Float) -> Float
+
+@foreign("math", "sin", "__import__(\"math\").sin($1)")
+pub extern fn mathSin(x: Float) -> Float
+
+@foreign("math", "cos", "__import__(\"math\").cos($1)")
+pub extern fn mathCos(x: Float) -> Float
+
+@foreign("math", "tan", "__import__(\"math\").tan($1)")
+pub extern fn mathTan(x: Float) -> Float
+
+@foreign("math", "asin", "__import__(\"math\").asin($1)")
+pub extern fn mathAsin(x: Float) -> Float
+
+@foreign("math", "acos", "__import__(\"math\").acos($1)")
+pub extern fn mathAcos(x: Float) -> Float
+
+@foreign("math", "atan", "__import__(\"math\").atan($1)")
+pub extern fn mathAtan(x: Float) -> Float
+
+@foreign("math", "atan2", "__import__(\"math\").atan2($1, $2)")
+pub extern fn mathAtan2(y: Float, x: Float) -> Float
+
+@foreign("math", "pi", "__import__(\"math\").pi")
+pub extern fn mathPi() -> Float
+
+@foreign("math", "e", "__import__(\"math\").e")
+pub extern fn mathE() -> Float
+
+@foreign("math", "inf", "__import__(\"math\").inf")
+pub extern fn mathInf() -> Float
+
+@foreign("math", "factorial", "__import__(\"math\").factorial($1)")
+pub extern fn mathFactorial(n: Int) -> Int
+
+@foreign("math", "gcd", "__import__(\"math\").gcd($1, $2)")
+pub extern fn mathGcd(a: Int, b: Int) -> Int
+
+@foreign("math", "lcm", "__import__(\"math\").lcm($1, $2)")
+pub extern fn mathLcm(a: Int, b: Int) -> Int
+
+@foreign("math", "prod", "__import__(\"math\").prod($1)")
+pub extern fn mathProd(lst: List<Int>) -> Int
+
+@foreign("math", "isnan", "__import__(\"math\").isnan($1)")
+pub extern fn mathIsNan(x: Float) -> Bool
+
+@foreign("math", "isinf", "__import__(\"math\").isinf($1)")
+pub extern fn mathIsInf(x: Float) -> Bool
+
+@foreign("math", "trunc", "__import__(\"math\").trunc($1)")
+pub extern fn mathTrunc(x: Float) -> Int
+
+@foreign("math", "hypot", "__import__(\"math\").hypot($1, $2)")
+pub extern fn mathHypot(a: Float, b: Float) -> Float
+
+// ---------------------------------------------------------------------------
+// os / os.path
+// ---------------------------------------------------------------------------
+
+@foreign("os", "getcwd", "__import__(\"os\").getcwd()")
+pub extern fn osGetcwd() !io -> Str
+
+@foreign("os", "listdir", "__import__(\"os\").listdir($1)")
+pub extern fn osListdir(path: Str) !io -> List<Str>
+
+@foreign("os", "makedirs", "__import__(\"os\").makedirs($1, exist_ok=True)")
+pub extern fn osMakedirs(path: Str) !io -> Unit
+
+@foreign("os", "remove", "__import__(\"os\").remove($1)")
+pub extern fn osRemove(path: Str) !io -> Unit
+
+@foreign("os", "rename", "__import__(\"os\").rename($1, $2)")
+pub extern fn osRename(src: Str, dst: Str) !io -> Unit
+
+@foreign("os", "getenv", "__import__(\"os\").getenv($1)")
+pub extern fn osGetenv(key: Str) !io -> Option<Str>
+
+@foreign("os", "getenv", "__import__(\"os\").getenv($1, $2)")
+pub extern fn osGetenvDefault(key: Str, default_: Str) !io -> Str
+
+@foreign("os.path", "join", "__import__(\"os\").path.join($1, $2)")
+pub extern fn pathJoin(a: Str, b: Str) -> Str
+
+@foreign("os.path", "join", "__import__(\"os\").path.join($1, $2, $3)")
+pub extern fn pathJoin3(a: Str, b: Str, c: Str) -> Str
+
+@foreign("os.path", "exists", "__import__(\"os\").path.exists($1)")
+pub extern fn pathExists(p: Str) !io -> Bool
+
+@foreign("os.path", "dirname", "__import__(\"os\").path.dirname($1)")
+pub extern fn pathDirname(p: Str) -> Str
+
+@foreign("os.path", "basename", "__import__(\"os\").path.basename($1)")
+pub extern fn pathBasename(p: Str) -> Str
+
+@foreign("os.path", "splitext", "__import__(\"os\").path.splitext($1)")
+pub extern fn pathSplitext(p: Str) -> Str
+
+@foreign("os.path", "abspath", "__import__(\"os\").path.abspath($1)")
+pub extern fn pathAbspath(p: Str) -> Str
+
+@foreign("os.path", "isfile", "__import__(\"os\").path.isfile($1)")
+pub extern fn pathIsFile(p: Str) !io -> Bool
+
+@foreign("os.path", "isdir", "__import__(\"os\").path.isdir($1)")
+pub extern fn pathIsDir(p: Str) !io -> Bool
+
+// ---------------------------------------------------------------------------
+// json
+// ---------------------------------------------------------------------------
+
+@foreign("json", "dumps", "__import__(\"json\").dumps($1)")
+pub extern fn jsonDumps(obj: Str) -> Str
+
+@foreign("json", "dumps", "__import__(\"json\").dumps($1, indent=$2)")
+pub extern fn jsonDumpsIndented(obj: Str, indent: Int) -> Str
+
+@foreign("json", "loads", "__import__(\"json\").loads($1)")
+pub extern fn jsonLoads(s: Str) -> Str
+
+// ---------------------------------------------------------------------------
+// re
+// ---------------------------------------------------------------------------
+
+@foreign("re", "match", "__import__(\"re\").match($2, $1)")
+pub extern fn reMatch(s: Str, pattern: Str) -> Option<Str>
+
+@foreign("re", "search", "__import__(\"re\").search($2, $1)")
+pub extern fn reSearch(s: Str, pattern: Str) -> Option<Str>
+
+@foreign("re", "findall", "__import__(\"re\").findall($2, $1)")
+pub extern fn reFindall(s: Str, pattern: Str) -> List<Str>
+
+@foreign("re", "sub", "__import__(\"re\").sub($2, $3, $1)")
+pub extern fn reSub(s: Str, pattern: Str, repl: Str) -> Str
+
+@foreign("re", "split", "__import__(\"re\").split($2, $1)")
+pub extern fn reSplit(s: Str, pattern: Str) -> List<Str>
+
+@foreign("re", "compile", "__import__(\"re\").compile($1)")
+pub extern fn reCompile(pattern: Str) -> Str
+
+@foreign("re", "fullmatch", "__import__(\"re\").fullmatch($2, $1)")
+pub extern fn reFullmatch(s: Str, pattern: Str) -> Option<Str>
+
+// ---------------------------------------------------------------------------
+// sys
+// ---------------------------------------------------------------------------
+
+@foreign("sys", "argv", "__import__(\"sys\").argv")
+pub extern fn sysArgv() !io -> List<Str>
+
+@foreign("sys", "exit", "__import__(\"sys\").exit($1)")
+pub extern fn sysExit(code: Int) !io -> Unit
+
+@foreign("sys", "stdout.write", "__import__(\"sys\").stdout.write($1)")
+pub extern fn sysStdoutWrite(s: Str) !io -> Unit
+
+@foreign("sys", "stderr.write", "__import__(\"sys\").stderr.write($1)")
+pub extern fn sysStderrWrite(s: Str) !io -> Unit
+
+@foreign("sys", "stdin.readline", "__import__(\"sys\").stdin.readline()")
+pub extern fn sysReadline() !io -> Str
+
+// ---------------------------------------------------------------------------
+// datetime
+// ---------------------------------------------------------------------------
+
+@foreign("datetime", "now", "__import__(\"datetime\").datetime.now()")
+pub extern fn datetimeNow() !io -> Str
+
+@foreign("datetime", "utcnow", "__import__(\"datetime\").datetime.utcnow()")
+pub extern fn datetimeUtcNow() !io -> Str
+
+@foreign("datetime", "strftime", "$1.strftime($2)")
+pub extern fn datetimeStrftime(dt: Str, fmt: Str) -> Str
+
+@foreign("datetime", "strptime", "__import__(\"datetime\").datetime.strptime($1, $2)")
+pub extern fn datetimeStrptime(s: Str, fmt: Str) -> Str
+
+@foreign("datetime", "timestamp", "$1.timestamp()")
+pub extern fn datetimeTimestamp(dt: Str) -> Float
+
+@foreign("datetime", "fromisoformat", "__import__(\"datetime\").datetime.fromisoformat($1)")
+pub extern fn datetimeFromIso(s: Str) -> Str
+
+@foreign("datetime", "isoformat", "$1.isoformat()")
+pub extern fn datetimeToIso(dt: Str) -> Str
+
+// ---------------------------------------------------------------------------
+// collections
+// ---------------------------------------------------------------------------
+
+@foreign("collections", "defaultdict", "__import__(\"collections\").defaultdict($1)")
+pub extern fn defaultdict(factory: fn() -> Str) -> Str
+
+@foreign("collections", "Counter", "__import__(\"collections\").Counter($1)")
+pub extern fn counter(lst: List<Str>) -> Str
+
+@foreign("collections", "Counter", "__import__(\"collections\").Counter()")
+pub extern fn counterEmpty() -> Str
+
+@foreign("collections", "deque", "__import__(\"collections\").deque($1)")
+pub extern fn deque(lst: List<Str>) -> Str
+
+@foreign("collections", "deque", "__import__(\"collections\").deque()")
+pub extern fn dequeEmpty() -> Str
+
+@foreign("collections", "OrderedDict", "__import__(\"collections\").OrderedDict()")
+pub extern fn orderedDict() -> Str
+
+@foreign("collections", "namedtuple", "__import__(\"collections\").namedtuple($1, $2)")
+pub extern fn namedtuple(name: Str, fields: Str) -> Str
+
+// ---------------------------------------------------------------------------
+// itertools
+// ---------------------------------------------------------------------------
+
+@foreign("itertools", "chain", "list(__import__(\"itertools\").chain($1, $2))")
+pub extern fn itertoolsChain(a: List<Str>, b: List<Str>) -> List<Str>
+
+@foreign("itertools", "chain.from_iterable", "list(__import__(\"itertools\").chain.from_iterable($1))")
+pub extern fn itertoolsChainFromIterable(lsts: List<List<Str>>) -> List<Str>
+
+@foreign("itertools", "product", "list(__import__(\"itertools\").product($1, $2))")
+pub extern fn itertoolsProduct(a: List<Str>, b: List<Str>) -> List<Str>
+
+@foreign("itertools", "combinations", "list(__import__(\"itertools\").combinations($1, $2))")
+pub extern fn itertoolsCombinations(lst: List<Str>, r: Int) -> List<Str>
+
+@foreign("itertools", "permutations", "list(__import__(\"itertools\").permutations($1, $2))")
+pub extern fn itertoolsPermutations(lst: List<Str>, r: Int) -> List<Str>
+
+@foreign("itertools", "groupby", "[(k, list(v)) for k, v in __import__(\"itertools\").groupby($1, $2)]")
+pub extern fn itertoolsGroupby(lst: List<Str>, key: fn(Str) -> Str) -> List<Str>
+
+@foreign("itertools", "islice", "list(__import__(\"itertools\").islice($1, $2))")
+pub extern fn itertoolsIslice(lst: List<Str>, n: Int) -> List<Str>
+
+@foreign("itertools", "repeat", "list(__import__(\"itertools\").repeat($1, $2))")
+pub extern fn itertoolsRepeat(val: Str, n: Int) -> List<Str>
+
+// ---------------------------------------------------------------------------
+// pathlib
+// ---------------------------------------------------------------------------
+
+@foreign("pathlib", "Path", "__import__(\"pathlib\").Path($1)")
+pub extern fn pathlibPath(s: Str) -> Str
+
+@foreign("pathlib", "Path.read_text", "__import__(\"pathlib\").Path($1).read_text()")
+pub extern fn pathlibReadText(p: Str) !io -> Str
+
+@foreign("pathlib", "Path.write_text", "__import__(\"pathlib\").Path($1).write_text($2)")
+pub extern fn pathlibWriteText(p: Str, content: Str) !io -> Unit
+
+@foreign("pathlib", "Path.exists", "__import__(\"pathlib\").Path($1).exists()")
+pub extern fn pathlibExists(p: Str) !io -> Bool
+
+@foreign("pathlib", "Path.mkdir", "__import__(\"pathlib\").Path($1).mkdir(parents=True, exist_ok=True)")
+pub extern fn pathlibMkdir(p: Str) !io -> Unit
+
+@foreign("pathlib", "Path.glob", "list(__import__(\"pathlib\").Path($1).glob($2))")
+pub extern fn pathlibGlob(p: Str, pattern: Str) !io -> List<Str>
+
+// ---------------------------------------------------------------------------
+// random
+// ---------------------------------------------------------------------------
+
+@foreign("random", "random", "__import__(\"random\").random()")
+pub extern fn randomFloat() !io -> Float
+
+@foreign("random", "randint", "__import__(\"random\").randint($1, $2)")
+pub extern fn randomInt(lo: Int, hi: Int) !io -> Int
+
+@foreign("random", "choice", "__import__(\"random\").choice($1)")
+pub extern fn randomChoice(lst: List<Str>) !io -> Str
+
+@foreign("random", "shuffle", "__import__(\"random\").shuffle($1)")
+pub extern fn randomShuffle(lst: List<Str>) !io -> Unit
+
+@foreign("random", "sample", "__import__(\"random\").sample($1, $2)")
+pub extern fn randomSample(lst: List<Str>, k: Int) !io -> List<Str>
+
+@foreign("random", "seed", "__import__(\"random\").seed($1)")
+pub extern fn randomSeed(n: Int) !io -> Unit
+
+// ---------------------------------------------------------------------------
+// functools
+// ---------------------------------------------------------------------------
+
+@foreign("functools", "reduce", "__import__(\"functools\").reduce($2, $1, $3)")
+pub extern fn functoolsReduce(lst: List<Str>, f: fn(Str, Str) -> Str, init: Str) -> Str
+
+@foreign("functools", "partial", "__import__(\"functools\").partial($1, $2)")
+pub extern fn functoolsPartial(f: fn(Str) -> Str, arg: Str) -> fn() -> Str
+
+@foreign("functools", "lru_cache", "__import__(\"functools\").lru_cache(maxsize=$1)($2)")
+pub extern fn functoolsLruCache(maxsize: Int, f: fn(Str) -> Str) -> fn(Str) -> Str

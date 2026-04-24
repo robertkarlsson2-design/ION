@@ -1,0 +1,61 @@
+id: type-predicate-fn
+language: typescript
+# Matches: function isString(x: unknown): x is string { return typeof x === "string"; }
+# tree-sitter-typescript: function_declaration where the return type annotation
+# contains a type_predicate node (x is string) instead of a plain type.
+# Ion treatment: drop the "x is T" return annotation — emit as a plain Bool-returning
+# function.  Ion has no type predicate mechanism; the boolean result is preserved.
+match:
+  nodeType: function_declaration
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: formal_parameters
+        capture: $PARAMS
+    - pattern:
+        nodeType: type_annotation
+        children:
+          - pattern:
+              nodeType: type_predicate
+              capture: $PREDICATE
+    - pattern:
+        nodeType: statement_block
+        capture: $BODY
+conditions:
+  - kind: has-child
+    nodeType: type_annotation
+emit:
+  kind: Let
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  bindingType:
+    kind: Bool
+  value:
+    kind: Abs
+    params: []
+    captures: []
+    body:
+      kind: Var
+      name:
+        metavar: $BODY
+        field: text
+      symbolId:
+        metavar: $BODY
+        field: text
+      type:
+        kind: Bool
+    type:
+      kind: Bool
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int

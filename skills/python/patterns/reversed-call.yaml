@@ -1,0 +1,49 @@
+id: reversed-call
+language: python
+# Matches: list(reversed(lst))
+# Emits:   reverse(lst)  — Ion prelude `reverse`
+match:
+  nodeType: call
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $LIST_FN
+    - pattern:
+        nodeType: argument_list
+        children:
+          - pattern:
+              nodeType: call
+              children:
+                - pattern:
+                    nodeType: identifier
+                    capture: $REV_FN
+                - pattern:
+                    nodeType: argument_list
+                    children:
+                      - pattern:
+                          capture: $LST
+conditions:
+  - kind: text-equals
+    var: $LIST_FN
+    value: "list"
+  - kind: text-equals
+    var: $REV_FN
+    value: "reversed"
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: reverse
+    symbolId: reverse
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $LST
+        field: text
+      symbolId:
+        metavar: $LST
+        field: text
+      type:
+        kind: Never

@@ -1,0 +1,45 @@
+id: optional-param
+language: typescript
+# Matches: optional parameters in function signatures — (x?: string)
+# tree-sitter-typescript node: optional_parameter
+# Children: identifier (name) + ? token + type_annotation? (type)
+# Ion treatment: optional parameters map to Option<T> in Ion.
+# The emitter will render Option<T> as `T | null` in the TS output.
+match:
+  nodeType: optional_parameter
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: type_annotation
+        capture: $TYPE
+emit:
+  kind: Abs
+  params:
+    - name:
+        metavar: $NAME
+        field: text
+      symbolId:
+        metavar: $NAME
+        field: text
+      # Option wraps the declared type; ingestion engine resolves the inner type
+      # from $TYPE's text.  Here we emit Never as a placeholder that the type
+      # resolver replaces with Option<resolvedType>.
+      type:
+        kind: Option
+        inner:
+          kind: Never
+      span:
+        metavar: $NAME
+        field: span
+  captures: []
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int
+  type:
+    kind: Never

@@ -1,0 +1,39 @@
+id: sum-call
+language: python
+# Matches: sum(lst)
+# Emits:   sum(lst)  — Ion prelude `sum`
+match:
+  nodeType: call
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $FN
+    - pattern:
+        nodeType: argument_list
+        children:
+          - pattern:
+              capture: $LST
+conditions:
+  - kind: text-equals
+    var: $FN
+    value: "sum"
+  - kind: has-children
+    count: 1
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: sum
+    symbolId: sum
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $LST
+        field: text
+      symbolId:
+        metavar: $LST
+        field: text
+      type:
+        kind: Never

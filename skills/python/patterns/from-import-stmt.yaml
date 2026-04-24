@@ -1,0 +1,33 @@
+id: from-import-stmt
+language: python
+# Matches: from module import name
+# Emits:   ModuleRef (the ingestion engine records which symbols are imported
+#           so they can be resolved to @foreign declarations in stdlib.ion)
+# tree-sitter-python: import_from_statement has dotted_name + imported_name children.
+match:
+  nodeType: import_from_statement
+  children:
+    - pattern:
+        capture: $MODULE
+    - pattern:
+        capture: $NAMES
+emit:
+  kind: ModuleRef
+  modulePath:
+    metavar: $MODULE
+    field: text
+  symbolId:
+    metavar: $MODULE
+    field: text
+  names:
+    kind: Var
+    name:
+      metavar: $NAMES
+      field: text
+    symbolId:
+      metavar: $NAMES
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never

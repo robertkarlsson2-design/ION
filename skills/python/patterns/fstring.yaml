@@ -1,0 +1,31 @@
+id: fstring
+language: python
+# Matches: f"text {expr} ..."  (Python f-string / interpolated_string)
+# Emits:   ForeignRef wrapping str.format — Ion has no native string interpolation.
+# The whole f-string text is captured and emitted as-is via a ForeignRef template
+# so downstream code sees the Python f-string verbatim.
+# tree-sitter-python represents f-strings as `string` nodes whose first child's
+# text starts with 'f"' or "f'".
+match:
+  nodeType: string
+  children:
+    - pattern:
+        capture: $FSTR
+conditions:
+  - kind: text-starts-with
+    var: $FSTR
+    value: "f\""
+emit:
+  kind: ForeignRef
+  target: fstring
+  module: ""
+  symbol: fstring
+  sig:
+    params: []
+    ret:
+      kind: Str
+    template:
+      metavar: $FSTR
+      field: text
+  type:
+    kind: Str

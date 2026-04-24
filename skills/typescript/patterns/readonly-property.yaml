@@ -1,0 +1,32 @@
+id: readonly-property
+language: typescript
+# Matches: readonly fields in class or interface bodies
+# tree-sitter-typescript node: public_field_definition with readonly modifier
+# e.g. class Foo { readonly name: string = ""; }
+# Ion treatment: readonly is dropped — Ion fields are immutable by default.
+match:
+  nodeType: public_field_definition
+  children:
+    - pattern:
+        nodeType: readonly
+        capture: $READONLY_KW
+    - pattern:
+        nodeType: property_identifier
+        capture: $NAME
+    - pattern:
+        nodeType: type_annotation
+        capture: $TYPE
+conditions:
+  - kind: text-equals
+    var: $READONLY_KW
+    value: "readonly"
+emit:
+  kind: Var
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  type:
+    kind: Never

@@ -1,0 +1,39 @@
+id: len-call
+language: python
+# Matches: len(x)
+# Emits:   length(x)  — Ion prelude `length` maps to Python `len(x)`
+match:
+  nodeType: call
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $FN
+    - pattern:
+        nodeType: argument_list
+        children:
+          - pattern:
+              capture: $ARG
+conditions:
+  - kind: text-equals
+    var: $FN
+    value: "len"
+  - kind: has-children
+    count: 1
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: length
+    symbolId: length
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $ARG
+        field: text
+      symbolId:
+        metavar: $ARG
+        field: text
+      type:
+        kind: Never

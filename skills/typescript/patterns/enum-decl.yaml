@@ -1,0 +1,28 @@
+id: enum-decl
+language: typescript
+# Matches: enum Color { Red, Green, Blue }
+# tree-sitter-typescript node: enum_declaration
+# Children: identifier (name) + enum_body (contains enum_assignment or identifier children)
+# Ion representation: ADT with one unit variant per member.
+# Numeric/string initializers in enum members are ignored — values are not
+# representable in Ion ADTs and the variant tag is the canonical identity.
+match:
+  nodeType: enum_declaration
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: enum_body
+        capture: $BODY
+emit:
+  kind: AdtDecl
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  # Variants are extracted by the ingestion engine from the enum_body children.
+  # Each identifier child of enum_body becomes a zero-field variant.
+  variants: []

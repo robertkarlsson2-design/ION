@@ -1,0 +1,55 @@
+id: if-else-expr
+language: python
+# Matches: a if cond else b   (Python conditional_expression)
+# Emits:   if cond then a else b
+match:
+  nodeType: conditional_expression
+  children:
+    - pattern:
+        capture: $THEN
+    - pattern:
+        capture: $COND
+    - pattern:
+        capture: $ELSE
+emit:
+  kind: Case
+  scrutinee:
+    kind: Var
+    name:
+      metavar: $COND
+      field: text
+    symbolId:
+      metavar: $COND
+      field: text
+    type:
+      kind: Never
+  arms:
+    - pattern:
+        kind: Literal
+        value:
+          kind: Bool
+          value: true
+      body:
+        kind: Var
+        name:
+          metavar: $THEN
+          field: text
+        symbolId:
+          metavar: $THEN
+          field: text
+        type:
+          kind: Never
+    - pattern:
+        kind: Wildcard
+      body:
+        kind: Var
+        name:
+          metavar: $ELSE
+          field: text
+        symbolId:
+          metavar: $ELSE
+          field: text
+        type:
+          kind: Never
+  type:
+    kind: Never

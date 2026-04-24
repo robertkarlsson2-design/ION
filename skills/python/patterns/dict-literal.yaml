@@ -1,0 +1,16 @@
+id: dict-literal
+language: python
+# Matches: {"key": value, ...}
+# Emits:   {key: value}  (Ion MapLit)
+# Python dictionary node contains pair children with key/value.
+match:
+  nodeType: dictionary
+  children:
+    - pattern:
+        capture: $$$PAIRS
+      isSequence: true
+emit:
+  kind: MapLit
+  entries: []
+  type:
+    kind: Never

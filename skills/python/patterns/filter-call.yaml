@@ -1,0 +1,60 @@
+id: filter-call
+language: python
+# Matches: list(filter(pred, lst))
+# Emits:   filter(lst, pred)  — Ion prelude `filter`
+match:
+  nodeType: call
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $LIST_FN
+    - pattern:
+        nodeType: argument_list
+        children:
+          - pattern:
+              nodeType: call
+              children:
+                - pattern:
+                    nodeType: identifier
+                    capture: $FILTER_FN
+                - pattern:
+                    nodeType: argument_list
+                    children:
+                      - pattern:
+                          capture: $PRED
+                      - pattern:
+                          capture: $LST
+conditions:
+  - kind: text-equals
+    var: $LIST_FN
+    value: "list"
+  - kind: text-equals
+    var: $FILTER_FN
+    value: "filter"
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: filter
+    symbolId: filter
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $LST
+        field: text
+      symbolId:
+        metavar: $LST
+        field: text
+      type:
+        kind: Never
+    - kind: Var
+      name:
+        metavar: $PRED
+        field: text
+      symbolId:
+        metavar: $PRED
+        field: text
+      type:
+        kind: Never

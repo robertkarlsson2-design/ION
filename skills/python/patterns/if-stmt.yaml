@@ -1,0 +1,57 @@
+id: if-stmt
+language: python
+# Matches: if cond: block else: block
+# Emits:   case expression with two arms (then / else)
+match:
+  nodeType: if_statement
+  children:
+    - pattern:
+        capture: $COND
+    - pattern:
+        nodeType: block
+        capture: $THEN
+    - pattern:
+        nodeType: else_clause
+        capture: $ELSE
+emit:
+  kind: Case
+  scrutinee:
+    kind: Var
+    name:
+      metavar: $COND
+      field: text
+    symbolId:
+      metavar: $COND
+      field: text
+    type:
+      kind: Never
+  arms:
+    - pattern:
+        kind: Literal
+        value:
+          kind: Bool
+          value: true
+      body:
+        kind: Var
+        name:
+          metavar: $THEN
+          field: text
+        symbolId:
+          metavar: $THEN
+          field: text
+        type:
+          kind: Never
+    - pattern:
+        kind: Wildcard
+      body:
+        kind: Var
+        name:
+          metavar: $ELSE
+          field: text
+        symbolId:
+          metavar: $ELSE
+          field: text
+        type:
+          kind: Never
+  type:
+    kind: Never

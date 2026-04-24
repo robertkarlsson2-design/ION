@@ -1,0 +1,698 @@
+// TypeScript / Node.js standard library extern declarations.
+// Module: typescript.stdlib  Version: 0.1.0
+//
+// TypeScript shares the JS runtime (DOM, Node.js, V8), so most declarations
+// are identical to javascript/stdlib.ion.  This file re-exports the full JS
+// stdlib surface and adds TS-specific type utilities.
+//
+// Each declaration maps an Ion name to a runtime API via
+// @foreign(module, symbol, template) where $1..$N are positional args.
+
+// ---------------------------------------------------------------------------
+// console
+// ---------------------------------------------------------------------------
+
+@foreign("console", "log", "console.log($1)")
+pub extern fn consoleLog(msg: Str) !io -> Unit
+
+@foreign("console", "error", "console.error($1)")
+pub extern fn consoleError(msg: Str) !io -> Unit
+
+@foreign("console", "warn", "console.warn($1)")
+pub extern fn consoleWarn(msg: Str) !io -> Unit
+
+@foreign("console", "info", "console.info($1)")
+pub extern fn consoleInfo(msg: Str) !io -> Unit
+
+@foreign("console", "debug", "console.debug($1)")
+pub extern fn consoleDebug(msg: Str) !io -> Unit
+
+@foreign("console", "assert", "console.assert($1, $2)")
+pub extern fn consoleAssert(cond: Bool, msg: Str) !io -> Unit
+
+@foreign("console", "table", "console.table($1)")
+pub extern fn consoleTable(tbl: Str) !io -> Unit
+
+@foreign("console", "time", "console.time($1)")
+pub extern fn consoleTime(label: Str) !io -> Unit
+
+@foreign("console", "timeEnd", "console.timeEnd($1)")
+pub extern fn consoleTimeEnd(label: Str) !io -> Unit
+
+@foreign("console", "clear", "console.clear()")
+pub extern fn consoleClear() !io -> Unit
+
+// ---------------------------------------------------------------------------
+// Array instance methods
+// ---------------------------------------------------------------------------
+
+@foreign("", "push", "$1.push($2)")
+pub extern fn arrayPush(arr: List<Str>, item: Str) -> Int
+
+@foreign("", "pop", "$1.pop()")
+pub extern fn arrayPop(arr: List<Str>) -> Str
+
+@foreign("", "shift", "$1.shift()")
+pub extern fn arrayShift(arr: List<Str>) -> Str
+
+@foreign("", "unshift", "$1.unshift($2)")
+pub extern fn arrayUnshift(arr: List<Str>, item: Str) -> Int
+
+@foreign("", "indexOf", "$1.indexOf($2)")
+pub extern fn arrayIndexOf(arr: List<Str>, item: Str) -> Int
+
+@foreign("", "lastIndexOf", "$1.lastIndexOf($2)")
+pub extern fn arrayLastIndexOf(arr: List<Str>, item: Str) -> Int
+
+@foreign("", "includes", "$1.includes($2)")
+pub extern fn arrayIncludes(arr: List<Str>, item: Str) -> Bool
+
+@foreign("", "find", "$1.find($2)")
+pub extern fn arrayFind(arr: List<Str>, pred: fn(Str) -> Bool) -> Option<Str>
+
+@foreign("", "findIndex", "$1.findIndex($2)")
+pub extern fn arrayFindIndex(arr: List<Str>, pred: fn(Str) -> Bool) -> Int
+
+@foreign("", "map", "$1.map($2)")
+pub extern fn arrayMap(arr: List<Str>, f: fn(Str) -> Str) -> List<Str>
+
+@foreign("", "filter", "$1.filter($2)")
+pub extern fn arrayFilter(arr: List<Str>, pred: fn(Str) -> Bool) -> List<Str>
+
+@foreign("", "reduce", "$1.reduce($2, $3)")
+pub extern fn arrayReduce(arr: List<Str>, f: fn(Str, Str) -> Str, init: Str) -> Str
+
+@foreign("", "forEach", "$1.forEach($2)")
+pub extern fn arrayForEach(arr: List<Str>, f: fn(Str) -> Unit) -> Unit
+
+@foreign("", "some", "$1.some($2)")
+pub extern fn arraySome(arr: List<Str>, pred: fn(Str) -> Bool) -> Bool
+
+@foreign("", "every", "$1.every($2)")
+pub extern fn arrayEvery(arr: List<Str>, pred: fn(Str) -> Bool) -> Bool
+
+@foreign("", "flat", "$1.flat()")
+pub extern fn arrayFlat(arr: List<List<Str>>) -> List<Str>
+
+@foreign("", "flatMap", "$1.flatMap($2)")
+pub extern fn arrayFlatMap(arr: List<Str>, f: fn(Str) -> List<Str>) -> List<Str>
+
+@foreign("", "reverse", "$1.reverse()")
+pub extern fn arrayReverse(arr: List<Str>) -> List<Str>
+
+@foreign("", "sort", "$1.sort()")
+pub extern fn arraySort(arr: List<Str>) -> List<Str>
+
+@foreign("", "sortWith", "$1.sort($2)")
+pub extern fn arraySortWith(arr: List<Str>, cmp: fn(Str, Str) -> Int) -> List<Str>
+
+@foreign("", "join", "$1.join($2)")
+pub extern fn arrayJoin(arr: List<Str>, sep: Str) -> Str
+
+@foreign("", "concat", "$1.concat($2)")
+pub extern fn arrayConcat(arr: List<Str>, other: List<Str>) -> List<Str>
+
+@foreign("", "slice", "$1.slice($2, $3)")
+pub extern fn arraySlice(arr: List<Str>, start: Int, end: Int) -> List<Str>
+
+@foreign("", "splice", "$1.splice($2, $3)")
+pub extern fn arraySplice(arr: List<Str>, start: Int, deleteCount: Int) -> List<Str>
+
+@foreign("", "fill", "$1.fill($2)")
+pub extern fn arrayFill(arr: List<Str>, value: Str) -> List<Str>
+
+@foreign("", "keys", "$1.keys()")
+pub extern fn arrayKeys(arr: List<Str>) -> List<Int>
+
+@foreign("", "values", "$1.values()")
+pub extern fn arrayValues(arr: List<Str>) -> List<Str>
+
+@foreign("", "entries", "$1.entries()")
+pub extern fn arrayEntries(arr: List<Str>) -> List<Str>
+
+@foreign("", "length", "$1.length")
+pub extern fn arrayLength(arr: List<Str>) -> Int
+
+// Array static methods
+
+@foreign("Array", "from", "Array.from($1)")
+pub extern fn arrayFrom(iterable: Str) -> List<Str>
+
+@foreign("Array", "isArray", "Array.isArray($1)")
+pub extern fn arrayIsArray(value: Str) -> Bool
+
+@foreign("Array", "of", "Array.of($1)")
+pub extern fn arrayOf(item: Str) -> List<Str>
+
+// ---------------------------------------------------------------------------
+// Object
+// ---------------------------------------------------------------------------
+
+@foreign("Object", "keys", "Object.keys($1)")
+pub extern fn objectKeys(obj: Str) -> List<Str>
+
+@foreign("Object", "values", "Object.values($1)")
+pub extern fn objectValues(obj: Str) -> List<Str>
+
+@foreign("Object", "entries", "Object.entries($1)")
+pub extern fn objectEntries(obj: Str) -> List<Str>
+
+@foreign("Object", "assign", "Object.assign($1, $2)")
+pub extern fn objectAssign(target: Str, source: Str) -> Str
+
+@foreign("Object", "fromEntries", "Object.fromEntries($1)")
+pub extern fn objectFromEntries(entries: List<Str>) -> Str
+
+@foreign("Object", "create", "Object.create($1)")
+pub extern fn objectCreate(proto: Str) -> Str
+
+@foreign("Object", "freeze", "Object.freeze($1)")
+pub extern fn objectFreeze(obj: Str) -> Str
+
+@foreign("Object", "isFrozen", "Object.isFrozen($1)")
+pub extern fn objectIsFrozen(obj: Str) -> Bool
+
+@foreign("Object", "hasOwn", "Object.hasOwn($1, $2)")
+pub extern fn objectHasOwn(obj: Str, key: Str) -> Bool
+
+@foreign("Object", "getOwnPropertyNames", "Object.getOwnPropertyNames($1)")
+pub extern fn objectGetOwnPropertyNames(obj: Str) -> List<Str>
+
+// ---------------------------------------------------------------------------
+// String instance methods
+// ---------------------------------------------------------------------------
+
+@foreign("", "split", "$1.split($2)")
+pub extern fn strSplit(s: Str, sep: Str) -> List<Str>
+
+@foreign("", "trim", "$1.trim()")
+pub extern fn strTrim(s: Str) -> Str
+
+@foreign("", "trimStart", "$1.trimStart()")
+pub extern fn strTrimStart(s: Str) -> Str
+
+@foreign("", "trimEnd", "$1.trimEnd()")
+pub extern fn strTrimEnd(s: Str) -> Str
+
+@foreign("", "includes", "$1.includes($2)")
+pub extern fn strIncludes(s: Str, sub: Str) -> Bool
+
+@foreign("", "startsWith", "$1.startsWith($2)")
+pub extern fn strStartsWith(s: Str, prefix: Str) -> Bool
+
+@foreign("", "endsWith", "$1.endsWith($2)")
+pub extern fn strEndsWith(s: Str, suffix: Str) -> Bool
+
+@foreign("", "replace", "$1.replace($2, $3)")
+pub extern fn strReplace(s: Str, pattern: Str, replacement: Str) -> Str
+
+@foreign("", "replaceAll", "$1.replaceAll($2, $3)")
+pub extern fn strReplaceAll(s: Str, pattern: Str, replacement: Str) -> Str
+
+@foreign("", "indexOf", "$1.indexOf($2)")
+pub extern fn strIndexOf(s: Str, sub: Str) -> Int
+
+@foreign("", "lastIndexOf", "$1.lastIndexOf($2)")
+pub extern fn strLastIndexOf(s: Str, sub: Str) -> Int
+
+@foreign("", "slice", "$1.slice($2, $3)")
+pub extern fn strSlice(s: Str, start: Int, end: Int) -> Str
+
+@foreign("", "substring", "$1.substring($2, $3)")
+pub extern fn strSubstring(s: Str, start: Int, end: Int) -> Str
+
+@foreign("", "toUpperCase", "$1.toUpperCase()")
+pub extern fn strToUpperCase(s: Str) -> Str
+
+@foreign("", "toLowerCase", "$1.toLowerCase()")
+pub extern fn strToLowerCase(s: Str) -> Str
+
+@foreign("", "charAt", "$1.charAt($2)")
+pub extern fn strCharAt(s: Str, index: Int) -> Str
+
+@foreign("", "charCodeAt", "$1.charCodeAt($2)")
+pub extern fn strCharCodeAt(s: Str, index: Int) -> Int
+
+@foreign("", "padStart", "$1.padStart($2, $3)")
+pub extern fn strPadStart(s: Str, length: Int, pad: Str) -> Str
+
+@foreign("", "padEnd", "$1.padEnd($2, $3)")
+pub extern fn strPadEnd(s: Str, length: Int, pad: Str) -> Str
+
+@foreign("", "repeat", "$1.repeat($2)")
+pub extern fn strRepeat(s: Str, count: Int) -> Str
+
+@foreign("", "match", "$1.match($2)")
+pub extern fn strMatch(s: Str, pattern: Str) -> Option<List<Str>>
+
+@foreign("", "length", "$1.length")
+pub extern fn strLength(s: Str) -> Int
+
+@foreign("String", "fromCharCode", "String.fromCharCode($1)")
+pub extern fn strFromCharCode(code: Int) -> Str
+
+// ---------------------------------------------------------------------------
+// Math
+// ---------------------------------------------------------------------------
+
+@foreign("Math", "floor", "Math.floor($1)")
+pub extern fn mathFloor(x: Float) -> Int
+
+@foreign("Math", "ceil", "Math.ceil($1)")
+pub extern fn mathCeil(x: Float) -> Int
+
+@foreign("Math", "round", "Math.round($1)")
+pub extern fn mathRound(x: Float) -> Int
+
+@foreign("Math", "abs", "Math.abs($1)")
+pub extern fn mathAbs(x: Float) -> Float
+
+@foreign("Math", "max", "Math.max($1, $2)")
+pub extern fn mathMax(a: Float, b: Float) -> Float
+
+@foreign("Math", "min", "Math.min($1, $2)")
+pub extern fn mathMin(a: Float, b: Float) -> Float
+
+@foreign("Math", "sqrt", "Math.sqrt($1)")
+pub extern fn mathSqrt(x: Float) -> Float
+
+@foreign("Math", "pow", "Math.pow($1, $2)")
+pub extern fn mathPow(base: Float, exp: Float) -> Float
+
+@foreign("Math", "log", "Math.log($1)")
+pub extern fn mathLog(x: Float) -> Float
+
+@foreign("Math", "log2", "Math.log2($1)")
+pub extern fn mathLog2(x: Float) -> Float
+
+@foreign("Math", "log10", "Math.log10($1)")
+pub extern fn mathLog10(x: Float) -> Float
+
+@foreign("Math", "random", "Math.random()")
+pub extern fn mathRandom() -> Float
+
+@foreign("Math", "sign", "Math.sign($1)")
+pub extern fn mathSign(x: Float) -> Int
+
+@foreign("Math", "trunc", "Math.trunc($1)")
+pub extern fn mathTrunc(x: Float) -> Int
+
+@foreign("Math", "hypot", "Math.hypot($1, $2)")
+pub extern fn mathHypot(a: Float, b: Float) -> Float
+
+@foreign("Math", "sin", "Math.sin($1)")
+pub extern fn mathSin(x: Float) -> Float
+
+@foreign("Math", "cos", "Math.cos($1)")
+pub extern fn mathCos(x: Float) -> Float
+
+@foreign("Math", "tan", "Math.tan($1)")
+pub extern fn mathTan(x: Float) -> Float
+
+@foreign("Math", "PI", "Math.PI")
+pub extern val mathPI: Float
+
+@foreign("Math", "E", "Math.E")
+pub extern val mathE: Float
+
+// ---------------------------------------------------------------------------
+// JSON
+// ---------------------------------------------------------------------------
+
+@foreign("JSON", "parse", "JSON.parse($1)")
+pub extern fn jsonParse(s: Str) -> Str
+
+@foreign("JSON", "stringify", "JSON.stringify($1)")
+pub extern fn jsonStringify(val: Str) -> Str
+
+@foreign("JSON", "stringify", "JSON.stringify($1, null, $2)")
+pub extern fn jsonStringifyIndented(val: Str, indent: Int) -> Str
+
+@foreign("JSON", "parse", "JSON.parse($1)")
+pub extern fn jsonParseOrNull(s: Str) -> Option<Str>
+
+// ---------------------------------------------------------------------------
+// Promise
+// ---------------------------------------------------------------------------
+
+@foreign("Promise", "all", "Promise.all($1)")
+pub extern fn promiseAll(promises: List<Str>) !async -> List<Str>
+
+@foreign("Promise", "race", "Promise.race($1)")
+pub extern fn promiseRace(promises: List<Str>) !async -> Str
+
+@foreign("Promise", "allSettled", "Promise.allSettled($1)")
+pub extern fn promiseAllSettled(promises: List<Str>) !async -> List<Str>
+
+@foreign("Promise", "any", "Promise.any($1)")
+pub extern fn promiseAny(promises: List<Str>) !async -> Str
+
+@foreign("Promise", "resolve", "Promise.resolve($1)")
+pub extern fn promiseResolve(value: Str) !async -> Str
+
+@foreign("Promise", "reject", "Promise.reject($1)")
+pub extern fn promiseReject(reason: Str) !async -> Str
+
+// ---------------------------------------------------------------------------
+// fetch (browser + Node.js 18+)
+// ---------------------------------------------------------------------------
+
+@foreign("", "fetch", "fetch($1)")
+pub extern fn fetchUrl(url: Str) !async !io -> Str
+
+@foreign("", "fetch", "fetch($1, $2)")
+pub extern fn fetchWithOptions(url: Str, opts: Str) !async !io -> Str
+
+@foreign("", "json", "$1.json()")
+pub extern fn responseJson(response: Str) !async -> Str
+
+@foreign("", "text", "$1.text()")
+pub extern fn responseText(response: Str) !async -> Str
+
+@foreign("", "ok", "$1.ok")
+pub extern fn responseOk(response: Str) -> Bool
+
+@foreign("", "status", "$1.status")
+pub extern fn responseStatus(response: Str) -> Int
+
+@foreign("", "headers", "$1.headers")
+pub extern fn responseHeaders(response: Str) -> Str
+
+// ---------------------------------------------------------------------------
+// DOM (browser)
+// ---------------------------------------------------------------------------
+
+@foreign("document", "getElementById", "document.getElementById($1)")
+pub extern fn domGetById(id: Str) !io -> Option<Str>
+
+@foreign("document", "querySelector", "document.querySelector($1)")
+pub extern fn domQuerySelector(selector: Str) !io -> Option<Str>
+
+@foreign("document", "querySelectorAll", "document.querySelectorAll($1)")
+pub extern fn domQuerySelectorAll(selector: Str) !io -> List<Str>
+
+@foreign("document", "createElement", "document.createElement($1)")
+pub extern fn domCreateElement(tag: Str) !io -> Str
+
+@foreign("document", "createTextNode", "document.createTextNode($1)")
+pub extern fn domCreateTextNode(text: Str) !io -> Str
+
+@foreign("document", "body", "document.body")
+pub extern val domBody: Str
+
+@foreign("document", "title", "document.title")
+pub extern val domTitle: Str
+
+@foreign("", "addEventListener", "$1.addEventListener($2, $3)")
+pub extern fn domAddEventListener(el: Str, event: Str, handler: fn(Str) -> Unit) !io -> Unit
+
+@foreign("", "removeEventListener", "$1.removeEventListener($2, $3)")
+pub extern fn domRemoveEventListener(el: Str, event: Str, handler: fn(Str) -> Unit) !io -> Unit
+
+@foreign("", "appendChild", "$1.appendChild($2)")
+pub extern fn domAppendChild(parent: Str, child: Str) !io -> Str
+
+@foreign("", "removeChild", "$1.removeChild($2)")
+pub extern fn domRemoveChild(parent: Str, child: Str) !io -> Str
+
+@foreign("", "setAttribute", "$1.setAttribute($2, $3)")
+pub extern fn domSetAttribute(el: Str, name: Str, value: Str) !io -> Unit
+
+@foreign("", "getAttribute", "$1.getAttribute($2)")
+pub extern fn domGetAttribute(el: Str, name: Str) !io -> Option<Str>
+
+@foreign("", "textContent", "$1.textContent")
+pub extern fn domGetTextContent(el: Str) -> Str
+
+@foreign("", "innerHTML", "$1.innerHTML")
+pub extern fn domGetInnerHTML(el: Str) -> Str
+
+@foreign("window", "location", "window.location.href")
+pub extern val windowLocationHref: Str
+
+@foreign("window", "alert", "window.alert($1)")
+pub extern fn windowAlert(msg: Str) !io -> Unit
+
+@foreign("window", "confirm", "window.confirm($1)")
+pub extern fn windowConfirm(msg: Str) !io -> Bool
+
+@foreign("window", "setTimeout", "window.setTimeout($1, $2)")
+pub extern fn windowSetTimeout(fn: fn() -> Unit, ms: Int) !io -> Int
+
+@foreign("window", "clearTimeout", "window.clearTimeout($1)")
+pub extern fn windowClearTimeout(id: Int) !io -> Unit
+
+@foreign("window", "setInterval", "window.setInterval($1, $2)")
+pub extern fn windowSetInterval(fn: fn() -> Unit, ms: Int) !io -> Int
+
+@foreign("window", "clearInterval", "window.clearInterval($1)")
+pub extern fn windowClearInterval(id: Int) !io -> Unit
+
+// ---------------------------------------------------------------------------
+// node:fs/promises  (async)
+// ---------------------------------------------------------------------------
+
+@foreign("node:fs/promises", "readFile", "fs.readFile($1, $2)")
+pub extern fn fsReadFile(path: Str, encoding: Str) !async !io -> Str
+
+@foreign("node:fs/promises", "writeFile", "fs.writeFile($1, $2)")
+pub extern fn fsWriteFile(path: Str, content: Str) !async !io -> Unit
+
+@foreign("node:fs/promises", "appendFile", "fs.appendFile($1, $2)")
+pub extern fn fsAppendFile(path: Str, content: Str) !async !io -> Unit
+
+@foreign("node:fs/promises", "unlink", "fs.unlink($1)")
+pub extern fn fsUnlink(path: Str) !async !io -> Unit
+
+@foreign("node:fs/promises", "readdir", "fs.readdir($1)")
+pub extern fn fsReaddir(path: Str) !async !io -> List<Str>
+
+@foreign("node:fs/promises", "mkdir", "fs.mkdir($1, $2)")
+pub extern fn fsMkdir(path: Str, opts: Str) !async !io -> Unit
+
+@foreign("node:fs/promises", "stat", "fs.stat($1)")
+pub extern fn fsStat(path: Str) !async !io -> Str
+
+@foreign("node:fs/promises", "copyFile", "fs.copyFile($1, $2)")
+pub extern fn fsCopyFile(src: Str, dest: Str) !async !io -> Unit
+
+@foreign("node:fs/promises", "rename", "fs.rename($1, $2)")
+pub extern fn fsRename(src: Str, dest: Str) !async !io -> Unit
+
+@foreign("node:fs/promises", "access", "fs.access($1)")
+pub extern fn fsAccess(path: Str) !async !io -> Bool
+
+// node:fs  (sync)
+
+@foreign("node:fs", "readFileSync", "fs.readFileSync($1, $2)")
+pub extern fn fsReadFileSync(path: Str, encoding: Str) !io -> Str
+
+@foreign("node:fs", "writeFileSync", "fs.writeFileSync($1, $2)")
+pub extern fn fsWriteFileSync(path: Str, content: Str) !io -> Unit
+
+@foreign("node:fs", "existsSync", "fs.existsSync($1)")
+pub extern fn fsExistsSync(path: Str) !io -> Bool
+
+// ---------------------------------------------------------------------------
+// node:path
+// ---------------------------------------------------------------------------
+
+@foreign("node:path", "join", "path.join($1, $2)")
+pub extern fn pathJoin(a: Str, b: Str) -> Str
+
+@foreign("node:path", "resolve", "path.resolve($1)")
+pub extern fn pathResolve(p: Str) -> Str
+
+@foreign("node:path", "dirname", "path.dirname($1)")
+pub extern fn pathDirname(p: Str) -> Str
+
+@foreign("node:path", "basename", "path.basename($1)")
+pub extern fn pathBasename(p: Str) -> Str
+
+@foreign("node:path", "extname", "path.extname($1)")
+pub extern fn pathExtname(p: Str) -> Str
+
+@foreign("node:path", "relative", "path.relative($1, $2)")
+pub extern fn pathRelative(from: Str, to: Str) -> Str
+
+@foreign("node:path", "isAbsolute", "path.isAbsolute($1)")
+pub extern fn pathIsAbsolute(p: Str) -> Bool
+
+@foreign("node:path", "parse", "path.parse($1)")
+pub extern fn pathParse(p: Str) -> Str
+
+@foreign("node:path", "format", "path.format($1)")
+pub extern fn pathFormat(obj: Str) -> Str
+
+@foreign("node:path", "normalize", "path.normalize($1)")
+pub extern fn pathNormalize(p: Str) -> Str
+
+// ---------------------------------------------------------------------------
+// process (Node.js)
+// ---------------------------------------------------------------------------
+
+@foreign("process", "exit", "process.exit($1)")
+pub extern fn processExit(code: Int) !io -> Unit
+
+@foreign("process", "env", "process.env[$1]")
+pub extern fn processEnv(key: Str) !io -> Option<Str>
+
+@foreign("process", "argv", "process.argv")
+pub extern fn processArgv() !io -> List<Str>
+
+@foreign("process", "cwd", "process.cwd()")
+pub extern fn processCwd() !io -> Str
+
+// ---------------------------------------------------------------------------
+// Number
+// ---------------------------------------------------------------------------
+
+@foreign("Number", "parseInt", "Number.parseInt($1, $2)")
+pub extern fn numberParseInt(s: Str, radix: Int) -> Int
+
+@foreign("Number", "parseFloat", "Number.parseFloat($1)")
+pub extern fn numberParseFloat(s: Str) -> Float
+
+@foreign("Number", "isInteger", "Number.isInteger($1)")
+pub extern fn numberIsInteger(x: Float) -> Bool
+
+@foreign("Number", "isFinite", "Number.isFinite($1)")
+pub extern fn numberIsFinite(x: Float) -> Bool
+
+@foreign("Number", "isNaN", "Number.isNaN($1)")
+pub extern fn numberIsNaN(x: Float) -> Bool
+
+@foreign("Number", "toFixed", "$1.toFixed($2)")
+pub extern fn numberToFixed(x: Float, digits: Int) -> Str
+
+@foreign("Number", "toString", "$1.toString($2)")
+pub extern fn numberToString(x: Int, radix: Int) -> Str
+
+@foreign("Number", "MAX_SAFE_INTEGER", "Number.MAX_SAFE_INTEGER")
+pub extern val numberMaxSafeInt: Int
+
+@foreign("Number", "MIN_SAFE_INTEGER", "Number.MIN_SAFE_INTEGER")
+pub extern val numberMinSafeInt: Int
+
+// ---------------------------------------------------------------------------
+// TypeScript utility type helpers (runtime encodings)
+//
+// TypeScript utility types (Partial<T>, Readonly<T>, Record<K,V>, Pick<T,K>,
+// Omit<T,K>, Required<T>, NonNullable<T>, ReturnType<F>, Parameters<F>) are
+// compile-time only and have no runtime representation.  The externs below
+// expose the common *runtime* patterns that correspond to those utilities.
+// ---------------------------------------------------------------------------
+
+// Readonly — Object.freeze as a shallow Readonly<T> stand-in
+@foreign("Object", "freeze", "Object.freeze($1)")
+pub extern fn readonlyFreeze(obj: Str) -> Str
+
+// Record<string, V> construction via Object.fromEntries
+@foreign("Object", "fromEntries", "Object.fromEntries($1)")
+pub extern fn recordFromEntries(pairs: List<Str>) -> Str
+
+// Pick — runtime pick via Object.fromEntries + filter
+@foreign("", "pick", "Object.fromEntries(Object.entries($1).filter(([k]) => $2.includes(k)))")
+pub extern fn objectPick(obj: Str, keys: List<Str>) -> Str
+
+// Omit — runtime omit via Object.fromEntries + filter
+@foreign("", "omit", "Object.fromEntries(Object.entries($1).filter(([k]) => !$2.includes(k)))")
+pub extern fn objectOmit(obj: Str, keys: List<Str>) -> Str
+
+// ---------------------------------------------------------------------------
+// TypeScript-specific runtime guards
+// ---------------------------------------------------------------------------
+
+// typeof checks — emitted directly as JS typeof expressions
+@foreign("", "typeofString", "typeof $1 === \"string\"")
+pub extern fn isString(val: Str) -> Bool
+
+@foreign("", "typeofNumber", "typeof $1 === \"number\"")
+pub extern fn isNumber(val: Str) -> Bool
+
+@foreign("", "typeofBoolean", "typeof $1 === \"boolean\"")
+pub extern fn isBoolean(val: Str) -> Bool
+
+@foreign("", "typeofFunction", "typeof $1 === \"function\"")
+pub extern fn isFunction(val: Str) -> Bool
+
+@foreign("", "instanceof", "$1 instanceof $2")
+pub extern fn instanceOf(val: Str, ctor: Str) -> Bool
+
+// ---------------------------------------------------------------------------
+// Map (ES6)
+// ---------------------------------------------------------------------------
+
+@foreign("Map", "new", "new Map()")
+pub extern fn mapNew() -> Map<Str, Str>
+
+@foreign("Map", "newFromEntries", "new Map($1)")
+pub extern fn mapNewFromEntries(entries: List<Str>) -> Map<Str, Str>
+
+@foreign("", "get", "$1.get($2)")
+pub extern fn mapGet(m: Map<Str, Str>, key: Str) -> Option<Str>
+
+@foreign("", "set", "$1.set($2, $3)")
+pub extern fn mapSet(m: Map<Str, Str>, key: Str, value: Str) -> Map<Str, Str>
+
+@foreign("", "has", "$1.has($2)")
+pub extern fn mapHas(m: Map<Str, Str>, key: Str) -> Bool
+
+@foreign("", "delete", "$1.delete($2)")
+pub extern fn mapDelete(m: Map<Str, Str>, key: Str) -> Bool
+
+@foreign("", "size", "$1.size")
+pub extern fn mapSize(m: Map<Str, Str>) -> Int
+
+@foreign("", "keys", "$1.keys()")
+pub extern fn mapKeys(m: Map<Str, Str>) -> List<Str>
+
+@foreign("", "values", "$1.values()")
+pub extern fn mapValues(m: Map<Str, Str>) -> List<Str>
+
+@foreign("", "entries", "$1.entries()")
+pub extern fn mapEntries(m: Map<Str, Str>) -> List<Str>
+
+@foreign("", "clear", "$1.clear()")
+pub extern fn mapClear(m: Map<Str, Str>) !io -> Unit
+
+// ---------------------------------------------------------------------------
+// Set (ES6)
+// ---------------------------------------------------------------------------
+
+@foreign("Set", "new", "new Set()")
+pub extern fn setNew() -> Str
+
+@foreign("Set", "newFromArray", "new Set($1)")
+pub extern fn setNewFromArray(arr: List<Str>) -> Str
+
+@foreign("", "add", "$1.add($2)")
+pub extern fn setAdd(s: Str, val: Str) -> Str
+
+@foreign("", "has", "$1.has($2)")
+pub extern fn setHas(s: Str, val: Str) -> Bool
+
+@foreign("", "delete", "$1.delete($2)")
+pub extern fn setDelete(s: Str, val: Str) -> Bool
+
+@foreign("", "size", "$1.size")
+pub extern fn setSize(s: Str) -> Int
+
+// ---------------------------------------------------------------------------
+// Error construction
+// ---------------------------------------------------------------------------
+
+@foreign("Error", "new", "new Error($1)")
+pub extern fn newError(msg: Str) -> Str
+
+@foreign("TypeError", "new", "new TypeError($1)")
+pub extern fn newTypeError(msg: Str) -> Str
+
+@foreign("RangeError", "new", "new RangeError($1)")
+pub extern fn newRangeError(msg: Str) -> Str
+
+@foreign("", "message", "$1.message")
+pub extern fn errorMessage(err: Str) -> Str
+
+@foreign("", "stack", "$1.stack")
+pub extern fn errorStack(err: Str) -> Option<Str>

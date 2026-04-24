@@ -1,0 +1,39 @@
+id: print-call
+language: python
+# Matches: print(expr)
+# Emits:   print(expr)  — Ion prelude `print`
+match:
+  nodeType: call
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $FN
+    - pattern:
+        nodeType: argument_list
+        children:
+          - pattern:
+              capture: $ARG
+conditions:
+  - kind: text-equals
+    var: $FN
+    value: "print"
+  - kind: has-children
+    count: 1
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: print
+    symbolId: print
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $ARG
+        field: text
+      symbolId:
+        metavar: $ARG
+        field: text
+      type:
+        kind: Never

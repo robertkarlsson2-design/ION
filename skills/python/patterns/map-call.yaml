@@ -1,0 +1,61 @@
+id: map-call
+language: python
+# Matches: list(map(f, lst))
+# Emits:   map(lst, f)  — Ion prelude `map`
+# tree-sitter: outer call is list(...), inner is map(f, lst)
+match:
+  nodeType: call
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $LIST_FN
+    - pattern:
+        nodeType: argument_list
+        children:
+          - pattern:
+              nodeType: call
+              children:
+                - pattern:
+                    nodeType: identifier
+                    capture: $MAP_FN
+                - pattern:
+                    nodeType: argument_list
+                    children:
+                      - pattern:
+                          capture: $F
+                      - pattern:
+                          capture: $LST
+conditions:
+  - kind: text-equals
+    var: $LIST_FN
+    value: "list"
+  - kind: text-equals
+    var: $MAP_FN
+    value: "map"
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: map
+    symbolId: map
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $LST
+        field: text
+      symbolId:
+        metavar: $LST
+        field: text
+      type:
+        kind: Never
+    - kind: Var
+      name:
+        metavar: $F
+        field: text
+      symbolId:
+        metavar: $F
+        field: text
+      type:
+        kind: Never

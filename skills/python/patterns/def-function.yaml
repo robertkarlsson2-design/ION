@@ -1,0 +1,47 @@
+id: def-function
+language: python
+match:
+  nodeType: function_definition
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: parameters
+        capture: $PARAMS
+    - pattern:
+        nodeType: block
+        capture: $BODY
+emit:
+  kind: Let
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  bindingType:
+    kind: Never
+  value:
+    kind: Abs
+    params: []
+    captures: []
+    body:
+      kind: Var
+      name:
+        metavar: $BODY
+        field: text
+      symbolId:
+        metavar: $BODY
+        field: text
+      type:
+        kind: Never
+    type:
+      kind: Never
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int

@@ -1,0 +1,40 @@
+id: class-extends-implements
+language: typescript
+# Matches: class Foo extends Base implements Bar, Baz { ... }
+# tree-sitter-typescript: class_declaration with both class_heritage and implements_clause
+match:
+  nodeType: class_declaration
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: class_heritage
+        capture: $SUPER
+    - pattern:
+        nodeType: implements_clause
+        capture: $IFACES
+    - pattern:
+        nodeType: class_body
+        capture: $BODY
+conditions:
+  - kind: has-child
+    nodeType: class_heritage
+  - kind: has-child
+    nodeType: implements_clause
+  - kind: has-children
+    count: 4
+emit:
+  kind: OopClass
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  superClass:
+    metavar: $SUPER
+    field: text
+  interfaces: []
+  fields: []
+  methods: []

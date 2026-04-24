@@ -1,0 +1,27 @@
+id: not-expr
+language: python
+# Matches: not x
+# Emits:   !x  (Ion __not__ unary op)
+match:
+  nodeType: not_operator
+  children:
+    - pattern:
+        capture: $EXPR
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: __not__
+    symbolId: __not__
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $EXPR
+        field: text
+      symbolId:
+        metavar: $EXPR
+        field: text
+      type:
+        kind: Never

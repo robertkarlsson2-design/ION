@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Ion — The AI-Native Language" width="640">
+</p>
+
 # Ion
 
 **A token-efficient, AI-native programming language that compiles to anything.**

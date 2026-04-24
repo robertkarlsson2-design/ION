@@ -1,0 +1,38 @@
+id: class-dataclass
+language: python
+# Matches: @dataclass class Foo: ...  (decorated_definition wrapping class_definition)
+# Emits:   Ion data type declaration (AdtDecl with one variant)
+# The decorator child is a call or identifier; the inner class body becomes the ADT.
+match:
+  nodeType: decorated_definition
+  children:
+    - pattern:
+        nodeType: decorator
+        children:
+          - pattern:
+              nodeType: identifier
+              capture: $DECORATOR
+    - pattern:
+        nodeType: class_definition
+        children:
+          - pattern:
+              nodeType: identifier
+              capture: $NAME
+          - pattern:
+              nodeType: block
+              capture: $BODY
+conditions:
+  - kind: text-equals
+    var: $DECORATOR
+    value: "dataclass"
+emit:
+  kind: AdtDecl
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  variants: []
+  type:
+    kind: Never

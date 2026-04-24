@@ -1,0 +1,60 @@
+id: for-loop
+language: python
+# Matches: for x in lst: body
+# Emits:   forEach(lst, x -> body)
+# Python for_statement children: identifier, iterable expression, body block
+match:
+  nodeType: for_statement
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $VAR
+    - pattern:
+        capture: $LST
+    - pattern:
+        nodeType: block
+        capture: $BODY
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: forEach
+    symbolId: forEach
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $LST
+        field: text
+      symbolId:
+        metavar: $LST
+        field: text
+      type:
+        kind: Never
+    - kind: Abs
+      params:
+        - name:
+            metavar: $VAR
+            field: text
+          symbolId:
+            metavar: $VAR
+            field: text
+          type:
+            kind: Never
+          span:
+            metavar: $VAR
+            field: span
+      captures: []
+      body:
+        kind: Var
+        name:
+          metavar: $BODY
+          field: text
+        symbolId:
+          metavar: $BODY
+          field: text
+        type:
+          kind: Never
+      type:
+        kind: Never

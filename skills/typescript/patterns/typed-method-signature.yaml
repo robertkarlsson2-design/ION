@@ -1,0 +1,31 @@
+id: typed-method-signature
+language: typescript
+# Matches method signatures inside interface bodies
+# tree-sitter-typescript node: method_signature
+# e.g. interface Repo { find(id: string): Promise<User>; }
+# Children: property_identifier (name) + formal_parameters + type_annotation (return type)
+match:
+  nodeType: method_signature
+  children:
+    - pattern:
+        nodeType: property_identifier
+        capture: $NAME
+    - pattern:
+        nodeType: formal_parameters
+        capture: $PARAMS
+    - pattern:
+        nodeType: type_annotation
+        capture: $RETURN_TYPE
+emit:
+  kind: Abs
+  params: []
+  captures: []
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int
+  type:
+    kind: Never

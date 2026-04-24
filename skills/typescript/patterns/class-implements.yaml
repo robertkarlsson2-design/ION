@@ -1,0 +1,35 @@
+id: class-implements
+language: typescript
+# Matches: class Foo implements Bar { ... }
+# tree-sitter-typescript node: class_declaration
+# Children: identifier (name) + implements_clause + class_body
+# Note: class_heritage covers extends; implements_clause is TS-only.
+match:
+  nodeType: class_declaration
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: implements_clause
+        capture: $IFACES
+    - pattern:
+        nodeType: class_body
+        capture: $BODY
+conditions:
+  - kind: has-child
+    nodeType: implements_clause
+  - kind: has-children
+    count: 3
+emit:
+  kind: OopClass
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  # interfaces list is populated from implements_clause children by the ingestion engine.
+  interfaces: []
+  fields: []
+  methods: []

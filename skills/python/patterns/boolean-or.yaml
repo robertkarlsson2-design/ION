@@ -1,0 +1,45 @@
+id: boolean-or
+language: python
+# Matches: a or b
+# Emits:   a || b  (Ion __or__ binary op)
+match:
+  nodeType: boolean_operator
+  children:
+    - pattern:
+        capture: $LEFT
+    - pattern:
+        nodeType: identifier
+        capture: $OP
+    - pattern:
+        capture: $RIGHT
+conditions:
+  - kind: text-equals
+    var: $OP
+    value: "or"
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: __or__
+    symbolId: __or__
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $LEFT
+        field: text
+      symbolId:
+        metavar: $LEFT
+        field: text
+      type:
+        kind: Never
+    - kind: Var
+      name:
+        metavar: $RIGHT
+        field: text
+      symbolId:
+        metavar: $RIGHT
+        field: text
+      type:
+        kind: Never

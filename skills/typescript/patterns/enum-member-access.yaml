@@ -1,0 +1,34 @@
+id: enum-member-access
+language: typescript
+# Matches: Color.Red  (enum member access via member_expression)
+# This is the same as a normal property access in JS, but we record it as
+# a typed Accessor so the emitter knows the left side is an ADT tag holder.
+# tree-sitter: member_expression — same as JS, no TS-specific node.
+# We rely on the JS member-access pattern for basic cases; this pattern exists
+# to document that enum member accesses should produce Accessor nodes.
+match:
+  nodeType: member_expression
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $ENUM
+    - pattern:
+        nodeType: property_identifier
+        capture: $MEMBER
+emit:
+  kind: Accessor
+  receiver:
+    kind: Var
+    name:
+      metavar: $ENUM
+      field: text
+    symbolId:
+      metavar: $ENUM
+      field: text
+    type:
+      kind: Never
+  member:
+    metavar: $MEMBER
+    field: text
+  type:
+    kind: Never

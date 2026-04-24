@@ -1,0 +1,42 @@
+id: assignment
+language: python
+# Matches: x = expr  (simple assignment statement with identifier LHS)
+# Emits:   let x = expr (Ion Let binding)
+match:
+  nodeType: assignment
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        capture: $VALUE
+conditions:
+  - kind: has-children
+    count: 2
+emit:
+  kind: Let
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  bindingType:
+    kind: Never
+  value:
+    kind: Var
+    name:
+      metavar: $VALUE
+      field: text
+    symbolId:
+      metavar: $VALUE
+      field: text
+    type:
+      kind: Never
+  body:
+    kind: Literal
+    value:
+      kind: Int
+      value: 0
+    type:
+      kind: Int
