@@ -24,6 +24,7 @@ import type {
   CasePattern,
 } from '../../src/ir/nodes.js';
 import { expandTemplate, wrapEmitted } from '../../src/emit/template.js';
+import { SourceMapBuilder } from '../../src/emit/sourcemap.js';
 import type {
   JsNode,
   JsModule,
@@ -31,7 +32,7 @@ import type {
   JsClass,
   JsMethod,
 } from './js-ast.js';
-import { printJsModule, printJsExpr } from './printer.js';
+import { printJsModule, printJsExpr, printJsModuleWithMappings } from './printer.js';
 
 interface BuildCtx {
   readonly helpers: Map<string, JsNode>;
@@ -50,6 +51,30 @@ function assertSafeJsIdentifier(name: string, context: string): void {
  */
 export function emitJS(module: IonIRModule): string {
   return printJsModule(buildJsModule(module));
+}
+
+/**
+ * Emit an IonIRModule as JavaScript with an inlined ECMA Source Map v3.
+ * @param ionSourceFile - Absolute path to the originating .ion file.
+ * @param ionSourceText - Raw text of the .ion file (embedded in sourcesContent).
+ */
+export function emitJSWithSourceMap(
+  module: IonIRModule,
+  ionSourceFile: string,
+  ionSourceText: string,
+): { source: string; map: string } {
+  const jsModule = buildJsModule(module);
+  const { source, mappings } = printJsModuleWithMappings(jsModule, ionSourceFile);
+  const builder = new SourceMapBuilder();
+  for (const m of mappings) {
+    builder.addMapping(m);
+  }
+  const outputFile = ionSourceFile.replace(/\.ion$/, '.js');
+  const map = builder.toJSON({
+    file: outputFile,
+    sourceContents: new Map([[ionSourceFile, ionSourceText]]),
+  });
+  return { source, map };
 }
 
 function buildJsModule(module: IonIRModule): JsModule {
