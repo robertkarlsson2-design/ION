@@ -290,6 +290,12 @@ export function prettyPrintNode(node: IonIRNode, depth = 0, opts?: PrettyOptions
       const elems = node.elements.map(el => prettyPrintNode(el, depth, opts)).join(', ');
       return `[${elems}]`;
     }
+    case 'MapLit': {
+      const entries = node.entries.map(e =>
+        `${prettyPrintNode(e.key, depth, opts)}: ${prettyPrintNode(e.value, depth, opts)}`
+      ).join(', ');
+      return `{${entries}}`;
+    }
     default: return assertNever(node);
   }
 }

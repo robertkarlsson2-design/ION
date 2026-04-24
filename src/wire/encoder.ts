@@ -300,6 +300,9 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector, depth = 0): voi
     case 'ListLit':
       for (const el of node.elements) collectNamesFromNode(el, c, depth + 1);
       break;
+    case 'MapLit':
+      for (const e of node.entries) { collectNamesFromNode(e.key, c, depth + 1); collectNamesFromNode(e.value, c, depth + 1); }
+      break;
     default:
       assertNever(node);
   }
@@ -489,6 +492,9 @@ function collectTypesFromNode(node: IonIRNode, out: Map<string, number>, depth =
     case 'Resume': collectTypesFromNode(node.value, out, depth + 1); break;
     case 'ListLit':
       for (const el of node.elements) collectTypesFromNode(el, out, depth + 1);
+      break;
+    case 'MapLit':
+      for (const e of node.entries) { collectTypesFromNode(e.key, out, depth + 1); collectTypesFromNode(e.value, out, depth + 1); }
       break;
     default: assertNever(node);
   }
@@ -831,6 +837,13 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
     case 'ListLit': {
       const elems = node.elements.map(el => encodeNode(el, ctx, depth + 1)).join(',');
       return `[${elems}]`;
+    }
+
+    case 'MapLit': {
+      const entries = node.entries.map(e =>
+        `${encodeNode(e.key, ctx, depth + 1)}:${encodeNode(e.value, ctx, depth + 1)}`
+      ).join(',');
+      return `{${entries}}`;
     }
 
     default:

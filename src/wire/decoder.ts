@@ -28,7 +28,7 @@ export class WireDecodeError extends Error {
 
 // Sentinels for fields absent from the wire format.
 const WIRE_SPAN: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
-const FOREIGN_SIG_PLACEHOLDER: ForeignSignature = { params: [], ret: { kind: 'Unit' }, template: '' };
+const FOREIGN_SIG_PLACEHOLDER: ForeignSignature = { params: [], ret: { kind: 'Unit' }, template: '', paramNames: [] };
 
 interface DecoderContext {
   readonly sym: ReadonlyMap<string, string>; // alias → raw name

@@ -70,6 +70,8 @@ export interface ForeignSignature {
   readonly ret: IonType;
   /** Call template with positional placeholders, e.g. `"$1.push($2)"`. */
   readonly template: string;
+  /** Original parameter names from the `extern fn` declaration, used in emitters. */
+  readonly paramNames: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +154,13 @@ export interface ListLitIRNode {
   readonly type: IonType;
 }
 
+export interface MapLitIRNode {
+  readonly kind: 'MapLit';
+  readonly entries: readonly { readonly key: IonIRNode; readonly value: IonIRNode }[];
+  readonly span: Span;
+  readonly type: IonType;
+}
+
 export interface ModuleRefNode {
   readonly kind: 'ModuleRef';
   readonly modulePath: readonly string[];
@@ -188,6 +197,7 @@ export type CoreNode =
   | ConstructorNode
   | AccessorNode
   | ListLitIRNode
+  | MapLitIRNode
   | ModuleRefNode
   | ForeignRefNode
   | EffectNode;
@@ -390,7 +400,7 @@ export type IonIRNode = CoreNode | OopNode | AsyncNode | AdtNode | EffectsNode;
 
 /** All valid `kind` strings for IonIR nodes, for runtime validation. */
 export const VALID_IR_KINDS: ReadonlySet<string> = new Set<string>([
-  'Var', 'Literal', 'App', 'Abs', 'Let', 'Case', 'Constructor', 'Accessor', 'ListLit',
+  'Var', 'Literal', 'App', 'Abs', 'Let', 'Case', 'Constructor', 'Accessor', 'ListLit', 'MapLit',
   'ModuleRef', 'ForeignRef', 'Effect',
   'OopClass', 'OopInterface', 'OopNew', 'OopVirtualCall', 'OopThis',
   'AsyncBlock', 'Await',

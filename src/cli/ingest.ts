@@ -15,6 +15,8 @@ import { runPipeline } from '../ingest/pipeline.js';
 import { AnthropicLLMFallbackHandler } from '../ingest/llm-fallback.js';
 import { encodeModule } from '../wire/encoder.js';
 import { parseJavaScript } from '../../skills/javascript/parser.js';
+import { parseTypeScript } from '../../skills/typescript/parser.js';
+import { parsePython } from '../../skills/python/parser.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -154,12 +156,15 @@ export function validateSkillName(name: string): string | { error: string } {
  */
 export function resolvePlugin(skillName: string): IngestPlugin | { error: string } {
   if (skillName === 'javascript') {
-    return {
-      language: 'javascript',
-      parse: (source: string) => parseJavaScript(source).root,
-    };
+    return { language: 'javascript', parse: (source: string) => parseJavaScript(source).root };
   }
-  return { error: `unsupported skill: ${skillName}` };
+  if (skillName === 'typescript') {
+    return { language: 'typescript', parse: (source: string) => parseTypeScript(source).root };
+  }
+  if (skillName === 'python') {
+    return { language: 'python', parse: (source: string) => parsePython(source).root };
+  }
+  return { error: `unsupported skill: ${skillName}. Supported: javascript, typescript, python` };
 }
 
 // ---------------------------------------------------------------------------
@@ -239,10 +244,44 @@ async function buildPlugin(
   skillName: string,
   skillDir: string,
 ): Promise<IngestPlugin | { error: string }> {
-  if (skillName === 'javascript') {
-    return buildJsPlugin(skillDir);
+  if (skillName === 'javascript') return buildJsPlugin(skillDir);
+  if (skillName === 'typescript') return buildGenericPlugin(skillName, skillDir, 'parseTypeScript', 'typescript');
+  if (skillName === 'python') return buildGenericPlugin(skillName, skillDir, 'parsePython', 'python');
+  return { error: `unsupported skill: '${skillName}'. Supported: javascript, typescript, python` };
+}
+
+async function buildGenericPlugin(
+  skillName: string,
+  skillDir: string,
+  fnName: string,
+  language: string,
+): Promise<IngestPlugin | { error: string }> {
+  const cliDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(skillDir, 'parser.js'),
+    resolve(cliDir, '..', 'skills', basename(skillDir), 'parser.js'),
+    resolve(process.cwd(), 'dist', 'skills', basename(skillDir), 'parser.js'),
+  ];
+
+  for (const parserPath of candidates) {
+    try { await stat(parserPath); } catch { continue; }
+    const parserUrl = pathToFileURL(parserPath).href;
+    try {
+      const mod = await import(parserUrl) as Record<string, unknown>;
+      const parseFn = mod[fnName];
+      if (typeof parseFn !== 'function') continue;
+      return {
+        language,
+        parse(source: string): CSTNode {
+          return (parseFn as (s: string) => { root: CSTNode })(source).root;
+        },
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { error: `failed to load ${skillName} parser: ${msg}` };
+    }
   }
-  return { error: `unsupported skill: '${skillName}'. Supported: javascript` };
+  return { error: `${skillName} parser not found. Run: tsc -p skills/tsconfig.json` };
 }
 
 // ---------------------------------------------------------------------------
@@ -269,9 +308,9 @@ export async function collectSourceFiles(
 }
 
 function extensionsForSkill(skillName: string): string[] {
-  if (skillName === 'javascript') {
-    return ['.js', '.mjs', '.cjs'];
-  }
+  if (skillName === 'javascript') return ['.js', '.mjs', '.cjs'];
+  if (skillName === 'typescript') return ['.ts', '.tsx', '.mts', '.cts'];
+  if (skillName === 'python') return ['.py'];
   return [];
 }
 

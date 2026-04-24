@@ -15,18 +15,22 @@
     "@anthropic-ai/sdk": "^0.36.0",
     "@dqbd/tiktoken": "^1.0.15",
     "tree-sitter-javascript": "^0.25.0",
-    "web-tree-sitter": "^0.25.0",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-typescript": "^0.23.2",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12",
+    "web-tree-sitter": "^0.25.0",
     "yaml": "^2.0.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["tree-sitter-javascript"]
+    "onlyBuiltDependencies": [
+      "tree-sitter-javascript"
+    ]
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
-    "@types/node": "^22.0.0",
     "ajv": "^8.0.0",
     "eslint": "^9.0.0",
     "fast-check": "^3.22.0",

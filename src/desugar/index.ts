@@ -296,6 +296,7 @@ function desugarExternDecl(decl: AstExternDeclNode, ctx: DesugarCtx): LetNode {
     params: paramTypes,
     ret: retType,
     template: foreignTemplate,
+    paramNames: decl.params.map(p => p.name),
   };
 
   const fnType: FnType = {
