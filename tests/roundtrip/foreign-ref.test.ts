@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { serializeModule, deserializeModule } from '../../src/ir/serde.js';
 import { encodeModule } from '../../src/wire/encoder.js';
+import { decodeModule } from '../../src/wire/decoder.js';
 import { prettyPrintModule } from '../../src/wire/pretty.js';
 import type { IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
 import type { IonType } from '../../src/ir/types.js';
@@ -114,5 +115,66 @@ describe('ForeignRef — wire encoder stability', () => {
   it('is deterministic across two calls with special characters', () => {
     const mod = makeForeignRefModule('mod::"x"', 'sym\\bol');
     expect(encodeModule(mod)).toBe(encodeModule(mod));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite D — Wire pool alias roundtrip
+// ---------------------------------------------------------------------------
+
+describe('ForeignRef — wire pool alias roundtrip', () => {
+  // 10 identical decls cause target/module/symbol to meet shouldPool() threshold
+  // (e.g. 'javascript' len=10 cost=3: 10*(3-1)=20 > 2+3=5 ✓)
+  function makePoolableModule(): IonIRModule {
+    const decl: IonIRNode = {
+      kind: 'ForeignRef',
+      target: 'javascript',
+      module: 'node:console',
+      symbol: 'consoleDotLog',
+      sig,
+      span,
+      type: intType,
+    };
+    return {
+      ionir: '1.0',
+      module: 'test.pool',
+      version: '0.1.0',
+      dialects: ['core'],
+      imports: [],
+      data: [],
+      decls: Array.from({ length: 10 }, () => ({ ...decl })),
+    };
+  }
+
+  it('S line contains all three pooled ForeignRef field values', () => {
+    const wire = encodeModule(makePoolableModule());
+    const sLine = wire.split('\n').find(l => l.startsWith('S ')) ?? '';
+    expect(sLine).toContain('=javascript');
+    expect(sLine).toContain('=node:console');
+    expect(sLine).toContain('=consoleDotLog');
+  });
+
+  it('F lines do not contain raw ForeignRef names inline', () => {
+    const wire = encodeModule(makePoolableModule());
+    const fLines = wire.split('\n').filter(l => l.startsWith('F '));
+    for (const line of fLines) {
+      expect(line).not.toContain('ffi:javascript');
+      expect(line).not.toContain(':consoleDotLog');
+    }
+  });
+
+  it('decodeModule restores original ForeignRef field values after encode', () => {
+    const mod = makePoolableModule();
+    const wire = encodeModule(mod);
+    const result = decodeModule(wire);
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    const first = result.decls[0];
+    expect(first).toMatchObject({
+      kind: 'ForeignRef',
+      target: 'javascript',
+      module: 'node:console',
+      symbol: 'consoleDotLog',
+    });
   });
 });
