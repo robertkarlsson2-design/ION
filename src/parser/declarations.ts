@@ -278,8 +278,18 @@ class DeclarationParser {
       if (this.peekKind() === TokenKind.LPAREN) {
         this.consume();
         while (this.peekKind() !== TokenKind.RPAREN && this.peekKind() !== TokenKind.EOF) {
-          const argTok = this.consume();
-          args.push(argTok.text);
+          if (this.peekKind() === TokenKind.STRING_START) {
+            this.consume(); // consume opening quote
+            let text = '';
+            while (this.peekKind() === TokenKind.STRING_PART) {
+              text += this.consume().text;
+            }
+            this.expect(TokenKind.STRING_END);
+            args.push(text);
+          } else {
+            const argTok = this.consume();
+            args.push(argTok.text);
+          }
           if (this.peekKind() === TokenKind.COMMA) this.consume();
         }
         this.expect(TokenKind.RPAREN);
