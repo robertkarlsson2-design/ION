@@ -22,10 +22,12 @@ import type {
   ModuleRefNode,
   EffectDeclNode,
   ListLitIRNode,
+  VarNode,
   CasePattern,
 } from '../../src/ir/nodes.js';
 import { expandTemplate, wrapEmitted } from '../../src/emit/template.js';
 import { SourceMapBuilder } from '../../src/emit/sourcemap.js';
+import { shakePreludeDecls } from '../../src/prelude/dce.js';
 import type {
   JsNode,
   JsModule,
@@ -41,6 +43,14 @@ interface BuildCtx {
 
 const JS_IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
+/** Maps builtin operator names (from desugar) to their JS operator strings. */
+const BUILTIN_BINARY_OPS: Record<string, string> = {
+  __add__: '+', __sub__: '-', __mul__: '*', __div__: '/', __mod__: '%',
+  __eq__: '===', __ne__: '!==', __lt__: '<', __gt__: '>', __le__: '<=', __ge__: '>=',
+  __and__: '&&', __or__: '||',
+};
+const BUILTIN_UNARY_OPS: Record<string, string> = { __neg__: '-', __not__: '!' };
+
 function assertSafeJsIdentifier(name: string, context: string): void {
   if (!JS_IDENTIFIER_RE.test(name)) {
     throw new Error(`EmitError: "${name}" is not a valid JavaScript identifier (${context})`);
@@ -51,8 +61,10 @@ function assertSafeJsIdentifier(name: string, context: string): void {
  * Emit an IonIRModule as a JavaScript source string.
  */
 export function emitJS(module: IonIRModule): string {
-  return printJsModule(buildJsModule(module));
+  return printJsModule(buildJsModule(shakePreludeDecls(module)));
 }
+
+export { buildJsModule };
 
 /**
  * Emit an IonIRModule as JavaScript with an inlined ECMA Source Map v3.
@@ -135,6 +147,12 @@ function buildExpr(node: IonIRNode, ctx: BuildCtx): JsNode {
     case 'Effect': return buildExpr(node.body, ctx);
     case 'ListLit':
       return { kind: 'JsArray', elems: node.elements.map(e => buildExpr(e, ctx)) };
+    case 'MapLit':
+      return {
+        kind: 'JsNew',
+        className: 'Map',
+        args: [{ kind: 'JsArray', elems: node.entries.map(e => ({ kind: 'JsArray' as const, elems: [buildExpr(e.key, ctx), buildExpr(e.value, ctx)] })) }],
+      };
     case 'OopClass':
     case 'OopInterface':
     case 'AdtDecl':
@@ -163,6 +181,16 @@ function buildAbs(node: AbsNode, ctx: BuildCtx): JsNode {
 }
 
 function buildApp(node: AppNode, ctx: BuildCtx): JsNode {
+  if (node.callee.kind === 'Var') {
+    const binaryOp = BUILTIN_BINARY_OPS[(node.callee as VarNode).name];
+    if (binaryOp !== undefined && node.args.length === 2) {
+      return { kind: 'JsBinary', op: binaryOp, left: buildExpr(node.args[0], ctx), right: buildExpr(node.args[1], ctx) };
+    }
+    const unaryOp = BUILTIN_UNARY_OPS[(node.callee as VarNode).name];
+    if (unaryOp !== undefined && node.args.length === 1) {
+      return { kind: 'JsRaw', code: `${unaryOp}${printJsExpr(buildExpr(node.args[0], ctx))}` };
+    }
+  }
   return {
     kind: 'JsCall',
     callee: buildExpr(node.callee, ctx),
@@ -185,6 +213,22 @@ function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
 
   if (node.arms.length === 1 && node.arms[0].pattern.kind === 'Wildcard') {
     return buildExpr(node.arms[0].body, ctx);
+  }
+
+  // Optimization: if-else desugared from `if cond then a else b`
+  // Shape: 2 arms, first is Literal(Bool=true), second is Wildcard
+  if (
+    node.arms.length === 2 &&
+    node.arms[0].pattern.kind === 'Literal' &&
+    node.arms[0].pattern.value.kind === 'Bool' &&
+    node.arms[0].pattern.value.value === true &&
+    node.arms[0].guard === undefined &&
+    node.arms[1].pattern.kind === 'Wildcard'
+  ) {
+    return {
+      kind: 'JsRaw',
+      code: `${printJsExpr(buildExpr(node.scrutinee, ctx))} ? ${printJsExpr(buildExpr(node.arms[0].body, ctx))} : ${printJsExpr(buildExpr(node.arms[1].body, ctx))}`,
+    };
   }
 
   const scrutineeNode = buildExpr(node.scrutinee, ctx);
@@ -260,7 +304,7 @@ function buildForeignRef(node: ForeignRefNode): JsNode {
   if (arity === 0) {
     return { kind: 'JsRaw', code: expandTemplate(node.sig.template, []) };
   }
-  const paramNames = Array.from({ length: arity }, (_, i) => `_p${i + 1}`);
+  const paramNames = Array.from({ length: arity }, (_, i) => node.sig.paramNames?.[i] ?? `_p${i + 1}`);
   const emittedArgs = paramNames.map(p => wrapEmitted(p));
   const callCode = expandTemplate(node.sig.template, emittedArgs);
   return {

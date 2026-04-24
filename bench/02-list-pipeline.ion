@@ -4,5 +4,5 @@ pub fn sumEvenSquares(n) =
 pub fn topN(ns, n) =
   ns |> sort |> reverse |> slice(0, n)
 
-pub fn frequencies(tags) =
-  tags |> map(t -> concat(t, ": "))
+pub fn tagList(tags, prefix) =
+  tags |> filter(t -> startsWith(t, prefix)) |> length

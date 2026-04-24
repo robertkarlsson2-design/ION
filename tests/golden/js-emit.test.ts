@@ -241,10 +241,7 @@ describe('emitJS', () => {
     };
     const mod = makeModule([makeLet('r', caseNode)]);
     const out = emitJS(mod);
-    expect(out).toContain('if (cond === true)');
-    expect(out).toContain('"yes"');
-    expect(out).toContain('else');
-    expect(out).toContain('"no"');
+    expect(out).toContain('cond ? "yes" : "no"');
   });
 
   it('emits Case single-wildcard arm as plain body', () => {

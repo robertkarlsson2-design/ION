@@ -268,10 +268,15 @@ function parseCaseArm(raw: unknown, path: string, depth: number): CaseArm {
 
 function parseForeignSig(raw: unknown, path: string, depth = 0): ForeignSignature {
   const r = assertRecord(raw, path);
+  const rawParamNames = r['paramNames'];
+  const paramNames = Array.isArray(rawParamNames)
+    ? rawParamNames.map((n, i) => assertString(n, `${path}.paramNames[${i}]`))
+    : [];
   return {
     params: assertArray(r['params'], `${path}.params`).map((p, i) => parseType(p, `${path}.params[${i}]`, depth)),
     ret: parseType(r['ret'], `${path}.ret`, depth),
     template: assertString(r['template'], `${path}.template`),
+    paramNames,
   };
 }
 

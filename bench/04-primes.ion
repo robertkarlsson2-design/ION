@@ -1,8 +1,8 @@
 pub fn isPrime(n) =
-  n > 1 && range(2, n) |> all(i -> n % i != 0)
+  n > 1 && (range(2, n) |> all(i -> n % i != 0))
 
 pub fn primesUpTo(n) =
   range(2, n + 1) |> filter(isPrime)
 
 pub fn nthPrime(n) =
-  primesUpTo(n * 20) |> fold(0, (acc, x) -> if acc == 0 then x else acc)
+  primesUpTo(n * 20) |> head

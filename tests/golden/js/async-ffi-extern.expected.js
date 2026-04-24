@@ -1,3 +1,3 @@
 "use strict";
-const promiseResolve = _p1 => Promise.resolve(_p1);
+const promiseResolve = x => Promise.resolve(x);
 const wrap = x => promiseResolve(x);

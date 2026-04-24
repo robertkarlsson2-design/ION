@@ -11,6 +11,8 @@ import { checkModule } from '../checker/index.js';
 import type { CheckError } from '../checker/index.js';
 import { desugarModule } from '../desugar/index.js';
 import { emitJS } from '../../skills/javascript/emit.js';
+import { emitTS } from '../../skills/typescript/emit.js';
+import { emitPython } from '../../skills/python/emit.js';
 import { loadConfig } from './config.js';
 import type { IonConfig } from './config.js';
 import { generateSourceMap } from '../emit/sourcemap.js';
@@ -71,12 +73,15 @@ interface JsonOutput {
 const TARGET_EXT: Record<string, string> = {
   javascript: '.js',
   typescript: '.ts',
+  python: '.py',
 };
 
 type EmitFn = (module: IonIRModule) => string;
 
 function getEmitter(target: string): EmitFn | null {
   if (target === 'javascript') return emitJS;
+  if (target === 'typescript') return emitTS;
+  if (target === 'python') return emitPython;
   return null;
 }
 
@@ -478,7 +483,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
   const emitter = getEmitter(target);
   if (emitter === null) {
     process.stderr.write(`error: unsupported target: ${target}\n`);
-    process.stderr.write('supported targets: javascript\n');
+    process.stderr.write('supported targets: javascript, typescript, python\n');
     return { exitCode: 2 };
   }
 

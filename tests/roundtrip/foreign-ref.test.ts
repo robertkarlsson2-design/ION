@@ -13,7 +13,7 @@ import type { Span } from '../../src/types.js';
 
 const span: Span = { file: 'test.ion', startLine: 1, startCol: 0, endLine: 1, endCol: 5 };
 const intType: IonType = { kind: 'Int' };
-const sig = { params: [] as IonType[], ret: intType, template: '$1' };
+const sig = { params: [] as IonType[], ret: intType, template: '$1', paramNames: [] as string[] };
 
 function makeForeignRefModule(module: string, symbol: string): IonIRModule {
   const decl: IonIRNode = {

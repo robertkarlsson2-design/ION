@@ -1,3 +1,3 @@
 "use strict";
-const mul = (x, y) => __mul__(x, y);
-const sub = (x, y) => __sub__(x, y);
+const mul = (x, y) => x * y;
+const sub = (x, y) => x - y;

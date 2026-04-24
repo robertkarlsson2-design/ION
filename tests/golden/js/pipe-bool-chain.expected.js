@@ -1,3 +1,3 @@
 "use strict";
-const not = b => __not__(b);
+const not = b => !b;
 const twoNots = b => not(not(b));

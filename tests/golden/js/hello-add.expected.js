@@ -1,2 +1,2 @@
 "use strict";
-const add = (x, y) => __add__(x, y);
+const add = (x, y) => x + y;

@@ -1,2 +1,2 @@
 "use strict";
-const addOneViaLambda = x => (n => __add__(n, 1))(x);
+const addOneViaLambda = x => (n => n + 1)(x);
