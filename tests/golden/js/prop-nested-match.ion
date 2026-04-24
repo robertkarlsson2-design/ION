@@ -1,0 +1,3 @@
+data Maybe<A> = Nothing | Just(A)
+data SafeResult<A> = Good(A) | Bad(Str)
+fn outerMatch(r: SafeResult<Maybe<Int>>) -> Int = match r | Good(_) -> match r | Good(_) -> 1 | Bad(_) -> 2 | Bad(_) -> 0

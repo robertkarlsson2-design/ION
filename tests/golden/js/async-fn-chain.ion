@@ -1,0 +1,2 @@
+fn base() !async -> Int = 42
+fn derived() !async -> Int = let x = 42; x

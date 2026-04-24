@@ -1,0 +1,2 @@
+data SafeResult<A> = Good(A) | Bad(Str)
+fn isGood(r: SafeResult<Int>) -> Bool = match r | Good(_) -> true | Bad(_) -> false

@@ -1,0 +1,2 @@
+data Outcome = Win | Lose(Str)
+fn outcomeMsg(o: Outcome) -> Str = match o | Win -> "won" | Lose(_) -> "lost"

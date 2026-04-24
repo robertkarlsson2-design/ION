@@ -1,0 +1,1 @@
+data List<A> = Nil | Cons(A, List<A>)

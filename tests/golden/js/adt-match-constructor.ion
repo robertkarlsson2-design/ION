@@ -1,0 +1,2 @@
+data Named = Named { id: Int }
+fn getId(n: Named) -> Int = match n | Named(id) -> id | _ -> 0

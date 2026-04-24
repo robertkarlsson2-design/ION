@@ -1,0 +1,2 @@
+data Maybe<A> = Nothing | Just(A)
+fn hasValue(m: Maybe<Int>) -> Bool = match m | Just(_) -> true | Nothing -> false

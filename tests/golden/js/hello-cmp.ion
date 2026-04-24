@@ -1,0 +1,3 @@
+fn eq(x: Int, y: Int) -> Bool = x == y
+fn lt(x: Int, y: Int) -> Bool = x < y
+fn gte(x: Int, y: Int) -> Bool = x >= y
