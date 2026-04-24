@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json",
     "lint": "eslint src"
   },
   "dependencies": {

@@ -312,7 +312,7 @@ const effectSetArb: fc.Arbitrary<EffectSet> = fc
 
 const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRNode; casePatternArb: CasePattern }>(tie => ({
   ionTypeArb: fc.oneof(
-    { depthFactor: 0.5 },
+    { depthSize: 0.5 },
     fc.constant<IonType>({ kind: 'Int' }),
     fc.constant<IonType>({ kind: 'Float' }),
     fc.constant<IonType>({ kind: 'Str' }),
@@ -339,7 +339,7 @@ const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRN
     }).map<IonType>(({ name, symbolId, args }) => ({ kind: 'User', name, symbolId, args })),
   ),
   casePatternArb: fc.oneof(
-    { depthFactor: 0.5 },
+    { depthSize: 0.5 },
     spanArb.map<CasePattern>(s => ({ kind: 'Wildcard', span: s })),
     fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, span: spanArb })
       .map<CasePattern>(({ name, symbolId, span: s }) => ({ kind: 'Var', name, symbolId, span: s })),
@@ -360,7 +360,7 @@ const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRN
     ).chain(value => spanArb.map<CasePattern>(s => ({ kind: 'Literal', value, span: s }))),
   ),
   nodeArb: fc.oneof(
-    { depthFactor: 0.5 },
+    { depthSize: 0.5 },
     fc.record({
       name: fc.string({ minLength: 1, maxLength: 10 }),
       symbolId: symbolIdArb,
