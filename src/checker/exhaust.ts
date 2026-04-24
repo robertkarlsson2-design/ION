@@ -96,10 +96,11 @@ function coveredTags(pattern: AstPatternNode): string[] {
 
 function reportMissing(missing: string[], span: Span, errors: CheckError[]): void {
   errors.push({
-    kind: 'InexhaustiveMatch',
-    code: 'E0402',
-    missingCases: missing,
+    kind: 'NonExhaustiveMatch',
+    code: 'E0403',
+    missing,
     span,
     message: `Non-exhaustive match: missing cases ${missing.join(', ')}`,
+    suggestion: `Add arm(s) for: ${missing.join(', ')}`,
   });
 }

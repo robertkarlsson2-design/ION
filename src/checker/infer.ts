@@ -76,11 +76,12 @@ function registerDeclType(decl: AstDeclNode, ctx: InferCtx): void {
       if (id === undefined) break;
       if (decl.type_ === null) {
         ctx.errors.push({
-          kind: 'MissingAnnotation',
-          code: 'E0405',
+          kind: 'UnannotatedTopLevel',
+          code: 'E0402',
           name: decl.name,
           span: decl.span,
           message: `Top-level binding '${decl.name}' requires a type annotation`,
+          suggestion: `Add a type annotation`,
         });
         ctx.typeEnv.set(id, freshTypeVar(ctx));
       } else {
@@ -95,11 +96,12 @@ function registerDeclType(decl: AstDeclNode, ctx: InferCtx): void {
       const paramTypes = decl.params.map(p => {
         if (p.type_ === null) {
           ctx.errors.push({
-            kind: 'MissingAnnotation',
-            code: 'E0405',
+            kind: 'UnannotatedTopLevel',
+            code: 'E0402',
             name: p.name,
             span: p.span,
             message: `Extern parameter '${p.name}' requires a type annotation`,
+            suggestion: `Add a type annotation`,
           });
           return freshTypeVar(ctx);
         }
@@ -108,11 +110,12 @@ function registerDeclType(decl: AstDeclNode, ctx: InferCtx): void {
       let retType: IonType;
       if (decl.returnType === null) {
         ctx.errors.push({
-          kind: 'MissingAnnotation',
-          code: 'E0405',
+          kind: 'UnannotatedTopLevel',
+          code: 'E0402',
           name: decl.name,
           span: decl.span,
           message: `Extern '${decl.name}' requires a return type annotation`,
+          suggestion: `Add a type annotation`,
         });
         retType = freshTypeVar(ctx);
       } else {
@@ -204,11 +207,12 @@ function registerFnType(decl: AstFnDeclNode, ctx: InferCtx): void {
   let retType: IonType;
   if (decl.returnType === null) {
     ctx.errors.push({
-      kind: 'MissingAnnotation',
-      code: 'E0405',
+      kind: 'UnannotatedTopLevel',
+      code: 'E0402',
       name: decl.name,
       span: decl.span,
       message: `Function '${decl.name}' requires a return type annotation`,
+      suggestion: `Add a type annotation`,
     });
     retType = freshTypeVar(ctx);
   } else {
@@ -292,14 +296,14 @@ function inferFnBody(decl: AstFnDeclNode, ctx: InferCtx): void {
 
   // Check that body uses only declared effects.
   const undeclared = [...ctx.effectsUsed].filter(e => !fnType.effects.has(e));
-  if (undeclared.length > 0) {
+  for (const effect of undeclared) {
     ctx.errors.push({
-      kind: 'EffectViolation',
-      code: 'E0404',
-      declared: fnType.effects,
-      used: ctx.effectsUsed,
+      kind: 'EffectMismatch',
+      code: 'E0405',
+      unexpected: effect,
       span: decl.span,
-      message: `Function '${decl.name}' uses undeclared effects: ${undeclared.join(', ')}`,
+      message: `Function '${decl.name}' uses undeclared effect '${effect}'`,
+      suggestion: `Add '!${effect}' to the function declaration or remove the use`,
     });
   }
 
@@ -501,10 +505,11 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
       if (innerType.kind === 'Result') return innerType.ok;
       ctx.errors.push({
         kind: 'InvalidPropagate',
-        code: 'E0403',
-        actualType: innerType,
+        code: 'E0404',
+        found: innerType,
         span: expr.span,
         message: `The '?' operator requires an Option or Result type, got ${typeStr(innerType)}`,
+        suggestion: `Only use '?' on Option<T> or Result<T, E> values`,
       });
       return freshTypeVar(ctx);
     }

@@ -30,6 +30,8 @@ export interface ModuleSymbolTable {
   size(): number;
 }
 
+export type SymbolTable = ModuleSymbolTable;
+
 export class SymbolTableBuilder {
   private readonly _symbols: Map<SymbolId, SymbolInfo> = new Map();
   private readonly _exports: Map<string, SymbolId> = new Map();

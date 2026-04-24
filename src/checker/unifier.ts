@@ -219,13 +219,14 @@ export function typeStr(type: IonType): string {
   }
 }
 
-function makeMismatch(expected: IonType, actual: IonType, span: Span): CheckError {
+function makeMismatch(expected: IonType, found: IonType, span: Span): CheckError {
   return {
     kind: 'TypeMismatch',
     code: 'E0401',
     expected,
-    actual,
+    found,
     span,
-    message: `Type mismatch: expected ${typeStr(expected)}, got ${typeStr(actual)}`,
+    message: `Type mismatch: expected ${typeStr(expected)}, got ${typeStr(found)}`,
+    suggestion: `Change the expression to produce ${typeStr(expected)}`,
   };
 }

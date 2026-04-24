@@ -103,6 +103,8 @@ export function typeToString(t: IonType): string {
   }
 }
 
+export type { CheckError } from './errors.js';
+
 /** Deep structural equality for types (does not dereference TypeVars via substitution). */
 export function typesEqual(a: IonType, b: IonType): boolean {
   if (a.kind !== b.kind) return false;
