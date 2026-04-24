@@ -191,6 +191,25 @@ describe('runFmt --pretty on already-formatted file', () => {
 });
 
 // ---------------------------------------------------------------------------
+// F10 — --wire first pass produces expected wire encoding; second pass succeeds
+// ---------------------------------------------------------------------------
+
+describe('runFmt --wire first pass encoding', () => {
+  it('F10: first pass produces expected wire encoding; second pass on wire input exits 0', async () => {
+    const dir = await makeTmp();
+    const filePath = await writeTmp(dir, 'g.ion', serializeModule(minimalModule));
+    const first = await runFmt(['--wire', filePath]);
+    expect(first.exitCode).toBe(0);
+    const wireContent = await readFile(filePath, 'utf-8');
+    const expected = encodeModule(minimalModule);
+    expect(wireContent).toBe(expected);
+    // Second pass: wire input is now supported via decodeModule → exit 0.
+    const second = await runFmt(['--wire', filePath]);
+    expect(second.exitCode).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // F11 — --check on a file already in canonical pretty form exits 0
 // ---------------------------------------------------------------------------
 
@@ -216,48 +235,19 @@ describe('runFmt --check on already-pretty file', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F12 — --check on a wire-format file exits 1 as "not in canonical form"
+// F12 — --check on a canonically-encoded wire file exits 0
 // ---------------------------------------------------------------------------
 
-describe('runFmt --check on wire-format file', () => {
-  it('F12: exits 1 with filename in stderr (not a serde error) when file is in wire format', async () => {
+describe('runFmt --check on canonical wire file', () => {
+  it('F12: --check exits 0 when a wire file is already in canonical form', async () => {
     const dir = await makeTmp();
+    // Start from JSON, encode to wire.
     const filePath = await writeTmp(dir, 'i.ion', serializeModule(minimalModule));
-    // First: convert to wire format
-    const first = await runFmt(['--wire', filePath]);
-    expect(first.exitCode).toBe(0);
-    const wireContent = await readFile(filePath, 'utf-8');
-    expect(wireContent.startsWith('I1\n')).toBe(true);
-    // Second: --check on the now-wire-format file must exit 1 with filename, not a serde error
-    const chunks: string[] = [];
-    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-      chunks.push(typeof chunk === 'string' ? chunk : chunk.toString());
-      return true;
-    });
-    const result = await runFmt(['--check', filePath]);
-    expect(result.exitCode).toBe(1);
-    const output = chunks.join('');
-    expect(output).toContain('i.ion');
-    expect(output).not.toContain('failed to deserialize');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// F10 — --wire first pass produces expected wire encoding
-// ---------------------------------------------------------------------------
-
-describe('runFmt --wire first pass encoding', () => {
-  it('F10: first pass produces expected wire encoding matching encodeModule', async () => {
-    const dir = await makeTmp();
-    const filePath = await writeTmp(dir, 'g.ion', serializeModule(minimalModule));
-    const first = await runFmt(['--wire', filePath]);
-    expect(first.exitCode).toBe(0);
-    const wireContent = await readFile(filePath, 'utf-8');
-    const expected = encodeModule(minimalModule);
-    expect(wireContent).toBe(expected);
-    // Second pass: wire output is not valid JSON → deserialization fails with exit 1
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const second = await runFmt(['--wire', filePath]);
-    expect(second.exitCode).toBe(1);
+    await runFmt(['--wire', filePath]);
+    // Second --wire pass encodes from wire → same output → no change.
+    await runFmt(['--wire', filePath]);
+    // --check should now exit 0 (file is already canonical).
+    const check = await runFmt(['--check', filePath]);
+    expect(check.exitCode).toBe(0);
   });
 });
