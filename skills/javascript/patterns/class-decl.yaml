@@ -1,0 +1,24 @@
+id: class-decl
+language: javascript
+match:
+  nodeType: class_declaration
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $NAME
+    - pattern:
+        nodeType: class_body
+        capture: $BODY
+emit:
+  kind: OopClass
+  name:
+    metavar: $NAME
+    field: text
+  symbolId:
+    metavar: $NAME
+    field: text
+  interfaces: []
+  fields: []
+  methods: []
+  type:
+    kind: Never

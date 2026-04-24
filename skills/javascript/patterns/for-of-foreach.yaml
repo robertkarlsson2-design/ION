@@ -1,0 +1,31 @@
+id: for-of-foreach
+language: javascript
+match:
+  nodeType: for_in_statement
+  children:
+    - pattern:
+        capture: $BINDING
+    - pattern:
+        capture: $ITERABLE
+    - pattern:
+        capture: $BODY
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: forEach
+    symbolId: forEach
+    type:
+      kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $ITERABLE
+        field: text
+      symbolId:
+        metavar: $ITERABLE
+        field: text
+      type:
+        kind: Never
+  type:
+    kind: Never

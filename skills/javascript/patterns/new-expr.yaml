@@ -1,0 +1,19 @@
+id: new-expr
+language: javascript
+match:
+  nodeType: new_expression
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $CTOR
+    - pattern:
+        nodeType: arguments
+        capture: $ARGS
+emit:
+  kind: OopNew
+  ctorSymbolId:
+    metavar: $CTOR
+    field: text
+  args: []
+  type:
+    kind: Never

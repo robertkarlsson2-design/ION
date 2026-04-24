@@ -1,0 +1,23 @@
+id: throw-error
+language: javascript
+match:
+  nodeType: throw_statement
+  children:
+    - pattern:
+        nodeType: new_expression
+        capture: $ERR
+emit:
+  kind: Effect
+  effectTag: io
+  body:
+    kind: Var
+    name:
+      metavar: $ERR
+      field: text
+    symbolId:
+      metavar: $ERR
+      field: text
+    type:
+      kind: Never
+  type:
+    kind: Never

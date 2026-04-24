@@ -1,0 +1,32 @@
+id: method-call
+language: javascript
+match:
+  nodeType: call_expression
+  children:
+    - pattern:
+        nodeType: member_expression
+        children:
+          - pattern:
+              capture: $OBJ
+          - pattern:
+              capture: $METHOD
+    - pattern:
+        capture: $ARGS
+emit:
+  kind: OopVirtualCall
+  receiver:
+    kind: Var
+    name:
+      metavar: $OBJ
+      field: text
+    symbolId:
+      metavar: $OBJ
+      field: text
+    type:
+      kind: Never
+  method:
+    metavar: $METHOD
+    field: text
+  args: []
+  type:
+    kind: Never

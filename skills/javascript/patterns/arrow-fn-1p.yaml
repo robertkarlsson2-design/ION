@@ -1,0 +1,39 @@
+id: arrow-fn-1p
+language: javascript
+match:
+  nodeType: arrow_function
+  children:
+    - pattern:
+        nodeType: identifier
+        capture: $PARAM
+    - pattern:
+        capture: $BODY
+conditions:
+  - kind: is-type
+    var: $PARAM
+    type: identifier
+emit:
+  kind: Abs
+  params:
+    - name:
+        metavar: $PARAM
+        field: text
+      symbolId:
+        metavar: $PARAM
+        field: text
+      type:
+        kind: Never
+      span:
+        metavar: $PARAM
+        field: span
+  body:
+    kind: Var
+    name:
+      metavar: $BODY
+      field: text
+    symbolId:
+      metavar: $BODY
+      field: text
+    type:
+      kind: Never
+  captures: []

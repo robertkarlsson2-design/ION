@@ -1,0 +1,10 @@
+id: null-literal
+language: javascript
+match:
+  text: "null"
+emit:
+  kind: Literal
+  value:
+    kind: Null
+  type:
+    kind: Never
