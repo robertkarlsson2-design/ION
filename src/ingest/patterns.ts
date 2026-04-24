@@ -420,6 +420,9 @@ function buildValue(
   if (Array.isArray(spec)) return spec.map(item => buildValue(item, bindings, rootSpan, ruleId));
   if (spec === null || typeof spec !== 'object') return spec;
 
+  if (Array.isArray(spec))
+    return (spec as unknown[]).map(item => buildValue(item, bindings, rootSpan, ruleId));
+
   const obj = spec as Record<string, unknown>;
 
   // Metavar reference

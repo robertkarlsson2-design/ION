@@ -17,13 +17,4 @@ emit:
   ctorSymbolId:
     metavar: $CTOR
     field: text
-  args:
-    - kind: Var
-      name:
-        metavar: $CTOR
-        field: text
-      symbolId:
-        metavar: $CTOR
-        field: text
-      type:
-        kind: Never
+  args: []
