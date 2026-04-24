@@ -60,6 +60,20 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 }
 
 // ---------------------------------------------------------------------------
+// Format detection helpers
+// ---------------------------------------------------------------------------
+
+/** Returns true when content starts with "module " — the only valid first token of prettyPrintModule output. Cannot start JSON. */
+function looksLikeSurfaceSyntax(content: string): boolean {
+  return content.startsWith('module ');
+}
+
+/** Returns true when content starts with "I1\n" — the wire version marker. */
+function looksLikeWireFormat(content: string): boolean {
+  return content.startsWith('I1\n');
+}
+
+// ---------------------------------------------------------------------------
 // Per-file formatting
 // ---------------------------------------------------------------------------
 
@@ -104,6 +118,14 @@ async function formatFile(
       : prettyPrintModule(mod, opts);
   } catch (err) {
     if (err instanceof IonIRSerdeError) {
+      if (mode === 'check') {
+        if (looksLikeSurfaceSyntax(original)) {
+          return { changed: false };
+        }
+        if (looksLikeWireFormat(original)) {
+          return { changed: true };
+        }
+      }
       return { changed: false, error: `failed to deserialize '${filePath}': ${err.message}` };
     }
     const msg = err instanceof Error ? err.message : String(err);
