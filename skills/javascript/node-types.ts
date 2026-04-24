@@ -6,7 +6,6 @@ export type JsNamedNodeType =
   | 'class_declaration'
   | 'lexical_declaration'
   | 'variable_declaration'
-  | 'import_declaration'
   | 'import_statement'
   | 'export_statement'
   | 'expression_statement'
@@ -118,7 +117,6 @@ export type JsArrowFunctionNode = JsTypedNode<'arrow_function'>;
 export type JsClassDeclarationNode = JsTypedNode<'class_declaration'>;
 export type JsCallExpressionNode = JsTypedNode<'call_expression'>;
 export type JsIdentifierNode = JsTypedNode<'identifier'>;
-export type JsImportDeclarationNode = JsTypedNode<'import_declaration'>;
 export type JsImportStatementNode = JsTypedNode<'import_statement'>;
 export type JsExportStatementNode = JsTypedNode<'export_statement'>;
 export type JsLexicalDeclarationNode = JsTypedNode<'lexical_declaration'>;

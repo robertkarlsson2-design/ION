@@ -39,37 +39,48 @@ export interface JsParseResult {
 }
 
 function toTypedNode(node: Node): JsTypedNode {
+  // Eagerly snapshot children so the result is independent of tree lifetime,
+  // which allows tree.delete() immediately after conversion without dangling refs.
+  // Using namedChildren for both 'children' and 'namedChildren' avoids the
+  // unchecked cast of anonymous nodes (e.g. '(', ')') to JsNamedNodeType.
+  const namedChildren: JsTypedNode[] = node.namedChildren
+    .filter((c): c is Node => c !== null)
+    .map(toTypedNode);
+
+  const fieldCache = new Map<string, JsTypedNode[]>();
+  const allChildren = node.children;
+  for (let i = 0; i < allChildren.length; i++) {
+    const child = allChildren[i];
+    if (child === null) continue;
+    const fieldName = node.fieldNameForChild(i);
+    if (fieldName === null) continue;
+    const snapped = toTypedNode(child);
+    const existing = fieldCache.get(fieldName);
+    if (existing !== undefined) {
+      existing.push(snapped);
+    } else {
+      fieldCache.set(fieldName, [snapped]);
+    }
+  }
+
   return {
     type: node.type as JsTypedNode['type'],
-    startPosition: node.startPosition,
-    endPosition: node.endPosition,
+    startPosition: { row: node.startPosition.row, column: node.startPosition.column },
+    endPosition: { row: node.endPosition.row, column: node.endPosition.column },
     startIndex: node.startIndex,
     endIndex: node.endIndex,
     text: node.text,
     hasError: node.hasError,
     isMissing: node.isMissing,
     isNamed: node.isNamed,
-    get children(): readonly JsTypedNode[] {
-      return node.children
-        .filter((c): c is Node => c !== null)
-        .map(toTypedNode);
-    },
-    get namedChildren(): readonly JsTypedNode[] {
-      return node.namedChildren
-        .filter((c): c is Node => c !== null)
-        .map(toTypedNode);
-    },
-    get parent(): JsTypedNode | null {
-      return node.parent !== null ? toTypedNode(node.parent) : null;
-    },
+    children: namedChildren,
+    namedChildren,
+    parent: null,
     childForFieldName(name: string): JsTypedNode | null {
-      const child = node.childForFieldName(name);
-      return child !== null ? toTypedNode(child) : null;
+      return fieldCache.get(name)?.[0] ?? null;
     },
     childrenForFieldName(name: string): readonly JsTypedNode[] {
-      return node.childrenForFieldName(name)
-        .filter((c): c is Node => c !== null)
-        .map(toTypedNode);
+      return fieldCache.get(name) ?? [];
     },
   };
 }
@@ -98,9 +109,7 @@ export function parseJavaScript(
   const tree = _parser.parse(source);
   const errors: JsErrorNode[] = [];
   collectErrors(tree.rootNode, errors);
-  return {
-    root: toTypedNode(tree.rootNode) as JsProgramNode,
-    hasErrors: errors.length > 0,
-    errors,
-  };
+  const root = toTypedNode(tree.rootNode) as JsProgramNode;
+  tree.delete();
+  return { root, hasErrors: errors.length > 0, errors };
 }
