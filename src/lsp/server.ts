@@ -18,10 +18,25 @@ const documents = new TextDocuments(TextDocument);
 const cache = new Map<string, CompiledDoc>();
 
 function recompile(uri: string, text: string): void {
-  const filePath = fileURLToPath(uri);
-  const doc = compileDocument(filePath, text);
-  cache.set(uri, doc);
-  connection.sendDiagnostics({ uri, diagnostics: doc.diagnostics });
+  if (!uri.startsWith('file:')) return;
+  try {
+    const filePath = fileURLToPath(uri);
+    const doc = compileDocument(filePath, text);
+    cache.set(uri, doc);
+    connection.sendDiagnostics({ uri, diagnostics: doc.diagnostics });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    connection.console.error(`ion: internal compiler error: ${message}`);
+    connection.sendDiagnostics({
+      uri,
+      diagnostics: [{
+        severity: 1,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+        message: `Internal compiler error: ${message}`,
+        source: 'ion',
+      }],
+    });
+  }
 }
 
 connection.onInitialize((): InitializeResult => ({
@@ -41,6 +56,7 @@ documents.onDidClose(e => {
 
 connection.onHover(params => {
   const uri = params.textDocument.uri;
+  if (!uri.startsWith('file:')) return null;
   const filePath = fileURLToPath(uri);
   const doc = cache.get(uri);
   if (doc === undefined) return null;
@@ -64,6 +80,7 @@ connection.onHover(params => {
 
 connection.onDefinition(params => {
   const uri = params.textDocument.uri;
+  if (!uri.startsWith('file:')) return null;
   const filePath = fileURLToPath(uri);
   const doc = cache.get(uri);
   if (doc === undefined || doc.bindResult === null) return null;
