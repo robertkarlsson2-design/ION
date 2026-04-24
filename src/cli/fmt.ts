@@ -127,8 +127,8 @@ const USAGE = 'usage: ion fmt [--pretty|--wire|--check] [--indent <n>] <file> [<
 export async function runFmt(args: string[]): Promise<RunResult> {
   const parsed = parseArgs(args);
   if ('error' in parsed) {
-    process.stdout.write(`error: ${parsed.error}\n`);
-    process.stdout.write(USAGE);
+    process.stderr.write(`error: ${parsed.error}\n`);
+    process.stderr.write(USAGE);
     return { exitCode: 2 };
   }
 
@@ -140,10 +140,10 @@ export async function runFmt(args: string[]): Promise<RunResult> {
   for (const filePath of files) {
     const result = await formatFile(filePath, mode, opts);
     if (result.error !== undefined) {
-      process.stdout.write(`error: ${result.error}\n`);
+      process.stderr.write(`error: ${result.error}\n`);
       exitCode = 1;
     } else if (mode === 'check' && result.changed) {
-      process.stdout.write(`${filePath}: not in canonical form\n`);
+      process.stderr.write(`${filePath}: not in canonical form\n`);
       exitCode = 1;
     }
   }

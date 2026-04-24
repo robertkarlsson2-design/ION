@@ -84,7 +84,7 @@ describe('runFmt --wire', () => {
 
 describe('runFmt mutually exclusive flags', () => {
   it('F3: combining --pretty and --wire returns exit 2', async () => {
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const result = await runFmt(['--pretty', '--wire', 'some.ion']);
     expect(result.exitCode).toBe(2);
   });
@@ -100,7 +100,7 @@ describe('runFmt --check non-canonical', () => {
     const rawJson = serializeModule(minimalModule);
     const filePath = await writeTmp(dir, 'd.ion', rawJson);
     const chunks: string[] = [];
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       chunks.push(typeof chunk === 'string' ? chunk : chunk.toString());
       return true;
     });
@@ -139,7 +139,7 @@ describe('runFmt multiple files', () => {
 
 describe('runFmt no files', () => {
   it('F6: exits 2 when no file paths are provided', async () => {
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const result = await runFmt(['--pretty']);
     expect(result.exitCode).toBe(2);
   });
@@ -151,7 +151,7 @@ describe('runFmt no files', () => {
 
 describe('runFmt unknown flag', () => {
   it('F7: exits 2 on an unknown flag', async () => {
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const result = await runFmt(['--foo', 'file.ion']);
     expect(result.exitCode).toBe(2);
   });
@@ -163,40 +163,49 @@ describe('runFmt unknown flag', () => {
 
 describe('runFmt unreadable file', () => {
   it('F8: exits 1 when the file path does not exist', async () => {
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const result = await runFmt(['/nonexistent/path/does-not-exist.ion']);
     expect(result.exitCode).toBe(1);
   });
 });
 
 // ---------------------------------------------------------------------------
-// F9 — --pretty is idempotent
+// F9 — --pretty on already-formatted output does not overwrite when deserialization fails
 // ---------------------------------------------------------------------------
 
-describe('runFmt --pretty idempotency', () => {
-  it('F9: running --pretty twice produces identical file content', async () => {
+describe('runFmt --pretty on already-formatted file', () => {
+  it('F9: --pretty on already-formatted output does not overwrite when deserialization fails', async () => {
     const dir = await makeTmp();
     const filePath = await writeTmp(dir, 'f.ion', serializeModule(minimalModule));
-    await runFmt(['--pretty', filePath]);
+    const first = await runFmt(['--pretty', filePath]);
+    expect(first.exitCode).toBe(0);
     const after1 = await readFile(filePath, 'utf-8');
-    await runFmt(['--pretty', filePath]);
+    // Second pass: file now contains surface syntax, not JSON → deserialization fails
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const second = await runFmt(['--pretty', filePath]);
+    expect(second.exitCode).toBe(1);
     const after2 = await readFile(filePath, 'utf-8');
+    // Deserialization failure must not corrupt the file
     expect(after2).toBe(after1);
   });
 });
 
 // ---------------------------------------------------------------------------
-// F10 — --wire is idempotent (two passes produce same output)
+// F10 — --wire first pass produces expected wire encoding
 // ---------------------------------------------------------------------------
 
-describe('runFmt --wire idempotency', () => {
-  it('F10: running --wire twice on a JSON IR file is stable (first pass changes, second does not)', async () => {
+describe('runFmt --wire first pass encoding', () => {
+  it('F10: first pass produces expected wire encoding matching encodeModule', async () => {
     const dir = await makeTmp();
     const filePath = await writeTmp(dir, 'g.ion', serializeModule(minimalModule));
-    await runFmt(['--wire', filePath]);
+    const first = await runFmt(['--wire', filePath]);
+    expect(first.exitCode).toBe(0);
     const wireContent = await readFile(filePath, 'utf-8');
-    // Wire output cannot be re-read (no wire decoder); verify it matches encodeModule
     const expected = encodeModule(minimalModule);
     expect(wireContent).toBe(expected);
+    // Second pass: wire output is not valid JSON → deserialization fails with exit 1
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const second = await runFmt(['--wire', filePath]);
+    expect(second.exitCode).toBe(1);
   });
 });
