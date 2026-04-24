@@ -21,9 +21,7 @@ async function writeTempFile(dir: string, name: string, content: string): Promis
   return filePath;
 }
 
-type WriteSpy = ReturnType<typeof vi.spyOn<NodeJS.WriteStream, 'write'>>;
-
-function captureOutput(): { stdout: WriteSpy; stderr: WriteSpy; getStdout: () => string; getStderr: () => string } {
+function captureOutput(): { getStdout: () => string; getStderr: () => string } {
   let stdoutBuf = '';
   let stderrBuf = '';
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
@@ -35,8 +33,6 @@ function captureOutput(): { stdout: WriteSpy; stderr: WriteSpy; getStdout: () =>
     return true;
   });
   return {
-    stdout,
-    stderr,
     getStdout: () => stdoutBuf,
     getStderr: () => stderrBuf,
   };

@@ -7,10 +7,9 @@ function makeEntry(raw: string, name: string): SymbolInfo {
   return {
     id: makeSymbolId(raw),
     name,
-    kind: 'let',
+    declKind: 'Let',
     span: { file: 'test.ion', startLine: 1, startCol: 0, endLine: 1, endCol: 1 },
-    typeAnnotation: null,
-    pub: false,
+    isPublic: false,
   };
 }
 

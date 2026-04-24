@@ -115,6 +115,8 @@ export function parseJavaScript(
     throw new RangeError(`Source exceeds maximum size of ${limit} bytes`);
   }
   const tree = _parser.parse(source);
+  // parse() only returns null when parsing is cancelled via callback; plain string source never cancels.
+  if (tree === null) throw new Error('tree-sitter parse returned null unexpectedly');
   const errors: JsErrorNode[] = [];
   collectErrors(tree.rootNode, errors);
   const root = toTypedNode(tree.rootNode) as JsProgramNode;

@@ -26,7 +26,7 @@ export const effectSetArb: fc.Arbitrary<EffectSet> = fc
 
 export const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRNode }>(tie => ({
   ionTypeArb: fc.oneof(
-    { depthFactor: 0.5 },
+    { depthSize: 0.5 },
     fc.constant<IonType>({ kind: 'Int' }),
     fc.constant<IonType>({ kind: 'Float' }),
     fc.constant<IonType>({ kind: 'Str' }),
@@ -52,7 +52,7 @@ export const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb:
     }).map<IonType>(({ name, symbolId, args }) => ({ kind: 'User', name, symbolId, args })),
   ),
   nodeArb: fc.oneof(
-    { depthFactor: 0.5 },
+    { depthSize: 0.5 },
     // Leaf: Var
     fc.record({ name: fc.string({ minLength: 1, maxLength: 10 }), symbolId: symbolIdArb, span: spanArb, type: tie('ionTypeArb') })
       .map<IonIRNode>(({ name, symbolId, span: s, type }) => ({ kind: 'Var', name, symbolId, span: s, type })),

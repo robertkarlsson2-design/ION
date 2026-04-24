@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import Ajv from 'ajv';
+import { Ajv } from 'ajv';
 import { ION_IR_SCHEMA, GBNF_ION, ION_SURFACE_RULES } from '../../src/grammar/index.js';
 import { validateGBNF } from '../../src/grammar/gbnf.js';
 import { serializeModule } from '../../src/ir/serde.js';
