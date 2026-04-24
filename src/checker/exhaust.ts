@@ -38,7 +38,7 @@ export function checkExhaustiveness(
       const hasSome = arms.some(a => a.pattern.kind === 'ConstructorPat' && a.pattern.tag === 'Some');
       const hasNone = arms.some(a => a.pattern.kind === 'ConstructorPat' && a.pattern.tag === 'None');
       const missing: string[] = [];
-      if (!hasSome) missing.push('Some(_)');
+      if (!hasSome) missing.push('Some');
       if (!hasNone) missing.push('None');
       if (missing.length > 0) reportMissing(missing, span, errors);
       return;
@@ -48,8 +48,8 @@ export function checkExhaustiveness(
       const hasOk = arms.some(a => a.pattern.kind === 'ConstructorPat' && a.pattern.tag === 'Ok');
       const hasErr = arms.some(a => a.pattern.kind === 'ConstructorPat' && a.pattern.tag === 'Err');
       const missing: string[] = [];
-      if (!hasOk) missing.push('Ok(_)');
-      if (!hasErr) missing.push('Err(_)');
+      if (!hasOk) missing.push('Ok');
+      if (!hasErr) missing.push('Err');
       if (missing.length > 0) reportMissing(missing, span, errors);
       return;
     }
