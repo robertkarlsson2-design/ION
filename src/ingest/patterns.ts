@@ -226,17 +226,15 @@ function parseCondition(raw: unknown): Condition {
     }
     return { kind: 'not-mutated-in', var: c['var'] as string, scope: c['scope'] as string };
   }
-<<<<<<< HEAD
   if (kind === 'text-equals') {
     if (typeof c['var'] !== 'string' || typeof c['value'] !== 'string') {
       throw new Error("text-equals condition requires string 'var' and 'value'");
     }
     return { kind: 'text-equals', var: c['var'] as string, value: c['value'] as string };
-=======
+  }
   if (kind === 'node-text-contains') {
     if (typeof c['text'] !== 'string') throw new Error("node-text-contains condition requires string 'text'");
     return { kind: 'node-text-contains', text: c['text'] as string };
->>>>>>> 73bed2c (WIP: fixing complete [3ae83b9d-4666-4b78-932c-3d0afb87c669])
   }
   throw new Error(`unknown condition kind: ${String(kind)}`);
 }
@@ -371,15 +369,13 @@ function evaluateCondition(cond: Condition, bindings: Bindings, node: CSTNode): 
       // Stubbed as always-true until binder integration is complete.
       return true;
     }
-<<<<<<< HEAD
     case 'text-equals': {
       const bound = bindings.get(cond.var);
       if (!bound || Array.isArray(bound)) return false;
       return (bound as CSTNode).text === cond.value;
-=======
+    }
     case 'node-text-contains': {
       return node.text.includes(cond.text);
->>>>>>> 73bed2c (WIP: fixing complete [3ae83b9d-4666-4b78-932c-3d0afb87c669])
     }
   }
 }
