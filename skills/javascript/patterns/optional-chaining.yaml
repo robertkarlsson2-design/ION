@@ -7,6 +7,9 @@ match:
         capture: $OBJ
     - pattern:
         capture: $PROP
+conditions:
+  - kind: node-text-contains
+    text: "?."
 emit:
   kind: Accessor
   receiver:

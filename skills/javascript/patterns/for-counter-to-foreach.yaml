@@ -19,10 +19,10 @@ emit:
     receiver:
       kind: Var
       name:
-        metavar: $INIT
+        metavar: $COND
         field: text
       symbolId:
-        metavar: $INIT
+        metavar: $COND
         field: text
       type:
         kind: Never

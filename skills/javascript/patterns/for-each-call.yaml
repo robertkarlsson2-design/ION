@@ -1,28 +1,38 @@
-id: promise-then-catch
+id: for-each-call
 language: javascript
 match:
   nodeType: call_expression
   children:
     - pattern:
         nodeType: member_expression
-        capture: $CHAIN
+        capture: $CALLEE
     - pattern:
         nodeType: arguments
-        capture: $ON_REJECTED
+        capture: $ARGS
 conditions:
   - kind: node-text-contains
-    text: ".catch"
+    text: ".forEach"
 emit:
-  kind: Await
-  value:
+  kind: App
+  callee:
     kind: Var
     name:
-      metavar: $CHAIN
+      metavar: $CALLEE
       field: text
     symbolId:
-      metavar: $CHAIN
+      metavar: $CALLEE
       field: text
     type:
       kind: Never
+  args:
+    - kind: Var
+      name:
+        metavar: $ARGS
+        field: text
+      symbolId:
+        metavar: $ARGS
+        field: text
+      type:
+        kind: Never
   type:
     kind: Never

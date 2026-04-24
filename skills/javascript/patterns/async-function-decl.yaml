@@ -12,6 +12,9 @@ match:
     - pattern:
         nodeType: statement_block
         capture: $BODY
+conditions:
+  - kind: node-text-contains
+    text: "async "
 emit:
   kind: Let
   name:

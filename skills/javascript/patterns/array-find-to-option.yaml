@@ -10,9 +10,8 @@ match:
         nodeType: arguments
         capture: $ARGS
 conditions:
-  - kind: is-type
-    var: $CALLEE
-    type: member_expression
+  - kind: node-text-contains
+    text: ".find"
 emit:
   kind: App
   callee:

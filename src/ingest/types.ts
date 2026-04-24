@@ -45,6 +45,7 @@ export interface IngestResult {
 
 /** Synchronously tries to translate a CST node → IonIR node. Returns null if no match. */
 export interface PatternMatcher {
+  readonly ruleId: string;
   match(node: CSTNode): IonIRNode | null;
 }
 

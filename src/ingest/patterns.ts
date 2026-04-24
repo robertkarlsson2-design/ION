@@ -71,7 +71,8 @@ export interface ChildPattern {
 export type Condition =
   | { readonly kind: 'has-children'; readonly count: number }
   | { readonly kind: 'is-type'; readonly var: string; readonly type: string }
-  | { readonly kind: 'not-mutated-in'; readonly var: string; readonly scope: string };
+  | { readonly kind: 'not-mutated-in'; readonly var: string; readonly scope: string }
+  | { readonly kind: 'node-text-contains'; readonly text: string };
 
 /** Emit spec mirrors IonIR node shape with metavar references. */
 export type EmitSpec = Record<string, unknown>;
@@ -128,6 +129,7 @@ export async function loadPatterns(skillDir: string): Promise<PatternMatcher[]> 
 /** Compile a single parsed PatternRule into a PatternMatcher (exposed for unit tests). */
 export function compileRule(rule: PatternRule): PatternMatcher {
   return {
+    ruleId: rule.id,
     match(node: CSTNode): IonIRNode | null {
       try {
         const bindings = new Map<string, CSTNode | CSTNode[]>();
@@ -222,6 +224,10 @@ function parseCondition(raw: unknown): Condition {
       throw new Error("not-mutated-in condition requires string 'var' and 'scope'");
     }
     return { kind: 'not-mutated-in', var: c['var'] as string, scope: c['scope'] as string };
+  }
+  if (kind === 'node-text-contains') {
+    if (typeof c['text'] !== 'string') throw new Error("node-text-contains condition requires string 'text'");
+    return { kind: 'node-text-contains', text: c['text'] as string };
   }
   throw new Error(`unknown condition kind: ${String(kind)}`);
 }
@@ -355,6 +361,9 @@ function evaluateCondition(cond: Condition, bindings: Bindings, node: CSTNode): 
       // Requires binder-level data-flow analysis (ION-30).
       // Stubbed as always-true until binder integration is complete.
       return true;
+    }
+    case 'node-text-contains': {
+      return node.text.includes(cond.text);
     }
   }
 }
