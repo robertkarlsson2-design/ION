@@ -329,6 +329,11 @@ export async function runIngest(args: string[], overrides?: IngestOverrides): Pr
     return { exitCode: 2 };
   }
 
+  if (!/^[a-zA-Z0-9_-]+$/.test(parsed.skill)) {
+    process.stderr.write(`error: invalid skill name '${parsed.skill}' (only a-z, A-Z, 0-9, _, - allowed)\n`);
+    return { exitCode: 2 };
+  }
+
   // Resolve plugin and patterns, skipping skill dir lookup when both are injected
   let patterns: readonly PatternMatcher[];
   let plugin: IngestPlugin;
@@ -379,6 +384,12 @@ export async function runIngest(args: string[], overrides?: IngestOverrides): Pr
   for (const filePath of files) {
     let source: string;
     try {
+      const MAX_BYTES = 100 * 1024 * 1024; // 100 MB
+      const fileInfo = await stat(filePath);
+      if (fileInfo.size > MAX_BYTES) {
+        process.stderr.write(`error: file too large (${fileInfo.size} bytes): '${filePath}'\n`);
+        return { exitCode: 2 };
+      }
       source = await readFile(filePath, 'utf-8');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
