@@ -53,7 +53,8 @@ export function registerCommands(context: vscode.ExtensionContext): void {
         ['javascript', 'typescript', 'java', 'rust'],
         { placeHolder: 'Select target skill (default: javascript)' },
       );
-      const selectedSkill = skill ?? 'javascript';
+      if (skill === undefined) return;
+      const selectedSkill = skill;
 
       const terminal = vscode.window.createTerminal({ name: 'Ion Ingest', cwd: root });
       terminal.show();
