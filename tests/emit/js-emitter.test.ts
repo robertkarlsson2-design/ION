@@ -9,6 +9,7 @@ import type {
   ConstructorNode,
   AccessorNode,
   ForeignRefNode,
+  ModuleRefNode,
   EffectNode,
   AsyncBlockNode,
   AwaitNode,
@@ -547,6 +548,48 @@ describe('emitAsyncBlock and emitAwait', () => {
     const decl = prog.body[0] as { declarations: Array<{ init: JsAwaitExpression }> };
     const aw = decl.declarations[0].init;
     expect(aw.type).toBe('AwaitExpression');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ModuleRefNode
+// ---------------------------------------------------------------------------
+
+describe('emitModuleRef', () => {
+  function emitModRef(modulePath: string[]): JsIdentifier | JsMemberExpression {
+    const modRef: ModuleRefNode = {
+      kind: 'ModuleRef',
+      modulePath,
+      symbolId: sid('m:r:0'),
+      span,
+      type: tInt,
+    };
+    const letNode: LetNode = {
+      kind: 'Let', name: 'v', symbolId: sid('m:v:1'), bindingType: tInt,
+      value: modRef,
+      body: { kind: 'Literal', value: { kind: 'Int', value: 0 }, span, type: tInt },
+      span, type: tInt,
+    };
+    const prog = emitExpr([letNode]);
+    const decl = prog.body[0] as { declarations: Array<{ init: JsIdentifier | JsMemberExpression }> };
+    return decl.declarations[0].init;
+  }
+
+  it('emits JsIdentifier for single-segment path', () => {
+    const result = emitModRef(['Math']);
+    expect(result.type).toBe('Identifier');
+    expect((result as JsIdentifier).name).toBe('Math');
+  });
+
+  it('emits JsMemberExpression chain for multi-segment path', () => {
+    const result = emitModRef(['a', 'b', 'c']);
+    expect(result.type).toBe('MemberExpression');
+    const top = result as JsMemberExpression;
+    expect(top.property.name).toBe('c');
+    expect(top.object.type).toBe('MemberExpression');
+    const mid = top.object as JsMemberExpression;
+    expect(mid.property.name).toBe('b');
+    expect((mid.object as JsIdentifier).name).toBe('a');
   });
 });
 

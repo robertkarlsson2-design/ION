@@ -98,20 +98,18 @@ class JsEmitter {
       return;
     }
 
-    const letNode = node as LetNode;
-    const boundName = this.mangledName(letNode.name, letNode.symbolId);
+    const boundName = this.mangledName(node.name, node.symbolId);
 
-    if (letNode.value.kind === 'ForeignRef') {
+    if (node.value.kind === 'ForeignRef') {
       // Record the foreign signature for use at call sites; emit no JS
-      const foreign = letNode.value as ForeignRefNode;
-      this.foreignMap.set(letNode.symbolId, foreign.sig);
+      this.foreignMap.set(node.symbolId, node.value.sig);
     } else {
-      const init = this.emitNode(letNode.value);
+      const init = this.emitNode(node.value);
       out.push(jsConst(boundName, init));
     }
 
     // Recurse into body (the rest of the module)
-    this.unrollTopLevelLet(letNode.body, out);
+    this.unrollTopLevelLet(node.body, out);
   }
 
   // -------------------------------------------------------------------------
@@ -178,8 +176,7 @@ class JsEmitter {
   emitApp(node: AppNode): JsCallExpression | JsRawExpression {
     // If callee is a Var bound to a ForeignRef, expand the template inline
     if (node.callee.kind === 'Var') {
-      const callee = node.callee as VarNode;
-      const sig = this.foreignMap.get(callee.symbolId);
+      const sig = this.foreignMap.get(node.callee.symbolId);
       if (sig !== undefined) {
         const emittedArgs = node.args.map(a => wrapEmitted(this.renderExpr(this.emitNode(a))));
         return jsRaw(expandTemplate(sig.template, emittedArgs));
@@ -247,11 +244,11 @@ class JsEmitter {
     if (node.modulePath.length === 0) return jsIdent('undefined');
     if (node.modulePath.length === 1) return jsIdent(node.modulePath[0]);
     // Build left-associative member chain: a.b.c
-    let expr: JsExpression = jsIdent(node.modulePath[0]);
-    for (let i = 1; i < node.modulePath.length; i++) {
-      expr = jsMember(expr, node.modulePath[i]);
+    let result: JsMemberExpression = jsMember(jsIdent(node.modulePath[0]), node.modulePath[1]);
+    for (let i = 2; i < node.modulePath.length; i++) {
+      result = jsMember(result, node.modulePath[i]);
     }
-    return expr as JsMemberExpression;
+    return result;
   }
 
   emitEffect(node: EffectNode): JsExpression {
@@ -274,6 +271,8 @@ class JsEmitter {
 
   private isTernaryEligible(arms: readonly CaseArm[]): boolean {
     if (arms.length < 2) return false;
+    const lastKind = arms[arms.length - 1].pattern.kind;
+    if (lastKind !== 'Wildcard' && lastKind !== 'Var') return false;
     for (const arm of arms) {
       if (arm.guard !== undefined) return false;
       if (arm.pattern.kind === 'Constructor') return false;
@@ -322,13 +321,6 @@ class JsEmitter {
       ];
       const block: JsBlockStatement = { type: 'BlockStatement', body: bodyStmts };
 
-      // Combine pattern test and optional guard
-      const fullTest = guardTest !== null
-        ? jsCall(jsIdent('Boolean'), [
-            { type: 'SequenceExpression', expressions: [test, guardTest] },
-          ])
-        : test;
-
       if (arm.pattern.kind === 'Wildcard' || arm.pattern.kind === 'Var') {
         // Wildcard/var always match — just emit the body directly (no if wrapper)
         stmts.push(...bodyStmts.slice(0, -1));
@@ -344,14 +336,6 @@ class JsEmitter {
     }
 
     // Non-exhaustive fallback
-    const throwStmt: JsStatement = {
-      type: 'ExpressionStatement',
-      expression: jsCall(
-        { type: 'MemberExpression', object: jsIdent('Error'), property: jsIdent('prototype'), computed: false },
-        [],
-      ),
-    };
-    // Replace throwStmt with a real throw — use RawExpression for the throw statement
     const throwRaw: JsStatement = {
       type: 'ExpressionStatement',
       expression: jsRaw(`(() => { throw new Error('non-exhaustive match') })()`),
