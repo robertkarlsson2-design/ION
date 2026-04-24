@@ -1,4 +1,6 @@
-import { readFile, glob } from 'node:fs/promises';
+import { readFile, stat, glob } from 'node:fs/promises';
+
+const MAX_FILE_SIZE = 64 * 1024 * 1024;
 import { pathToFileURL } from 'node:url';
 import { lex } from '../lexer/index.js';
 import { parseModule, ParseError } from '../parser/declarations.js';
@@ -162,6 +164,16 @@ function mapCheckError(e: CheckError): Diagnostic {
  * Unexpected internal errors propagate to the caller.
  */
 async function checkFile(filePath: string): Promise<Diagnostic[] | { ioError: string }> {
+  try {
+    const { size } = await stat(filePath);
+    if (size > MAX_FILE_SIZE) {
+      return { ioError: `file too large: '${filePath}' (${size} bytes, limit ${MAX_FILE_SIZE})` };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ioError: `cannot read file '${filePath}': ${msg}` };
+  }
+
   let src: string;
   try {
     src = await readFile(filePath, 'utf-8');
