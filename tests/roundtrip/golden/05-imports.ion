@@ -1,0 +1,8 @@
+module org.example.consumer  "0.1.0"
+// dialects: core
+
+import org.example.math
+import org.example.strings
+import org.example.collections
+
+result

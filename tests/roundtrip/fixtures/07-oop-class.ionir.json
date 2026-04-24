@@ -1,0 +1,98 @@
+{
+  "ionir": "1.0",
+  "module": "org.example.animals",
+  "version": "0.1.0",
+  "dialects": ["core", "ion-oop"],
+  "imports": [],
+  "data": [],
+  "decls": [
+    {
+      "kind": "OopInterface",
+      "name": "Animal",
+      "symbolId": "animals:Animal:0",
+      "members": [
+        {
+          "name": "speak",
+          "symbolId": "animals:speak:1",
+          "type": {
+            "kind": "Fn",
+            "params": [],
+            "ret": {"kind": "Str"},
+            "effects": []
+          },
+          "span": {"file": "animals.ion", "startLine": 2, "startCol": 2, "endLine": 2, "endCol": 15}
+        }
+      ],
+      "span": {"file": "animals.ion", "startLine": 1, "startCol": 0, "endLine": 3, "endCol": 1},
+      "type": {"kind": "Unit"}
+    },
+    {
+      "kind": "OopClass",
+      "name": "Dog",
+      "symbolId": "animals:Dog:2",
+      "interfaces": ["animals:Animal:0"],
+      "fields": [
+        {
+          "name": "name",
+          "symbolId": "animals:name:3",
+          "type": {"kind": "Str"},
+          "span": {"file": "animals.ion", "startLine": 5, "startCol": 2, "endLine": 5, "endCol": 15}
+        }
+      ],
+      "methods": [
+        {
+          "name": "speak",
+          "symbolId": "animals:speak:4",
+          "params": [],
+          "retType": {"kind": "Str"},
+          "isAbstract": false,
+          "isStatic": false,
+          "body": {
+            "kind": "Literal",
+            "value": {"kind": "Str", "value": "Woof!"},
+            "span": {"file": "animals.ion", "startLine": 7, "startCol": 4, "endLine": 7, "endCol": 11},
+            "type": {"kind": "Str"}
+          },
+          "span": {"file": "animals.ion", "startLine": 6, "startCol": 2, "endLine": 8, "endCol": 3}
+        }
+      ],
+      "span": {"file": "animals.ion", "startLine": 4, "startCol": 0, "endLine": 9, "endCol": 1},
+      "type": {"kind": "Unit"}
+    },
+    {
+      "kind": "OopNew",
+      "ctorSymbolId": "animals:Dog:2",
+      "args": [
+        {
+          "kind": "Literal",
+          "value": {"kind": "Str", "value": "Rex"},
+          "span": {"file": "animals.ion", "startLine": 11, "startCol": 10, "endLine": 11, "endCol": 15},
+          "type": {"kind": "Str"}
+        }
+      ],
+      "span": {"file": "animals.ion", "startLine": 11, "startCol": 0, "endLine": 11, "endCol": 16},
+      "type": {"kind": "User", "name": "Dog", "symbolId": "animals:Dog:2", "args": []}
+    },
+    {
+      "kind": "OopVirtualCall",
+      "receiver": {
+        "kind": "OopNew",
+        "ctorSymbolId": "animals:Dog:2",
+        "args": [
+          {
+            "kind": "Literal",
+            "value": {"kind": "Str", "value": "Buddy"},
+            "span": {"file": "animals.ion", "startLine": 13, "startCol": 10, "endLine": 13, "endCol": 17},
+            "type": {"kind": "Str"}
+          }
+        ],
+        "span": {"file": "animals.ion", "startLine": 13, "startCol": 0, "endLine": 13, "endCol": 18},
+        "type": {"kind": "User", "name": "Dog", "symbolId": "animals:Dog:2", "args": []}
+      },
+      "method": "speak",
+      "args": [],
+      "span": {"file": "animals.ion", "startLine": 13, "startCol": 0, "endLine": 13, "endCol": 25},
+      "type": {"kind": "Str"}
+    }
+  ]
+}

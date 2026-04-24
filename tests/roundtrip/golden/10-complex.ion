@@ -1,0 +1,29 @@
+module org.acme.users  "1.0.0"
+// dialects: core, ion-adt, ion-oop
+
+data UserStatus {
+  Active
+  | Inactive
+  | Banned
+}
+data UserRole {
+  Admin
+  | Moderator
+  | User
+}
+
+fn(email: Str, password: Str, role: UserRole): UserStatus => null
+interface UserRepository {
+  create: (Str, Str, UserRole) -> UserStatus
+  getById: (Int) -> UserStatus
+  delete: (Int) -> Bool
+}
+class UserService: users:UserRepository:33 {
+  repository: UserRepository
+  fn create(email: Str, password: Str, role: UserRole): UserStatus {
+    null
+  }
+  fn getById(id: Int): UserStatus {
+    null
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "ionir": "1.0",
+  "module": "org.example.minimal",
+  "version": "0.1.0",
+  "dialects": ["core"],
+  "imports": [],
+  "data": [],
+  "decls": [
+    {
+      "kind": "Var",
+      "name": "x",
+      "symbolId": "minimal:x:0",
+      "span": {"file": "minimal.ion", "startLine": 1, "startCol": 0, "endLine": 1, "endCol": 1},
+      "type": {"kind": "Int"}
+    }
+  ]
+}

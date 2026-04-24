@@ -1,0 +1,70 @@
+{
+  "ionir": "1.0",
+  "module": "org.example.shapes",
+  "version": "0.1.0",
+  "dialects": ["core", "ion-adt"],
+  "imports": [],
+  "data": [
+    {
+      "kind": "AdtDecl",
+      "name": "Shape",
+      "symbolId": "shapes:Shape:0",
+      "variants": [
+        {
+          "tag": "Circle",
+          "symbolId": "shapes:Circle:1",
+          "fields": [
+            {
+              "name": "radius",
+              "symbolId": "shapes:radius:2",
+              "type": {"kind": "Float"},
+              "span": {"file": "shapes.ion", "startLine": 2, "startCol": 4, "endLine": 2, "endCol": 10}
+            }
+          ],
+          "span": {"file": "shapes.ion", "startLine": 2, "startCol": 2, "endLine": 2, "endCol": 20}
+        },
+        {
+          "tag": "Rectangle",
+          "symbolId": "shapes:Rectangle:3",
+          "fields": [
+            {
+              "name": "width",
+              "symbolId": "shapes:width:4",
+              "type": {"kind": "Float"},
+              "span": {"file": "shapes.ion", "startLine": 3, "startCol": 4, "endLine": 3, "endCol": 9}
+            },
+            {
+              "name": "height",
+              "symbolId": "shapes:height:5",
+              "type": {"kind": "Float"},
+              "span": {"file": "shapes.ion", "startLine": 3, "startCol": 17, "endLine": 3, "endCol": 23}
+            }
+          ],
+          "span": {"file": "shapes.ion", "startLine": 3, "startCol": 2, "endLine": 3, "endCol": 30}
+        },
+        {
+          "tag": "Triangle",
+          "symbolId": "shapes:Triangle:6",
+          "fields": [
+            {
+              "name": "base",
+              "symbolId": "shapes:base:7",
+              "type": {"kind": "Float"},
+              "span": {"file": "shapes.ion", "startLine": 4, "startCol": 4, "endLine": 4, "endCol": 8}
+            },
+            {
+              "name": "height",
+              "symbolId": "shapes:height:8",
+              "type": {"kind": "Float"},
+              "span": {"file": "shapes.ion", "startLine": 4, "startCol": 16, "endLine": 4, "endCol": 22}
+            }
+          ],
+          "span": {"file": "shapes.ion", "startLine": 4, "startCol": 2, "endLine": 4, "endCol": 25}
+        }
+      ],
+      "span": {"file": "shapes.ion", "startLine": 1, "startCol": 0, "endLine": 5, "endCol": 1},
+      "type": {"kind": "Unit"}
+    }
+  ],
+  "decls": []
+}
