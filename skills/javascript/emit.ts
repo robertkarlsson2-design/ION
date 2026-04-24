@@ -31,6 +31,14 @@ interface EmitCtx {
   readonly helpers: Map<string, string>;
 }
 
+const JS_IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+function assertSafeJsIdentifier(name: string, context: string): void {
+  if (!JS_IDENTIFIER_RE.test(name)) {
+    throw new Error(`EmitError: "${name}" is not a valid JavaScript identifier (${context})`);
+  }
+}
+
 /**
  * Emit an IonIRModule as a JavaScript source string.
  */
@@ -196,11 +204,22 @@ function emitCase(node: CaseNode, ctx: EmitCtx): EmittedExpr {
 
 function emitPatternCond(pat: CasePattern, scrutinee: string): string {
   if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'true';
-  if (pat.kind === 'Constructor') return `${scrutinee}._tag === "${pat.ctorName}"`;
+  if (pat.kind === 'Constructor') {
+    assertSafeJsIdentifier(pat.ctorName, 'Constructor pattern tag');
+    return `${scrutinee}._tag === "${pat.ctorName}"`;
+  }
   const v = pat.value;
   if (v.kind === 'Bool') return `${scrutinee} === ${v.value}`;
   if (v.kind === 'Null') return `${scrutinee} === null`;
-  if (v.kind === 'Str') return `${scrutinee} === "${v.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  if (v.kind === 'Str') {
+    const escaped = v.value
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
+    return `${scrutinee} === "${escaped}"`;
+  }
   return `${scrutinee} === ${v.value}`;
 }
 
@@ -261,6 +280,7 @@ function emitAdtDecl(node: AdtDeclNode, ctx: EmitCtx): string {
   const ind = indentStr(ctx);
   const lines: string[] = [`// ADT: ${node.name}`];
   for (const variant of node.variants) {
+    assertSafeJsIdentifier(variant.tag, 'ADT variant tag');
     if (variant.fields.length === 0) {
       lines.push(`${ind}const ${variant.tag} = { _tag: "${variant.tag}" };`);
     } else {
@@ -281,6 +301,7 @@ function emitAdtMatch(node: AdtMatchNode, ctx: EmitCtx): EmittedExpr {
   const ind2 = indentStr(inner2);
 
   const cases = node.arms.map(arm => {
+    assertSafeJsIdentifier(arm.tag, 'ADT match arm tag');
     const bindings = arm.bindings
       .map(b => `${ind2}const ${b.name} = _s.${b.name};`)
       .join('\n');
@@ -296,6 +317,7 @@ function emitAdtMatch(node: AdtMatchNode, ctx: EmitCtx): EmittedExpr {
 
 function emitPerform(node: PerformNode, ctx: EmitCtx): EmittedExpr {
   ensureEffectPerformHelper(ctx);
+  assertSafeJsIdentifier(node.operation, 'Perform operation name');
   const args = node.args.map(a => emitExpr(a, ctx)).join(', ');
   const payload = `[${args}]`;
   return wrapEmitted(`(() => { throw new EffectPerform("${node.operation}", ${payload}); })()`);
@@ -311,6 +333,7 @@ function emitHandle(node: HandleNode, ctx: EmitCtx): EmittedExpr {
   const body = emitExpr(node.body, inner);
 
   const handlerClauses = node.handlers.map(h => {
+    assertSafeJsIdentifier(h.operation, 'Handle operation name');
     const bindings = h.params
       .map((p, i) => `${ind2}  const ${p.name} = _e.payload[${i}];`)
       .join('\n');
