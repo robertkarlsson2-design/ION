@@ -1,0 +1,12 @@
+pub fn sumEvenSquares(n: Int) -> Int =
+  fold(
+    map(filter(range(1, n + 1), (x) -> x % 2 == 0), (x) -> x * x),
+    0,
+    (acc, x) -> acc + x
+  )
+
+pub fn topN(ns: List<Int>, n: Int) -> List<Int> =
+  slice(reverse(ns), 0, n)
+
+pub fn frequencies(tags: List<Str>) -> List<Str> =
+  map(tags, (t) -> concat(t, ": ") )

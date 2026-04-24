@@ -1,0 +1,8 @@
+pub fn isPrime(n: Int) -> Bool =
+  n > 1 && all(range(2, n), (i) -> n % i != 0)
+
+pub fn primesUpTo(n: Int) -> List<Int> =
+  filter(range(2, n + 1), (x) -> isPrime(x))
+
+pub fn nthPrime(n: Int) -> Int =
+  fold(primesUpTo(n * 20), 0, (acc, x) -> if acc == 0 then x else acc)
