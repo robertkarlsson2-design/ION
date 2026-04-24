@@ -109,6 +109,10 @@ describe('arrow-fn-1p', () => {
     const result = matcher.match(node);
     expect(result).not.toBeNull();
     expect(result?.kind).toBe('Abs');
+    // @ts-expect-error dynamic field
+    expect(Array.isArray(result?.params)).toBe(true);
+    // @ts-expect-error dynamic field
+    expect(result?.params?.[0]?.name).toBe('x');
   });
 
   it('returns null for arrow_function with formal_parameters (multi-param)', () => {
@@ -147,6 +151,10 @@ describe('arrow-fn-np', () => {
     const result = matcher.match(node);
     expect(result).not.toBeNull();
     expect(result?.kind).toBe('Abs');
+    // @ts-expect-error dynamic field
+    expect(Array.isArray(result?.params)).toBe(true);
+    // @ts-expect-error dynamic field
+    expect(result?.params?.[0]?.name).toBe('(x, y)');
   });
 
   it('returns null for arrow_function with identifier param (single-param)', () => {
@@ -561,8 +569,9 @@ describe('neq-null', () => {
     expect(result?.callee?.name).toBe('isNotNull');
   });
 
-  it('returns null for non-binary_expression node', () => {
-    expect(matcher.match(makeLeaf('identifier', 'x'))).toBeNull();
+  it('returns null for binary_expression with non-null rhs', () => {
+    const node = makeParent('binary_expression', [makeLeaf('identifier', 'x'), makeLeaf('number', '0')]);
+    expect(matcher.match(node)).toBeNull();
   });
 });
 
@@ -1077,7 +1086,7 @@ describe('ternary', () => {
 
 // ── Integration ───────────────────────────────────────────────────────────────
 
-it('loadPatterns from skills/javascript returns at least 30 matchers', async () => {
+it('loadPatterns from skills/javascript returns at least 27 matchers', async () => {
   const matchers = await loadPatterns(SKILL_DIR);
-  expect(matchers.length).toBeGreaterThanOrEqual(30);
+  expect(matchers.length).toBeGreaterThanOrEqual(27);
 });

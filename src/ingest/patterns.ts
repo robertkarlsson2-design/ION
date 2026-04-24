@@ -405,6 +405,7 @@ function buildValue(
   rootSpan: Span,
   ruleId: string,
 ): unknown {
+  if (Array.isArray(spec)) return spec.map(item => buildValue(item, bindings, rootSpan, ruleId));
   if (spec === null || typeof spec !== 'object') return spec;
 
   const obj = spec as Record<string, unknown>;
