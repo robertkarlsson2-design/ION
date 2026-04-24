@@ -110,3 +110,12 @@ export class SourceMapBuilder {
     });
   }
 }
+
+/** Convenience wrapper used by the CLI when no token-level mappings are available. */
+export function generateSourceMap(opts: { sourceFile: string; outputFile: string; sourceContent: string }): string {
+  const builder = new SourceMapBuilder();
+  return builder.toJSON({
+    file: opts.outputFile,
+    sourceContents: new Map([[opts.sourceFile, opts.sourceContent]]),
+  });
+}
