@@ -15,6 +15,7 @@ import { SymbolTableBuilder } from './symbol-table.js';
 import type { SymbolKind } from './symbol-table.js';
 import type { BindError, UndefinedNameError, DuplicateBindingError } from './errors.js';
 import { buildGraph, topoSort } from './graph.js';
+import { nullSpan } from './module-graph.js';
 
 export type { BindError, BindErrorKind } from './errors.js';
 export type { SymbolKind, SymbolInfo, ModuleSymbolTable, SymbolTable } from './symbol-table.js';
@@ -37,8 +38,6 @@ export interface BindProgramResult {
   readonly modules: readonly ModuleBindResult[];
   readonly errors: readonly BindError[];
 }
-
-const nullSpan: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
 
 // \0 is guaranteed absent from all OS file paths, making this key unambiguous.
 function spanKey(span: Span): string {
