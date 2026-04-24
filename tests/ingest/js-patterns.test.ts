@@ -133,12 +133,61 @@ emit:
   });
 });
 
-// ── Suite: all 44 patterns load ───────────────────────────────────────────────
+// ── Suite: node-text-contains condition ──────────────────────────────────────
+
+describe('node-text-contains condition', () => {
+  function makeNodeTextContainsRule(text: string): PatternRule {
+    const cond: Condition = { kind: 'node-text-contains', text };
+    return {
+      id: 'test',
+      language: 'test',
+      match: { nodeType: 'call_expression', capture: '$CALL' },
+      conditions: [cond],
+      emit: { kind: 'Var', name: 'x', symbolId: 'x' },
+    };
+  }
+
+  it('C-NT-1: passes when node text includes the target string', () => {
+    const node = makeLeaf('call_expression', 'forEach(callback)');
+    const matcher = compileRule(makeNodeTextContainsRule('forEach'));
+    expect(matcher.match(node)).not.toBeNull();
+  });
+
+  it('C-NT-2: returns null when node text does not include the target string', () => {
+    const node = makeLeaf('call_expression', 'map(fn)');
+    const matcher = compileRule(makeNodeTextContainsRule('forEach'));
+    expect(matcher.match(node)).toBeNull();
+  });
+
+  it('C-NT-3: is parsed from YAML and works end-to-end via loadPatterns', async () => {
+    const yaml = `
+id: ntc-rule
+language: test
+match:
+  nodeType: call_expression
+  capture: $CALL
+conditions:
+  - kind: node-text-contains
+    text: "forEach"
+emit:
+  kind: Var
+  name: x
+  symbolId: x
+`;
+    const skillDir = await writeTempPatterns({ 'ntc-rule.yaml': yaml });
+    const matchers = await loadPatterns(skillDir);
+    expect(matchers).toHaveLength(1);
+    expect(matchers[0]!.match(makeLeaf('call_expression', 'arr.forEach(fn)'))).not.toBeNull();
+    expect(matchers[0]!.match(makeLeaf('call_expression', 'arr.map(fn)'))).toBeNull();
+  });
+});
+
+// ── Suite: all 71 patterns load ───────────────────────────────────────────────
 
 describe('full pattern set loads without errors', () => {
-  it('skills/javascript/patterns/ loads exactly 44 matchers', async () => {
+  it('skills/javascript/patterns/ loads exactly 71 matchers', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
-    expect(matchers).toHaveLength(44);
+    expect(matchers).toHaveLength(71);
     expect(matchers.every(m => typeof m.match === 'function')).toBe(true);
   }, 30000);
 });

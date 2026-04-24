@@ -33,23 +33,23 @@ const JS_SKILL_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../../ski
 // ── Suite A — Loader integration ──────────────────────────────────────────────
 
 describe('A: loader integration', () => {
-  it('A1: loadPatterns returns exactly 31 PatternMatcher instances', async () => {
+  it('A1: loadPatterns returns exactly 71 PatternMatcher instances', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
-    expect(matchers).toHaveLength(31);
+    expect(matchers).toHaveLength(71);
     expect(matchers.every(m => typeof m.match === 'function')).toBe(true);
-  });
+  }, 30000);
 
   it('A2: all loaded rules have unique ids', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
     expect(new Set(matchers.map(m => m.ruleId)).size).toBe(matchers.length);
-  });
+  }, 30000);
 
   it('A3: all rules have language = javascript (validated via successful load)', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
     // If any rule had an invalid language the YAML would still load (language is informational),
     // so we verify indirectly that no rules threw during compilation.
-    expect(matchers.length).toBeGreaterThanOrEqual(31);
-  });
+    expect(matchers.length).toBeGreaterThanOrEqual(71);
+  }, 30000);
 });
 
 // ── Suite B — Match correctness ───────────────────────────────────────────────
