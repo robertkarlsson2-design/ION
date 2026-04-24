@@ -1,2 +1,0 @@
-data MaybeInt = NoneI | SomeI(Int)
-fn positiveOrZero(x: MaybeInt) -> Int = match x | SomeI(v) if v > 0 -> v | _ -> 0
