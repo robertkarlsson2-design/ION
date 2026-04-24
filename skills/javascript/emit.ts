@@ -229,7 +229,7 @@ function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
 
   return {
     kind: 'JsIife',
-    body: [{ kind: 'JsIfElse', branches, elseBranch }],
+    body: [{ kind: 'JsIfElse', branches, ...(elseBranch !== undefined ? { elseBranch } : {}) }],
   };
 }
 
@@ -409,7 +409,6 @@ function buildHandle(node: HandleNode, ctx: BuildCtx): JsNode {
         },
         body: [...bindings, { kind: 'JsReturn' as const, value: buildExpr(h.body, ctx) }],
       }],
-      elseBranch: undefined,
     };
   });
 
@@ -430,7 +429,6 @@ function buildHandle(node: HandleNode, ctx: BuildCtx): JsNode {
               cond: { kind: 'JsInstanceof', expr: { kind: 'JsIdent', name: '_e' }, className: 'EffectPerform' },
               body: handlerIfs,
             }],
-            elseBranch: undefined,
           },
           { kind: 'JsThrow', value: { kind: 'JsIdent', name: '_e' } },
         ],
@@ -502,7 +500,7 @@ function buildOopClass(node: OopClassNode, ctx: BuildCtx): JsClass {
   return {
     kind: 'JsClass',
     name: node.name,
-    superClass: node.superClass !== undefined ? String(node.superClass) : undefined,
+    ...(node.superClass !== undefined ? { superClass: String(node.superClass) } : {}),
     ctor,
     methods,
   };
