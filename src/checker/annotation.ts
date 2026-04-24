@@ -2,7 +2,7 @@ import type { TypeAnnotation } from '../ast/types.js';
 import type { IonType, TypeVar } from '../ir/types.js';
 import type { SymbolId } from '../types.js';
 import { makeSymbolId } from '../types.js';
-import type { CheckError } from './types.js';
+import type { CheckError } from './errors.js';
 
 /**
  * Resolve a surface TypeAnnotation to a fully-resolved IonType.
@@ -32,6 +32,7 @@ export function resolveAnnotation(
           name: ann.name,
           span: ann.span,
           message: `Unknown type '${ann.name}'`,
+          suggestion: 'Declare the type or check your imports',
         });
         // Return a TypeVar as fallback so inference can continue.
         const fallback: TypeVar = { kind: 'TypeVar', id: ann.name };
@@ -70,6 +71,7 @@ export function resolveAnnotation(
               name: ann.name,
               span: ann.span,
               message: `Unknown generic type '${ann.name}'`,
+              suggestion: 'Declare the type or check your imports',
             });
             return { kind: 'TypeVar', id: ann.name };
           }

@@ -1,6 +1,6 @@
 import type { IonType } from '../ir/types.js';
 import type { Span } from '../types.js';
-import type { CheckError } from './types.js';
+import type { CheckError } from './errors.js';
 
 export type Substitution = Map<string, IonType>;
 
@@ -224,8 +224,9 @@ function makeMismatch(expected: IonType, actual: IonType, span: Span): CheckErro
     kind: 'TypeMismatch',
     code: 'E0401',
     expected,
-    actual,
+    found: actual,
     span,
     message: `Type mismatch: expected ${typeStr(expected)}, got ${typeStr(actual)}`,
+    suggestion: `Expected ${typeStr(expected)}, got ${typeStr(actual)}`,
   };
 }

@@ -7,9 +7,9 @@ import type {
 } from '../ast/nodes.js';
 import type { IonType, TypeVar, FnType } from '../ir/types.js';
 import type { SymbolId, Span } from '../types.js';
-import type { SymbolTable } from '../binder/symbol-table.js';
+import type { ModuleSymbolTable } from '../binder/symbol-table.js';
 import type { ResolutionMap } from '../binder/index.js';
-import type { CheckError } from './types.js';
+import type { CheckError } from './errors.js';
 import { resolveAnnotation } from './annotation.js';
 import { applySubst, applySubstEnv, composeSubst, emptySubst, unify, typeStr } from './unifier.js';
 import { checkExhaustiveness } from './exhaust.js';
@@ -18,7 +18,7 @@ import type { EffectTag } from '../ast/types.js';
 
 /** Shared mutable state threaded through the inference pass. */
 export interface InferCtx {
-  readonly symbolTable: SymbolTable;
+  readonly symbolTable: ModuleSymbolTable;
   readonly resolutionMap: ResolutionMap;
   /** spanKey(param.span) or spanKey(pattern.span) → SymbolId (Param + PatternBinding). */
   readonly varIndex: ReadonlyMap<string, SymbolId>;
@@ -81,6 +81,7 @@ function registerDeclType(decl: AstDeclNode, ctx: InferCtx): void {
           name: decl.name,
           span: decl.span,
           message: `Top-level binding '${decl.name}' requires a type annotation`,
+          suggestion: `Add a type annotation: let ${decl.name}: <Type> = ...`,
         });
         ctx.typeEnv.set(id, freshTypeVar(ctx));
       } else {
@@ -100,6 +101,7 @@ function registerDeclType(decl: AstDeclNode, ctx: InferCtx): void {
             name: p.name,
             span: p.span,
             message: `Extern parameter '${p.name}' requires a type annotation`,
+            suggestion: `Add a type annotation: ${p.name}: <Type>`,
           });
           return freshTypeVar(ctx);
         }
@@ -113,6 +115,7 @@ function registerDeclType(decl: AstDeclNode, ctx: InferCtx): void {
           name: decl.name,
           span: decl.span,
           message: `Extern '${decl.name}' requires a return type annotation`,
+          suggestion: `Add a return type annotation: extern ${decl.name}(...): <Type>`,
         });
         retType = freshTypeVar(ctx);
       } else {
@@ -209,6 +212,7 @@ function registerFnType(decl: AstFnDeclNode, ctx: InferCtx): void {
       name: decl.name,
       span: decl.span,
       message: `Function '${decl.name}' requires a return type annotation`,
+      suggestion: `Add a return type annotation: fn ${decl.name}(...): <Type>`,
     });
     retType = freshTypeVar(ctx);
   } else {
@@ -300,6 +304,7 @@ function inferFnBody(decl: AstFnDeclNode, ctx: InferCtx): void {
       used: ctx.effectsUsed,
       span: decl.span,
       message: `Function '${decl.name}' uses undeclared effects: ${undeclared.join(', ')}`,
+      suggestion: `Declare the effects in the function signature: fn ${decl.name}(...) ! ${undeclared.join(', ')}`,
     });
   }
 
@@ -501,10 +506,11 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
       if (innerType.kind === 'Result') return innerType.ok;
       ctx.errors.push({
         kind: 'InvalidPropagate',
-        code: 'E0403',
-        actualType: innerType,
+        code: 'E0404',
+        found: innerType,
         span: expr.span,
         message: `The '?' operator requires an Option or Result type, got ${typeStr(innerType)}`,
+        suggestion: 'Wrap the value in Option or Result before using ?',
       });
       return freshTypeVar(ctx);
     }
@@ -629,7 +635,7 @@ function findRecordFieldType(
 // ---------------------------------------------------------------------------
 
 /** Build varIndex (Param + PatternBinding) from the symbol table. */
-export function buildVarIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
+export function buildVarIndex(symbolTable: ModuleSymbolTable): Map<string, SymbolId> {
   const idx = new Map<string, SymbolId>();
   for (const entry of symbolTable.all()) {
     if (entry.declKind === 'Param' || entry.declKind === 'PatternBinding') {
@@ -640,7 +646,7 @@ export function buildVarIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
 }
 
 /** Build letIndex (LetDecl + LetExpr bindings) from the symbol table. */
-export function buildLetIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
+export function buildLetIndex(symbolTable: ModuleSymbolTable): Map<string, SymbolId> {
   const idx = new Map<string, SymbolId>();
   for (const entry of symbolTable.all()) {
     if (entry.declKind === 'Let') {
@@ -651,7 +657,7 @@ export function buildLetIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
 }
 
 /** Build fnDeclIndex (Fn + Extern) from the symbol table. */
-export function buildFnDeclIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
+export function buildFnDeclIndex(symbolTable: ModuleSymbolTable): Map<string, SymbolId> {
   const idx = new Map<string, SymbolId>();
   for (const entry of symbolTable.all()) {
     if (entry.declKind === 'Fn' || entry.declKind === 'Extern') {
@@ -662,7 +668,7 @@ export function buildFnDeclIndex(symbolTable: SymbolTable): Map<string, SymbolId
 }
 
 /** Build nameIndex (Data + TypeAlias) from the symbol table. */
-export function buildNameIndex(symbolTable: SymbolTable): Map<string, SymbolId> {
+export function buildNameIndex(symbolTable: ModuleSymbolTable): Map<string, SymbolId> {
   const idx = new Map<string, SymbolId>();
   for (const entry of symbolTable.all()) {
     if (entry.declKind === 'Data' || entry.declKind === 'TypeAlias') {

@@ -1,7 +1,7 @@
 import type { AstMatchArm, AstPatternNode } from '../ast/nodes.js';
 import type { IonType } from '../ir/types.js';
 import type { Span } from '../types.js';
-import type { CheckError } from './types.js';
+import type { CheckError } from './errors.js';
 
 /**
  * Check that match arms are exhaustive for the given scrutinee type.
@@ -101,5 +101,6 @@ function reportMissing(missing: string[], span: Span, errors: CheckError[]): voi
     missingCases: missing,
     span,
     message: `Non-exhaustive match: missing cases ${missing.join(', ')}`,
+    suggestion: `Add a match arm for: ${missing.join(', ')}`,
   });
 }

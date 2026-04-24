@@ -21,9 +21,11 @@ export type { SymbolKind, SymbolInfo, ModuleSymbolTable } from './symbol-table.j
 export { detectCircularImports } from './module-graph.js';
 export type { ModuleGraph } from './module-graph.js';
 
+export type ResolutionMap = ReadonlyMap<string, SymbolId>;
+
 export interface BindResult {
   readonly symbolTable: import('./symbol-table.js').ModuleSymbolTable;
-  readonly resolutionMap: ReadonlyMap<string, SymbolId>;
+  readonly resolutionMap: ResolutionMap;
   readonly errors: readonly BindError[];
 }
 

@@ -58,13 +58,54 @@ export interface ArityMismatchError {
   readonly suggestion: string;
 }
 
+export interface UnknownTypeError {
+  readonly kind: 'UnknownType';
+  readonly code: 'E0406';
+  readonly name: string;
+  readonly span: Span;
+  readonly message: string;
+  readonly suggestion: string;
+}
+
+export interface InexhaustiveMatchError {
+  readonly kind: 'InexhaustiveMatch';
+  readonly code: 'E0402';
+  readonly missingCases: readonly string[];
+  readonly span: Span;
+  readonly message: string;
+  readonly suggestion: string;
+}
+
+export interface MissingAnnotationError {
+  readonly kind: 'MissingAnnotation';
+  readonly code: 'E0405';
+  readonly name: string;
+  readonly span: Span;
+  readonly message: string;
+  readonly suggestion: string;
+}
+
+export interface EffectViolationError {
+  readonly kind: 'EffectViolation';
+  readonly code: 'E0404';
+  readonly declared: ReadonlySet<EffectTag>;
+  readonly used: ReadonlySet<EffectTag>;
+  readonly span: Span;
+  readonly message: string;
+  readonly suggestion: string;
+}
+
 export type CheckError =
   | TypeMismatchError
   | UnannotatedTopLevelError
   | NonExhaustiveMatchError
   | InvalidPropagateError
   | EffectMismatchError
-  | ArityMismatchError;
+  | ArityMismatchError
+  | UnknownTypeError
+  | InexhaustiveMatchError
+  | MissingAnnotationError
+  | EffectViolationError;
 
 /**
  * Format a CheckError as a human-readable string with error code, message, span, and suggestion.
@@ -73,3 +114,4 @@ export type CheckError =
 export function formatCheckError(e: CheckError): string {
   return `error[${e.code}]: ${e.message} at ${e.span.file}:${e.span.startLine}:${e.span.startCol}\n  suggestion: ${e.suggestion}`;
 }
+
