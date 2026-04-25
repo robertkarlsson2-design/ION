@@ -109,8 +109,29 @@ export function desugarModule(
   const decls: IonIRNode[] = [];
   const imports: ModuleRefNode[] = [];
 
+  // When desugaring a user module (not the prelude itself), skip prelude
+  // declarations and represent them as a single import reference instead.
+  // This keeps IonIR JSON compact — prelude is injected at build/emit time.
+  const isPreludeModule = modulePath === '<prelude>';
+  let needsPrelude = false;
+
   for (const decl of ast.decls) {
+    if (!isPreludeModule && decl.span.file === '<prelude>') {
+      needsPrelude = true;
+      continue;
+    }
     desugarDecl(decl, data, decls, ctx);
+  }
+
+  if (needsPrelude) {
+    const syntheticSpan: Span = { file: '<prelude>', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
+    imports.push({
+      kind: 'ModuleRef',
+      modulePath: ['prelude'],
+      symbolId: makeSymbolId('<prelude>'),
+      span: syntheticSpan,
+      type: { kind: 'Unit' },
+    });
   }
 
   const dialects: IonIRDialect[] = ['core'];

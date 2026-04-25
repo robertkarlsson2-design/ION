@@ -11,6 +11,7 @@ import { checkModule } from '../checker/index.js';
 import type { CheckError } from '../checker/index.js';
 import { desugarModule } from '../desugar/index.js';
 import { deserializeModule, IonIRSerdeError } from '../ir/serde.js';
+import type { IonIRModule, IonIRNode } from '../ir/nodes.js';
 import { emitJS } from '../../emitters/javascript/emit.js';
 import { emitTS } from '../../emitters/typescript/emit.js';
 import { emitPython } from '../../emitters/python/emit.js';
@@ -19,7 +20,6 @@ import type { IonConfig } from './config.js';
 import { generateSourceMap } from '../emit/sourcemap.js';
 import { getPreludeDecls } from '../prelude/index.js';
 import type { Span } from '../types.js';
-import type { IonIRModule } from '../ir/nodes.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -245,6 +245,33 @@ interface CompileFileResult {
   diagnostics: BuildDiagnostic[];
 }
 
+// ---------------------------------------------------------------------------
+// Prelude resolution
+// ---------------------------------------------------------------------------
+
+let _preludeIRDecls: readonly IonIRNode[] | null = null;
+
+function getPreludeIRDecls(): readonly IonIRNode[] {
+  if (_preludeIRDecls) return _preludeIRDecls;
+  const preludeAstDecls = getPreludeDecls();
+  const preludeAst = {
+    kind: 'Module' as const,
+    decls: preludeAstDecls,
+    span: { file: '<prelude>', startLine: 0, startCol: 0, endLine: 0, endCol: 0 },
+  };
+  const bindResult = bindModule(preludeAst, '<prelude>');
+  const checkResult = checkModule(preludeAst, bindResult, '<prelude>');
+  const ir = desugarModule(preludeAst, bindResult, checkResult, '<prelude>', '0.0.0');
+  _preludeIRDecls = ir.decls;
+  return _preludeIRDecls;
+}
+
+function resolvePreludeImport(ir: IonIRModule): IonIRModule {
+  if (!ir.imports.some(imp => imp.modulePath[0] === 'prelude')) return ir;
+  const preludeDecls = getPreludeIRDecls();
+  return { ...ir, decls: [...preludeDecls, ...ir.decls] };
+}
+
 async function compileFile(
   ionPath: string,
   rootDir: string,
@@ -308,7 +335,7 @@ async function compileFile(
 
     let emitted: string;
     try {
-      emitted = emitter(ir);
+      emitted = emitter(resolvePreludeImport(ir));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return {
@@ -367,7 +394,7 @@ async function compileFile(
   let emitted: string;
   try {
     const ir = desugarModule(ast, bindResult, checkResult, ionPath, '0.0.0');
-    emitted = emitter(ir);
+    emitted = emitter(resolvePreludeImport(ir));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return {
