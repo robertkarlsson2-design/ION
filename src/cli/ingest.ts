@@ -176,7 +176,7 @@ export function resolvePlugin(skillName: string): IngestPlugin | { error: string
  * Tries `emitters/<name>/` relative to CWD first, then relative to the CLI binary.
  */
 async function resolveSkillDir(skillName: string): Promise<string | { error: string }> {
-  const cwdPath = resolve(process.cwd(), 'skills', skillName);
+  const cwdPath = resolve(process.cwd(), 'emitters', skillName);
   try {
     const s = await stat(cwdPath);
     if (s.isDirectory()) return cwdPath;
@@ -185,7 +185,7 @@ async function resolveSkillDir(skillName: string): Promise<string | { error: str
   }
 
   const fileDir = dirname(fileURLToPath(import.meta.url));
-  const fallbackPath = resolve(fileDir, '..', '..', 'skills', skillName);
+  const fallbackPath = resolve(fileDir, '..', '..', 'emitters', skillName);
   try {
     const s = await stat(fallbackPath);
     if (s.isDirectory()) return fallbackPath;
@@ -207,8 +207,8 @@ async function buildJsPlugin(skillDir: string): Promise<IngestPlugin | { error: 
   const cliDir = dirname(fileURLToPath(import.meta.url));
   const candidates = [
     resolve(skillDir, 'parser.js'),
-    resolve(cliDir, '..', 'skills', basename(skillDir), 'parser.js'),
-    resolve(process.cwd(), 'dist', 'skills', basename(skillDir), 'parser.js'),
+    resolve(cliDir, '..', 'emitters', basename(skillDir), 'parser.js'),
+    resolve(process.cwd(), 'dist', 'emitters', basename(skillDir), 'parser.js'),
   ];
 
   for (const parserPath of candidates) {
@@ -259,8 +259,8 @@ async function buildGenericPlugin(
   const cliDir = dirname(fileURLToPath(import.meta.url));
   const candidates = [
     resolve(skillDir, 'parser.js'),
-    resolve(cliDir, '..', 'skills', basename(skillDir), 'parser.js'),
-    resolve(process.cwd(), 'dist', 'skills', basename(skillDir), 'parser.js'),
+    resolve(cliDir, '..', 'emitters', basename(skillDir), 'parser.js'),
+    resolve(process.cwd(), 'dist', 'emitters', basename(skillDir), 'parser.js'),
   ];
 
   for (const parserPath of candidates) {

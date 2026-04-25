@@ -1,0 +1,4 @@
+I1
+M javascript.declarations.d v=0.0.0 d=core
+S a=: any
+F let language:never=a;0 let default:never=language;0
