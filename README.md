@@ -94,7 +94,9 @@ Same Ion source. Same logic. Idiomatic output per target.
 
 **Two modes — one language.** Ion has a human-readable surface syntax for developers and a machine-optimized wire format for LLMs and the compiler. Your IDE always shows you the pretty form. The compiler and agents work on the wire form. You never see the difference.
 
-**Adding a new target language is a folder, not a fork.** The plugin system is designed so that supporting a new output language means writing a skill folder — a few YAML pattern files, a stdlib mapping, and a SKILL.md. No changes to the compiler.
+**Adding a new target language is a folder, not a fork.** Supporting a new output language means writing an emitter folder — a few YAML pattern files, a stdlib mapping, and a SKILL.md. No changes to the compiler.
+
+**Built-in escape hatch for emitter gaps.** When an emitter doesn't yet support a construct, use `raw("verbatim target code")` inline. Every emitter is guaranteed to pass it through unchanged. This means LLMs can always make forward progress — write as much as possible in ION, drop to `raw(...)` only for the unsupported parts, and file an issue. See `llm-skills/write-ion.md` for the full gap-handling workflow.
 
 ---
 
@@ -183,7 +185,9 @@ The savings are largest when prelude functions are used — each Ion `map`, `fil
 | Lightning Web Component (LWC) emitter | ✅ Complete |
 | Salesforce Apex emitter | ✅ Complete |
 | `ion build` CLI | ✅ Complete |
-| `ion ingest` (convert existing code) | 🔧 In progress |
+| `RawInject` escape hatch (`raw(...)`) | ✅ Complete |
+| LLM skill guides (`llm-skills/`) | ✅ Complete |
+| `ion ingest` (convert existing code) | ✅ Complete |
 | Java plugin | 📋 Planned — Phase 5 |
 | LSP server | 📋 Planned — Phase 4 |
 
@@ -503,8 +507,11 @@ ion plugin validate emitters/rust    # validate plugin against interface spec
 ## Getting started
 
 ```bash
-# Install
-npm install -g @ion-lang/compiler
+# Install from source (npm package coming soon)
+git clone https://github.com/robertkarlsson2-design/ION.git
+cd ION
+npm install
+npm run build
 
 # Create a new project
 mkdir my-project && cd my-project
