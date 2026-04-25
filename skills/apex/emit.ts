@@ -7,6 +7,12 @@ import type {
   CaseNode,
   VarNode,
   AccessorNode,
+  OopClassNode,
+  OopInterfaceNode,
+  AdtDeclNode,
+  AdtMatchNode,
+  EffectDeclNode,
+  RawInjectNode,
 } from '../../src/ir/nodes.js';
 import type { IonType } from '../../src/ir/types.js';
 
@@ -65,7 +71,7 @@ export function emitApexExpr(node: IonIRNode): string {
   switch (node.kind) {
     case 'Literal': {
       const v = node.value;
-      if (v.kind === 'Str') return `'${v.value.replace(/'/g, "\\'")}'`;
+      if (v.kind === 'Str') return `'${v.value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
       if (v.kind === 'Int') return String(v.value);
       if (v.kind === 'Float') return String(v.value);
       if (v.kind === 'Bool') return v.value ? 'true' : 'false';
@@ -100,6 +106,11 @@ export function emitApexExpr(node: IonIRNode): string {
         }
         if (name === '__or__' && app.args.length === 2) {
           return `(${emitApexExpr(app.args[0]!)} || ${emitApexExpr(app.args[1]!)})`;
+        }
+
+        // map/filter/reduce — no higher-order functions in Apex; emit a loop comment
+        if ((name === 'map' || name === 'filter' || name === 'reduce') && app.args.length >= 1) {
+          return `/* ${name}: */ ${emitApexExpr(app.args[0]!)}`;
         }
 
         // Regular function call
@@ -182,11 +193,79 @@ export function emitApexExpr(node: IonIRNode): string {
       return `new List<Object>{${elements}}`;
     }
 
+    case 'MapLit': {
+      // Apex Map literal: new Map<Object, Object>{ key => value, ... }
+      const entries = node.entries.map(e => `${emitApexExpr(e.key)} => ${emitApexExpr(e.value)}`).join(', ');
+      return `new Map<Object, Object>{${entries}}`;
+    }
+
+    case 'Constructor': {
+      // ADT constructor: represent as a Map with _tag key
+      const args = node.args.map(emitApexExpr);
+      if (args.length === 0) {
+        return `new Map<String, Object>{ '_tag' => '${node.ctorName}' }`;
+      }
+      const argEntries = args.map((a, i) => `'_arg${i}' => ${a}`).join(', ');
+      return `new Map<String, Object>{ '_tag' => '${node.ctorName}', ${argEntries} }`;
+    }
+
+    case 'ModuleRef': return node.modulePath.join('.');
+
+    case 'ForeignRef': return node.target;
+
+    case 'Effect': return emitApexExpr(node.body);
+
+    case 'OopNew': {
+      const args = node.args.map(emitApexExpr).join(', ');
+      return `new _ctor_${node.ctorSymbolId}(${args})`;
+    }
+
+    case 'OopThis': return 'this';
+
     case 'Abs': {
+      // Apex has no lambdas — emit a comment placeholder
       return `/* lambda: use method reference */`;
     }
 
-    default: return 'null';
+    case 'AsyncBlock': {
+      // Apex has no real async; emit body directly (or use @future for side effects)
+      return emitApexExpr(node.body);
+    }
+
+    case 'Await': {
+      // Apex has no await — emit the inner expression directly
+      return emitApexExpr(node.expr);
+    }
+
+    case 'AdtMatch': {
+      const adtMatch = node as AdtMatchNode;
+      if (adtMatch.arms.length === 0) return 'null';
+      // Apex has no pattern matching — emit first arm's body
+      return emitApexExpr(adtMatch.arms[0]!.body);
+    }
+
+    case 'Perform': {
+      // Apex algebraic effects don't exist — emit args as a call comment
+      const args = node.args.map(emitApexExpr).join(', ');
+      return `/* perform ${node.operation}(${args}) */null`;
+    }
+
+    case 'Handle': return emitApexExpr(node.body);
+
+    case 'Resume': return emitApexExpr(node.value);
+
+    // Declaration nodes in expression position
+    case 'OopClass': return node.name;
+    case 'OopInterface': return `/* interface ${node.name} */null`;
+    case 'AdtDecl': return `/* adt ${node.name} */null`;
+    case 'EffectDecl': return `/* effect ${node.name} */null`;
+
+    case 'RawInject': return (node as RawInjectNode).code;
+
+    default: {
+      const _exhaustive: never = node;
+      return `/* unknown: ${(_exhaustive as IonIRNode).kind} */null`;
+    }
   }
 }
 
@@ -205,6 +284,27 @@ function emitApexLetBlock(node: IonIRNode): { stmts: string[]; ret: string } {
     cur = lt.body;
   }
   return { stmts, ret: emitApexExpr(cur) };
+}
+
+// ---------------------------------------------------------------------------
+// emitApexMethodBody — emit a potentially async body, including @future wrapper
+// ---------------------------------------------------------------------------
+
+function emitApexMethodBody(
+  name: string,
+  node: IonIRNode,
+  indent = '        ',
+): { isAsync: boolean; stmts: string[]; ret: string } {
+  let isAsync = false;
+  let inner = node;
+
+  if (inner.kind === 'AsyncBlock') {
+    isAsync = true;
+    inner = inner.body;
+  }
+
+  const { stmts, ret } = emitApexLetBlock(inner);
+  return { isAsync, stmts, ret };
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +334,101 @@ function getAuraAnnotation(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// emitApexClass — emit an OopClass node as an Apex inner class
+// ---------------------------------------------------------------------------
+
+function emitApexClass(cls: OopClassNode, indent = '    '): string {
+  const lines: string[] = [];
+  lines.push(`${indent}public class ${cls.name} {`);
+
+  // Fields
+  for (const f of cls.fields) {
+    lines.push(`${indent}    public ${ionTypeToApex(f.type)} ${f.name};`);
+  }
+
+  if (cls.fields.length > 0) {
+    lines.push(``);
+    // Constructor
+    const ctorParams = cls.fields.map(f => `${ionTypeToApex(f.type)} ${f.name}`).join(', ');
+    lines.push(`${indent}    public ${cls.name}(${ctorParams}) {`);
+    for (const f of cls.fields) {
+      lines.push(`${indent}        this.${f.name} = ${f.name};`);
+    }
+    lines.push(`${indent}    }`);
+  }
+
+  // Methods
+  for (const m of cls.methods) {
+    const retType = ionTypeToApex(m.retType);
+    const params = m.params.map(p => `${ionTypeToApex(p.type)} ${p.name}`).join(', ');
+    const staticKw = m.isStatic ? 'static ' : '';
+    const bodyStr = m.body ? emitApexExpr(m.body) : 'null';
+    lines.push(`${indent}    public ${staticKw}${retType} ${m.name}(${params}) {`);
+    lines.push(`${indent}        return ${bodyStr};`);
+    lines.push(`${indent}    }`);
+  }
+
+  lines.push(`${indent}}`);
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// emitApexInterface — emit an OopInterface node as an Apex interface
+// ---------------------------------------------------------------------------
+
+function emitApexInterface(iface: OopInterfaceNode, indent = '    '): string {
+  const lines: string[] = [];
+  lines.push(`${indent}public interface ${iface.name} {`);
+  for (const m of iface.members) {
+    lines.push(`${indent}    ${ionTypeToApex(m.type)} get${m.name.slice(0, 1).toUpperCase() + m.name.slice(1)}();`);
+  }
+  lines.push(`${indent}}`);
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// emitApexAdt — emit an AdtDecl node as Apex enum or inner class hierarchy
+// ---------------------------------------------------------------------------
+
+function emitApexAdt(adt: AdtDeclNode, indent = '    '): string {
+  const lines: string[] = [];
+
+  // If all variants have no fields → emit as Apex enum
+  const allSimple = adt.variants.every(v => v.fields.length === 0);
+  if (allSimple) {
+    lines.push(`${indent}public enum ${adt.name} {`);
+    lines.push(`${indent}    ${adt.variants.map(v => v.tag).join(', ')}`);
+    lines.push(`${indent}}`);
+    return lines.join('\n');
+  }
+
+  // Otherwise emit as inner class hierarchy with a base class + subclasses
+  lines.push(`${indent}public abstract class ${adt.name} {`);
+  lines.push(`${indent}    public abstract String getTag();`);
+
+  for (const v of adt.variants) {
+    lines.push(``);
+    lines.push(`${indent}    public class ${v.tag} extends ${adt.name} {`);
+    for (const f of v.fields) {
+      lines.push(`${indent}        public ${ionTypeToApex(f.type)} ${f.name};`);
+    }
+    if (v.fields.length > 0) {
+      const ctorParams = v.fields.map(f => `${ionTypeToApex(f.type)} ${f.name}`).join(', ');
+      lines.push(`${indent}        public ${v.tag}(${ctorParams}) {`);
+      for (const f of v.fields) {
+        lines.push(`${indent}            this.${f.name} = ${f.name};`);
+      }
+      lines.push(`${indent}        }`);
+    }
+    lines.push(`${indent}        public override String getTag() { return '${v.tag}'; }`);
+    lines.push(`${indent}    }`);
+  }
+
+  lines.push(`${indent}}`);
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // emitApex — main entry point
 // ---------------------------------------------------------------------------
 
@@ -242,46 +437,111 @@ export function emitApex(irModule: IonIRModule): string {
 
   const propertyLines: string[] = [];
   const methodLines: string[] = [];
+  const innerTypeLines: string[] = [];
+
+  // Process module-level ADT data declarations
+  for (const adt of irModule.data) {
+    innerTypeLines.push(emitApexAdt(adt));
+    innerTypeLines.push(``);
+  }
 
   for (const d of irModule.decls) {
-    if (d.kind !== 'Let') continue;
-    const lt = d as LetNode;
-    const name = lt.name;
-    const value = lt.value;
+    switch (d.kind) {
+      case 'Let': {
+        const lt = d as LetNode;
+        const name = lt.name;
+        const value = lt.value;
 
-    if (value.kind === 'Abs') {
-      const abs = value as AbsNode;
-      const annotation = getAuraAnnotation(name);
+        if (value.kind === 'Abs') {
+          const abs = value as AbsNode;
+          const annotation = getAuraAnnotation(name);
 
-      // Map parameters
-      const params = abs.params.map(p => {
-        const typeStr = ionTypeToApex(p.type);
-        return `${typeStr} ${p.name}`;
-      });
+          // Map parameters
+          const params = abs.params.map(p => {
+            const typeStr = ionTypeToApex(p.type);
+            return `${typeStr} ${p.name}`;
+          });
 
-      // Return type
-      const retType = 'Object';
+          // Return type
+          const retType = 'Object';
 
-      // Method body
-      const { stmts, ret } = emitApexLetBlock(abs.body);
+          // Check if the body is async
+          const { isAsync, stmts, ret } = emitApexMethodBody(name, abs.body);
 
-      const paramStr = params.join(', ');
-      const methodBody: string[] = [];
-      methodLines.push(`    ${annotation}`);
-      methodLines.push(`    public static ${retType} ${name}(${paramStr}) {`);
-      for (const s of stmts) {
-        methodBody.push(s);
+          const paramStr = params.join(', ');
+          const methodBody: string[] = [];
+
+          if (isAsync) {
+            // @future methods in Apex can only accept primitive types and cannot return values
+            // Emit a synchronous version with a comment explaining the async intent
+            methodLines.push(`    // Note: originally async — Apex @future methods must be void with primitive params`);
+            methodLines.push(`    ${annotation}`);
+            methodLines.push(`    public static ${retType} ${name}(${paramStr}) {`);
+          } else {
+            methodLines.push(`    ${annotation}`);
+            methodLines.push(`    public static ${retType} ${name}(${paramStr}) {`);
+          }
+          for (const s of stmts) {
+            methodBody.push(s);
+          }
+          methodBody.push(`        return ${ret};`);
+          for (const line of methodBody) {
+            methodLines.push(line);
+          }
+          methodLines.push(`    }`);
+          methodLines.push(``);
+        } else {
+          // Non-function: emit as private static property
+          const valCode = emitApexExpr(value);
+          propertyLines.push(`    private static Object ${name} = ${valCode};`);
+        }
+        break;
       }
-      methodBody.push(`        return ${ret};`);
-      for (const line of methodBody) {
-        methodLines.push(line);
+
+      case 'OopClass': {
+        innerTypeLines.push(emitApexClass(d as OopClassNode));
+        innerTypeLines.push(``);
+        break;
       }
-      methodLines.push(`    }`);
-      methodLines.push(``);
-    } else {
-      // Non-function: emit as private static property
-      const valCode = emitApexExpr(value);
-      propertyLines.push(`    private static Object ${name} = ${valCode};`);
+
+      case 'OopInterface': {
+        innerTypeLines.push(emitApexInterface(d as OopInterfaceNode));
+        innerTypeLines.push(``);
+        break;
+      }
+
+      case 'AdtDecl': {
+        innerTypeLines.push(emitApexAdt(d as AdtDeclNode));
+        innerTypeLines.push(``);
+        break;
+      }
+
+      case 'EffectDecl': {
+        const eff = d as EffectDeclNode;
+        innerTypeLines.push(`    // Effect: ${eff.name}`);
+        for (const op of eff.operations) {
+          innerTypeLines.push(`    // operation: ${op.name}(${op.params.map(p => p.name).join(', ')})`);
+        }
+        innerTypeLines.push(``);
+        break;
+      }
+
+      case 'AsyncBlock': {
+        // Top-level async block: wrap in a @future void method
+        const bodyExpr = emitApexExpr(d.body);
+        methodLines.push(`    // @future equivalent — no return value in Apex`);
+        methodLines.push(`    @future`);
+        methodLines.push(`    public static void runAsync() {`);
+        methodLines.push(`        ${bodyExpr};`);
+        methodLines.push(`    }`);
+        methodLines.push(``);
+        break;
+      }
+
+      default:
+        // Other nodes (Perform, Handle, Resume, Var, etc.) — skip silently with comment
+        methodLines.push(`    // [${d.kind}]`);
+        break;
     }
   }
 
@@ -292,6 +552,12 @@ export function emitApex(irModule: IonIRModule): string {
   allLines.push(` */`);
   allLines.push(`public with sharing class ${className}Controller {`);
   allLines.push(``);
+
+  if (innerTypeLines.length > 0) {
+    for (const line of innerTypeLines) {
+      allLines.push(line);
+    }
+  }
 
   if (propertyLines.length > 0) {
     for (const line of propertyLines) {

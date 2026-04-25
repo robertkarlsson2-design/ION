@@ -21,6 +21,7 @@ import type {
   ConstructorNode,
   ModuleRefNode,
   EffectDeclNode,
+  OopInterfaceNode,
   ListLitIRNode,
   VarNode,
   CasePattern,
@@ -103,8 +104,8 @@ function buildTopLevelDecl(node: IonIRNode, ctx: BuildCtx): JsNode[] {
     case 'Let': return [buildLetTopLevel(node, ctx)];
     case 'OopClass': return [buildOopClass(node, ctx)];
     case 'AdtDecl': return buildAdtDecl(node, ctx);
-    case 'EffectDecl': return [buildEffectDecl(node)];
-    case 'OopInterface': return [{ kind: 'JsLineComment', text: `interface ${node.name}` }];
+    case 'EffectDecl': return buildEffectDecl(node);
+    case 'OopInterface': return buildOopInterface(node);
     default: {
       const expr = buildExpr(node, ctx);
       return [{ kind: 'JsRaw', code: `${nodeToRawStr(expr)};` }];
@@ -157,7 +158,10 @@ function buildExpr(node: IonIRNode, ctx: BuildCtx): JsNode {
     case 'OopInterface':
     case 'AdtDecl':
     case 'EffectDecl':
+      // Declaration nodes appearing in expression position are no-ops at runtime.
       return { kind: 'JsIdent', name: 'undefined' };
+    case 'RawInject':
+      return { kind: 'JsRaw', code: node.code };
   }
 }
 
@@ -485,7 +489,9 @@ function buildHandle(node: HandleNode, ctx: BuildCtx): JsNode {
 }
 
 function buildResume(node: ResumeNode, ctx: BuildCtx): JsNode {
-  return { kind: 'JsRaw', code: `/* resume */ ${printJsExpr(buildExpr(node.value, ctx))}` };
+  // Resume passes the value back as the result of the effect perform.
+  // In our CPS-via-throw model the resumed value is simply the expression itself.
+  return buildExpr(node.value, ctx);
 }
 
 function ensureEffectPerformHelper(ctx: BuildCtx): void {
@@ -553,6 +559,55 @@ function buildOopClass(node: OopClassNode, ctx: BuildCtx): JsClass {
   };
 }
 
-function buildEffectDecl(node: EffectDeclNode): JsNode {
-  return { kind: 'JsLineComment', text: `effect ${node.name}` };
+/**
+ * Emit an OopInterface as a JSDoc block comment describing its shape.
+ *
+ * JavaScript has no native interface construct, so we emit:
+ *   - A JSDoc `@interface` block listing each member as a `@property` tag.
+ *   - No runtime value is produced; the comment is purely for tooling.
+ *
+ * Example output for `interface Shape { area: number; perimeter: number }`:
+ *   /**
+ *    * @interface Shape
+ *    * @property {*} area
+ *    * @property {*} perimeter
+ *    *\/
+ */
+function buildOopInterface(node: OopInterfaceNode): JsNode[] {
+  const lines: string[] = [
+    `/**`,
+    ` * @interface ${node.name}`,
+  ];
+  for (const member of node.members) {
+    lines.push(` * @property {*} ${member.name}`);
+  }
+  lines.push(` */`);
+  return [{ kind: 'JsRaw', code: lines.join('\n') }];
+}
+
+/**
+ * Emit an EffectDecl as:
+ *   1. A line comment identifying the effect (for readability).
+ *   2. A `const <Name>_EFFECT = Symbol("<Name>");` declaration giving the
+ *      effect a stable runtime identity that handlers can test against.
+ *
+ * Example for `effect Console { log: (Str) -> Unit }`:
+ *   // effect Console
+ *   const Console_EFFECT = Symbol("Console");
+ */
+function buildEffectDecl(node: EffectDeclNode): JsNode[] {
+  assertSafeJsIdentifier(node.name, 'EffectDecl name');
+  const symbolName = `${node.name}_EFFECT`;
+  return [
+    { kind: 'JsLineComment', text: `effect ${node.name}` },
+    {
+      kind: 'JsConst',
+      name: symbolName,
+      value: {
+        kind: 'JsCall',
+        callee: { kind: 'JsIdent', name: 'Symbol' },
+        args: [{ kind: 'JsString', value: node.name }],
+      },
+    },
+  ];
 }

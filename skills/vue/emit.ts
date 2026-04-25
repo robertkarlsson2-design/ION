@@ -1,6 +1,46 @@
-import type { IonIRModule, IonIRNode, LetNode, AbsNode, VarNode, AppNode, AccessorNode } from '../../src/ir/nodes.js';
+import type {
+  IonIRModule,
+  IonIRNode,
+  LetNode,
+  AbsNode,
+  VarNode,
+  AppNode,
+  AccessorNode,
+  OopClassNode,
+  OopInterfaceNode,
+  AdtDeclNode,
+  AdtMatchNode,
+  EffectDeclNode,
+  RawInjectNode,
+} from '../../src/ir/nodes.js';
+import type { IonType } from '../../src/ir/types.js';
 import { isHtmlElement } from '../ui-shared.js';
 import { emitHtmlNode } from '../html/emit.js';
+
+// ---------------------------------------------------------------------------
+// IonType → TypeScript type annotation (used in <script setup lang="ts">)
+// ---------------------------------------------------------------------------
+
+function ionTypeToTs(t: IonType): string {
+  switch (t.kind) {
+    case 'Int': return 'number';
+    case 'Float': return 'number';
+    case 'Str': return 'string';
+    case 'Bool': return 'boolean';
+    case 'Null': return 'null';
+    case 'Unit': return 'void';
+    case 'List': return `${ionTypeToTs(t.elem)}[]`;
+    case 'Map': return `Map<${ionTypeToTs(t.key)}, ${ionTypeToTs(t.value)}>`;
+    case 'Option': return `${ionTypeToTs(t.inner)} | null`;
+    case 'Result': return `{ ok: ${ionTypeToTs(t.ok)} } | { err: ${ionTypeToTs(t.err)} }`;
+    case 'Fn': return `(${t.params.map(ionTypeToTs).join(', ')}) => ${ionTypeToTs(t.ret)}`;
+    case 'User': return t.name;
+    case 'TypeVar': return 'unknown';
+    case 'Never': return 'never';
+    case 'Tuple': return `[${t.elements.map(ionTypeToTs).join(', ')}]`;
+    default: return 'unknown';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // emitTsExprForVue — simple TS expression emitter for <script setup> values
@@ -31,13 +71,162 @@ export function emitTsExprForVue(node: IonIRNode): string {
       return `${emitTsExprForVue((node as AccessorNode).receiver)}.${(node as AccessorNode).member}`;
     case 'ListLit':
       return `[${node.elements.map(emitTsExprForVue).join(', ')}]`;
+    case 'MapLit': {
+      const entries = node.entries.map(e => `[${emitTsExprForVue(e.key)}, ${emitTsExprForVue(e.value)}]`).join(', ');
+      return `new Map([${entries}])`;
+    }
     case 'Let': {
       let cur: IonIRNode = node;
       while (cur.kind === 'Let') cur = (cur as LetNode).body;
       return emitTsExprForVue(cur);
     }
+    case 'Case': {
+      const c = node;
+      if (c.arms.length === 0) return 'undefined';
+      if (
+        c.arms.length === 2 &&
+        c.arms[0]!.pattern.kind === 'Literal' &&
+        c.arms[0]!.pattern.value.kind === 'Bool' &&
+        c.arms[0]!.pattern.value.value === true &&
+        c.arms[1]!.pattern.kind === 'Wildcard'
+      ) {
+        return `(${emitTsExprForVue(c.scrutinee)} ? ${emitTsExprForVue(c.arms[0]!.body)} : ${emitTsExprForVue(c.arms[1]!.body)})`;
+      }
+      return emitTsExprForVue(c.arms[0]!.body);
+    }
+    case 'Constructor': {
+      const args = node.args.map(emitTsExprForVue).join(', ');
+      return `{ _tag: '${node.ctorName}' as const${args ? `, _args: [${args}] as const` : ''} }`;
+    }
+    case 'ModuleRef': return node.modulePath.join('.');
+    case 'ForeignRef': return node.target;
+    case 'Effect': return emitTsExprForVue(node.body);
+    case 'OopNew': {
+      const args = node.args.map(emitTsExprForVue).join(', ');
+      return `new _ctor_${node.ctorSymbolId}(${args})`;
+    }
+    case 'OopVirtualCall': {
+      const receiver = emitTsExprForVue(node.receiver);
+      const args = node.args.map(emitTsExprForVue).join(', ');
+      return `${receiver}.${node.method}(${args})`;
+    }
+    case 'OopThis': return 'this';
+    case 'AsyncBlock': return `(async () => ${emitTsExprForVue(node.body)})()`;
+    case 'Await': return `await ${emitTsExprForVue(node.expr)}`;
+    case 'AdtMatch': {
+      const adtMatch = node as AdtMatchNode;
+      const subject = emitTsExprForVue(adtMatch.scrutinee);
+      const arms = adtMatch.arms.map(arm => {
+        const bindings = arm.bindings.map((b, i) => `const ${b.name} = _v._args[${i}];`).join(' ');
+        return `if (_v._tag === '${arm.tag}') { ${bindings} return (${emitTsExprForVue(arm.body)}); }`;
+      }).join(' else ');
+      return `((_v: any) => { ${arms} return undefined; })(${subject})`;
+    }
+    case 'Perform': return `/* perform ${node.operation} */(${node.args.map(emitTsExprForVue).join(', ')})`;
+    case 'Handle': return emitTsExprForVue(node.body);
+    case 'Resume': return emitTsExprForVue(node.value);
+    // Declaration nodes in expression position — reference by name
+    case 'OopClass': return node.name;
+    case 'OopInterface': return `/* interface ${node.name} */`;
+    case 'AdtDecl': return `/* adt ${node.name} */`;
+    case 'EffectDecl': return `/* effect ${node.name} */`;
+    case 'RawInject': return (node as RawInjectNode).code;
+    default: {
+      const _exhaustive: never = node;
+      return `/* unknown: ${(_exhaustive as IonIRNode).kind} */`;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// emitScriptDeclForVue — emit non-Let top-level node as <script setup> code
+// ---------------------------------------------------------------------------
+
+function emitScriptDeclForVue(node: IonIRNode): string {
+  switch (node.kind) {
+    case 'OopClass': {
+      const cls = node as OopClassNode;
+      const lines: string[] = [];
+      // In Vue Composition API context, emit as a class or composable
+      lines.push(`// Class: ${cls.name}`);
+      if (cls.fields.length > 0) {
+        lines.push(`interface ${cls.name}Options {`);
+        for (const f of cls.fields) {
+          lines.push(`  ${f.name}: ${ionTypeToTs(f.type)};`);
+        }
+        lines.push(`}`);
+      }
+      lines.push(`class ${cls.name} {`);
+      if (cls.fields.length > 0) {
+        const fieldParams = cls.fields.map(f => `${f.name}: ${ionTypeToTs(f.type)}`).join(', ');
+        lines.push(`  constructor(${fieldParams}) {`);
+        for (const f of cls.fields) {
+          lines.push(`    this.${f.name} = ${f.name};`);
+        }
+        lines.push(`  }`);
+      }
+      for (const m of cls.methods) {
+        const params = m.params.map(p => `${p.name}: ${ionTypeToTs(p.type)}`).join(', ');
+        const retType = ionTypeToTs(m.retType);
+        const bodyStr = m.body ? emitTsExprForVue(m.body) : 'undefined';
+        const staticKw = m.isStatic ? 'static ' : '';
+        lines.push(`  ${staticKw}${m.name}(${params}): ${retType} {`);
+        lines.push(`    return ${bodyStr};`);
+        lines.push(`  }`);
+      }
+      lines.push(`}`);
+      return lines.join('\n');
+    }
+
+    case 'OopInterface': {
+      const iface = node as OopInterfaceNode;
+      const lines: string[] = [];
+      lines.push(`interface ${iface.name} {`);
+      for (const m of iface.members) {
+        lines.push(`  ${m.name}: ${ionTypeToTs(m.type)};`);
+      }
+      lines.push(`}`);
+      return lines.join('\n');
+    }
+
+    case 'AdtDecl': {
+      const adt = node as AdtDeclNode;
+      const lines: string[] = [];
+      for (const v of adt.variants) {
+        const fields = v.fields.map(f => `${f.name}: ${ionTypeToTs(f.type)}`).join('; ');
+        lines.push(`interface ${v.tag} { readonly _tag: '${v.tag}'; ${fields} }`);
+      }
+      const union = adt.variants.map(v => v.tag).join(' | ');
+      lines.push(`type ${adt.name} = ${union || 'never'};`);
+      for (const v of adt.variants) {
+        const params = v.fields.map(f => `${f.name}: ${ionTypeToTs(f.type)}`).join(', ');
+        const body = v.fields.map(f => f.name).join(', ');
+        lines.push(`function make${v.tag}(${params}): ${v.tag} { return { _tag: '${v.tag}'${v.fields.length > 0 ? `, ${body}` : ''} }; }`);
+      }
+      return lines.join('\n');
+    }
+
+    case 'EffectDecl': {
+      const eff = node as EffectDeclNode;
+      const lines: string[] = [];
+      // In Vue: emit as a composable stub
+      lines.push(`// Effect: ${eff.name}`);
+      lines.push(`function use${eff.name}() {`);
+      for (const op of eff.operations) {
+        const params = op.params.map(p => `${p.name}: ${ionTypeToTs(p.type)}`).join(', ');
+        const retType = ionTypeToTs(op.retType);
+        lines.push(`  function ${op.name}(${params}): ${retType} {`);
+        lines.push(`    throw new Error('Not implemented: ${eff.name}.${op.name}');`);
+        lines.push(`  }`);
+      }
+      const opNames = eff.operations.map(op => op.name).join(', ');
+      lines.push(`  return { ${opNames} };`);
+      lines.push(`}`);
+      return lines.join('\n');
+    }
+
     default:
-      return 'undefined';
+      return `// [${node.kind}]`;
   }
 }
 
@@ -57,19 +246,24 @@ export function emitVue(irModule: IonIRModule): string {
   // Split decls into template elements and script bindings
   const templateDecls: LetNode[] = [];
   const scriptDecls: LetNode[] = [];
+  const extraScriptDecls: IonIRNode[] = [];
 
   for (const d of irModule.decls) {
-    if (d.kind !== 'Let') continue;
-    const lt = d as LetNode;
-    const value = lt.value;
+    if (d.kind === 'Let') {
+      const lt = d as LetNode;
+      const value = lt.value;
 
-    if (isHtmlElement(value)) {
-      templateDecls.push(lt);
-    } else if (value.kind === 'Abs' && isHtmlElement((value as AbsNode).body)) {
-      // Function component wrapping an element — goes in template
-      templateDecls.push(lt);
+      if (isHtmlElement(value)) {
+        templateDecls.push(lt);
+      } else if (value.kind === 'Abs' && isHtmlElement((value as AbsNode).body)) {
+        // Function component wrapping an element — goes in template
+        templateDecls.push(lt);
+      } else {
+        scriptDecls.push(lt);
+      }
     } else {
-      scriptDecls.push(lt);
+      // Non-Let top-level nodes: OopClass, OopInterface, AdtDecl, EffectDecl, etc.
+      extraScriptDecls.push(d);
     }
   }
 
@@ -96,6 +290,20 @@ export function emitVue(irModule: IonIRModule): string {
 
   // Build script section
   const scriptLines: string[] = [];
+
+  // Module-level ADT data declarations
+  for (const adt of irModule.data) {
+    scriptLines.push(emitScriptDeclForVue(adt));
+    scriptLines.push('');
+  }
+
+  // Extra non-Let declarations (OopClass, OopInterface, AdtDecl, EffectDecl, etc.)
+  for (const decl of extraScriptDecls) {
+    scriptLines.push(emitScriptDeclForVue(decl));
+    scriptLines.push('');
+  }
+
+  // Let bindings
   for (const lt of scriptDecls) {
     const value = lt.value;
     if (value.kind === 'Abs') {

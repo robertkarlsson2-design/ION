@@ -187,6 +187,8 @@ function emitPyExpr(node: IonIRNode): string {
     case 'AdtDecl':
     case 'EffectDecl':
       return 'None';
+    case 'RawInject':
+      return node.code;
   }
 }
 

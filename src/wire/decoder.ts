@@ -761,6 +761,16 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
     return { kind: 'Resume', value, span: WIRE_SPAN, type: { kind: 'Unit' } };
   }
 
+  // ── RawInject raw("...") — verbatim target-language code escape hatch ───
+  if (cur.text.startsWith('raw(', cur.pos)) {
+    cur.pos += 4;
+    if (peek(cur) !== '"') throw new WireDecodeError(`raw() expects a string literal`);
+    const strLit = parseLiteral(cur);
+    if (strLit.kind !== 'Str') throw new WireDecodeError(`raw() expects a string literal`);
+    consume(cur, ')');
+    return { kind: 'RawInject', code: strLit.value, span: WIRE_SPAN, type: { kind: 'Unit' } };
+  }
+
   // ── Boolean / Null literals (as nodes) ──────────────────────────────────
   if (cur.text.startsWith('true', cur.pos) && isIdentEnd(cur.text[cur.pos + 4])) {
     cur.pos += 4;

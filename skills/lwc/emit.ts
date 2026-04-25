@@ -6,7 +6,14 @@ import type {
   LetNode,
   CaseNode,
   VarNode,
+  OopClassNode,
+  OopInterfaceNode,
+  AdtDeclNode,
+  AdtMatchNode,
+  EffectDeclNode,
+  RawInjectNode,
 } from '../../src/ir/nodes.js';
+import type { IonType } from '../../src/ir/types.js';
 import {
   HTML_TAGS,
   VOID_ELEMENTS,
@@ -31,6 +38,31 @@ export interface LwcOutput {
 
 function toClassName(module: string): string {
   return module.split(/[-_.]/).map(w => w.length === 0 ? '' : w[0]!.toUpperCase() + w.slice(1)).join('');
+}
+
+// ---------------------------------------------------------------------------
+// IonType → JSDoc type string (for @type annotations in JS)
+// ---------------------------------------------------------------------------
+
+function ionTypeToJsDoc(t: IonType): string {
+  switch (t.kind) {
+    case 'Int': return 'number';
+    case 'Float': return 'number';
+    case 'Str': return 'string';
+    case 'Bool': return 'boolean';
+    case 'Null': return 'null';
+    case 'Unit': return 'void';
+    case 'List': return `${ionTypeToJsDoc(t.elem)}[]`;
+    case 'Map': return `Map`;
+    case 'Option': return `${ionTypeToJsDoc(t.inner)}|null`;
+    case 'Result': return 'object';
+    case 'Fn': return 'Function';
+    case 'User': return t.name;
+    case 'TypeVar': return '*';
+    case 'Never': return 'never';
+    case 'Tuple': return `[${t.elements.map(ionTypeToJsDoc).join(', ')}]`;
+    default: return '*';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -89,12 +121,70 @@ function emitLwcExpr(node: IonIRNode): string {
     }
     case 'Accessor': return `${emitLwcExpr(node.receiver)}.${node.member}`;
     case 'ListLit': return `[${node.elements.map(emitLwcExpr).join(', ')}]`;
+    case 'MapLit': {
+      const entries = node.entries.map(e => `[${emitLwcExpr(e.key)}, ${emitLwcExpr(e.value)}]`).join(', ');
+      return `new Map([${entries}])`;
+    }
     case 'Let': {
       let cur: IonIRNode = node;
       while (cur.kind === 'Let') cur = (cur as LetNode).body;
       return emitLwcExpr(cur);
     }
-    default: return 'undefined';
+    case 'Case': {
+      const c = node as CaseNode;
+      if (c.arms.length === 0) return 'undefined';
+      if (
+        c.arms.length === 2 &&
+        c.arms[0]!.pattern.kind === 'Literal' &&
+        c.arms[0]!.pattern.value.kind === 'Bool' &&
+        c.arms[0]!.pattern.value.value === true &&
+        c.arms[1]!.pattern.kind === 'Wildcard'
+      ) {
+        return `(${emitLwcExpr(c.scrutinee)} ? ${emitLwcExpr(c.arms[0]!.body)} : ${emitLwcExpr(c.arms[1]!.body)})`;
+      }
+      return emitLwcExpr(c.arms[0]!.body);
+    }
+    case 'Constructor': {
+      const args = node.args.map(emitLwcExpr).join(', ');
+      return `{ _tag: '${node.ctorName}'${args ? `, _args: [${args}]` : ''} }`;
+    }
+    case 'ModuleRef': return node.modulePath.join('.');
+    case 'ForeignRef': return node.target;
+    case 'Effect': return emitLwcExpr(node.body);
+    case 'OopNew': {
+      const args = node.args.map(emitLwcExpr).join(', ');
+      return `new _ctor_${node.ctorSymbolId}(${args})`;
+    }
+    case 'OopVirtualCall': {
+      const receiver = emitLwcExpr(node.receiver);
+      const args = node.args.map(emitLwcExpr).join(', ');
+      return `${receiver}.${node.method}(${args})`;
+    }
+    case 'OopThis': return 'this';
+    case 'AsyncBlock': return `(async () => ${emitLwcExpr(node.body)})()`;
+    case 'Await': return `await ${emitLwcExpr(node.expr)}`;
+    case 'AdtMatch': {
+      const adtMatch = node as AdtMatchNode;
+      const subject = emitLwcExpr(adtMatch.scrutinee);
+      const arms = adtMatch.arms.map(arm => {
+        const bindings = arm.bindings.map((b, i) => `const ${b.name} = _v._args[${i}];`).join(' ');
+        return `if (_v._tag === '${arm.tag}') { ${bindings} return (${emitLwcExpr(arm.body)}); }`;
+      }).join(' else ');
+      return `((_v) => { ${arms} return undefined; })(${subject})`;
+    }
+    case 'Perform': return `/* perform ${node.operation} */(${node.args.map(emitLwcExpr).join(', ')})`;
+    case 'Handle': return emitLwcExpr(node.body);
+    case 'Resume': return emitLwcExpr(node.value);
+    // Declaration nodes in expression position
+    case 'OopClass': return node.name;
+    case 'OopInterface': return `/* interface ${node.name} */`;
+    case 'AdtDecl': return `/* adt ${node.name} */`;
+    case 'EffectDecl': return `/* effect ${node.name} */`;
+    case 'RawInject': return (node as RawInjectNode).code;
+    default: {
+      const _exhaustive: never = node;
+      return `/* unknown: ${(_exhaustive as IonIRNode).kind} */`;
+    }
   }
 }
 
@@ -220,11 +310,70 @@ export function emitLwcNode(
       return items;
     }
 
+    case 'Constructor':
+      return `${pad}{/* ${node.ctorName} */}`;
+
+    case 'MapLit':
+      return `${pad}{/* map */}`;
+
+    case 'ModuleRef':
+      return `${pad}{/* module:${node.modulePath.join('.')} */}`;
+
+    case 'ForeignRef':
+      return `${pad}{/* foreign:${node.target} */}`;
+
+    case 'Effect':
+      return emitLwcNode(node.body, indent, env);
+
+    case 'OopNew':
+      return `${pad}{/* new ctor_${node.ctorSymbolId} */}`;
+
     case 'OopVirtualCall':
       return `${pad}{/* .${node.method}() */}`;
 
-    default:
-      return `${pad}{/* unsupported: ${node.kind} */}`;
+    case 'OopThis':
+      return `${pad}{/* this */}`;
+
+    case 'AsyncBlock':
+      return emitLwcNode(node.body, indent, env);
+
+    case 'Await':
+      return emitLwcNode(node.expr, indent, env);
+
+    case 'AdtMatch': {
+      const adtMatch = node as AdtMatchNode;
+      if (adtMatch.arms.length > 0) {
+        return emitLwcNode(adtMatch.arms[0]!.body, indent, env);
+      }
+      return '';
+    }
+
+    case 'Perform':
+      return `${pad}{/* perform:${node.operation} */}`;
+
+    case 'Handle':
+      return emitLwcNode(node.body, indent, env);
+
+    case 'Resume':
+      return emitLwcNode(node.value, indent, env);
+
+    // Declaration nodes have no template representation
+    case 'OopClass':
+    case 'OopInterface':
+    case 'AdtDecl':
+    case 'EffectDecl':
+      return '';
+
+    case 'Accessor':
+      return `${pad}{${emitLwcExpr(node)}}`;
+
+    case 'RawInject':
+      return (node as RawInjectNode).code;
+
+    default: {
+      const _exhaustive: never = node;
+      return `${pad}{/* unsupported: ${(_exhaustive as IonIRNode).kind} */}`;
+    }
   }
 }
 
@@ -259,6 +408,74 @@ function buildLwcTemplate(irModule: IonIRModule): string {
 }
 
 // ---------------------------------------------------------------------------
+// emitJsDecl — emit a non-Let top-level IR node as LWC JS class member/helper
+// ---------------------------------------------------------------------------
+
+function emitJsDecl(node: IonIRNode): string {
+  switch (node.kind) {
+    case 'OopClass': {
+      const cls = node as OopClassNode;
+      const lines: string[] = [];
+      // In LWC, OopClass extends LightningElement
+      lines.push(`/**`);
+      lines.push(` * @class ${cls.name}`);
+      lines.push(` */`);
+      if (cls.fields.length > 0) {
+        for (const f of cls.fields) {
+          lines.push(`/** @type {${ionTypeToJsDoc(f.type)}} */`);
+          lines.push(`@api ${f.name};`);
+        }
+      }
+      for (const m of cls.methods) {
+        const params = m.params.map(p => p.name).join(', ');
+        const bodyStr = m.body ? emitLwcExpr(m.body) : 'undefined';
+        const staticKw = m.isStatic ? 'static ' : '';
+        lines.push(`${staticKw}${m.name}(${params}) {`);
+        lines.push(`    return ${bodyStr};`);
+        lines.push(`}`);
+      }
+      return lines.join('\n');
+    }
+
+    case 'OopInterface': {
+      const iface = node as OopInterfaceNode;
+      const lines: string[] = [];
+      lines.push(`/**`);
+      lines.push(` * @interface ${iface.name}`);
+      for (const m of iface.members) {
+        lines.push(` * @property {${ionTypeToJsDoc(m.type)}} ${m.name}`);
+      }
+      lines.push(` */`);
+      return lines.join('\n');
+    }
+
+    case 'AdtDecl': {
+      const adt = node as AdtDeclNode;
+      const lines: string[] = [];
+      lines.push(`// ADT: ${adt.name}`);
+      for (const v of adt.variants) {
+        const fieldNames = v.fields.map(f => f.name).join(', ');
+        lines.push(`function make${v.tag}(${fieldNames}) { return { _tag: '${v.tag}'${v.fields.length > 0 ? `, _args: [${fieldNames}]` : ''} }; }`);
+      }
+      return lines.join('\n');
+    }
+
+    case 'EffectDecl': {
+      const eff = node as EffectDeclNode;
+      const lines: string[] = [];
+      lines.push(`// Effect: ${eff.name}`);
+      for (const op of eff.operations) {
+        lines.push(`// operation: ${op.name}(${op.params.map(p => p.name).join(', ')})`);
+      }
+      return lines.join('\n');
+    }
+
+    default:
+      return `// [${node.kind}]`;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // LWC JS class builder
 // ---------------------------------------------------------------------------
 
@@ -268,9 +485,41 @@ function buildLwcJs(irModule: IonIRModule): string {
   const trackProps: string[] = [];
   const apiProps: string[] = [];
   const methods: string[] = [];
+  const helperDecls: string[] = [];
+
+  // Collect module-level ADT data declarations as helpers
+  for (const adt of irModule.data) {
+    helperDecls.push(emitJsDecl(adt));
+  }
 
   for (const d of irModule.decls) {
-    if (d.kind !== 'Let') continue;
+    if (d.kind === 'OopClass') {
+      // A nested OopClass within LWC: emit @AuraEnabled-style methods extracted into the main class
+      const cls = d as OopClassNode;
+      for (const m of cls.methods) {
+        const params = m.params.map(p => p.name).join(', ');
+        const bodyStr = m.body ? emitLwcExpr(m.body) : 'undefined';
+        const staticKw = m.isStatic ? 'static ' : '';
+        methods.push(`    ${staticKw}${m.name}(${params}) {\n        return ${bodyStr};\n    }`);
+      }
+      // Fields become @api props
+      for (const f of cls.fields) {
+        apiProps.push(`    @api ${f.name};`);
+      }
+      continue;
+    }
+
+    if (d.kind === 'OopInterface' || d.kind === 'AdtDecl' || d.kind === 'EffectDecl') {
+      helperDecls.push(emitJsDecl(d));
+      continue;
+    }
+
+    if (d.kind !== 'Let') {
+      // Other node kinds at top level (Perform, Handle, etc.) — emit as comments
+      helperDecls.push(`// ${d.kind}`);
+      continue;
+    }
+
     const lt = d as LetNode;
     const name = lt.name;
     const value = lt.value;
@@ -309,6 +558,15 @@ function buildLwcJs(irModule: IonIRModule): string {
 
   lines.push(`import { LightningElement, api, track } from 'lwc';`);
   lines.push(``);
+
+  // Emit helper declarations (ADT constructors, interfaces, effects) before the class
+  if (helperDecls.length > 0) {
+    for (const h of helperDecls) {
+      lines.push(h);
+    }
+    lines.push(``);
+  }
+
   lines.push(`export default class ${className} extends LightningElement {`);
 
   if (apiProps.length > 0) {

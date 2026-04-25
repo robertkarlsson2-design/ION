@@ -28,6 +28,7 @@ import type {
   PerformNode,
   HandleNode,
   ResumeNode,
+  RawInjectNode,
   VarNode,
   LiteralNode,
   AppNode,
@@ -628,6 +629,15 @@ function parseNode(raw: unknown, path: string, depth = 0): IonIRNode {
       const node: ResumeNode = {
         kind: 'Resume',
         value: parseNode(r['value'], `${path}.value`, depth + 1),
+        span: parseSpan(r['span'], `${path}.span`),
+        type: parseType(r['type'], `${path}.type`),
+      };
+      return node;
+    }
+    case 'RawInject': {
+      const node: RawInjectNode = {
+        kind: 'RawInject',
+        code: assertString(r['code'], `${path}.code`),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };

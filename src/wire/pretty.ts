@@ -296,6 +296,7 @@ export function prettyPrintNode(node: IonIRNode, depth = 0, opts?: PrettyOptions
       ).join(', ');
       return `{${entries}}`;
     }
+    case 'RawInject': return `raw(${JSON.stringify(node.code)})`;
     default: return assertNever(node);
   }
 }

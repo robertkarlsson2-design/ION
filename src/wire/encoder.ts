@@ -303,6 +303,8 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector, depth = 0): voi
     case 'MapLit':
       for (const e of node.entries) { collectNamesFromNode(e.key, c, depth + 1); collectNamesFromNode(e.value, c, depth + 1); }
       break;
+    case 'RawInject':
+      break;
     default:
       assertNever(node);
   }
@@ -495,6 +497,8 @@ function collectTypesFromNode(node: IonIRNode, out: Map<string, number>, depth =
       break;
     case 'MapLit':
       for (const e of node.entries) { collectTypesFromNode(e.key, out, depth + 1); collectTypesFromNode(e.value, out, depth + 1); }
+      break;
+    case 'RawInject':
       break;
     default: assertNever(node);
   }
@@ -873,6 +877,9 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
       ).join(',');
       return `{${entries}}`;
     }
+
+    case 'RawInject':
+      return `raw(${JSON.stringify(node.code)})`;
 
     default:
       return assertNever(node);

@@ -9,6 +9,11 @@ import type {
   AdtDeclNode,
   AdtMatchNode,
   VarNode,
+  OopClassNode,
+  OopInterfaceNode,
+  EffectDeclNode,
+  HandleNode,
+  PerformNode,
 } from '../../src/ir/nodes.js';
 import type { IonType } from '../../src/ir/types.js';
 import { expandTemplate, wrapEmitted } from '../../src/emit/template.js';
@@ -34,7 +39,15 @@ export function ionTypeToTs(t: IonType): string {
       const params = t.params.map((p, i) => `_${i}: ${ionTypeToTs(p)}`).join(', ');
       return `(${params}) => ${ionTypeToTs(t.ret)}`;
     }
-    case 'User': return t.args.length === 0 ? t.name : `${t.name}<${t.args.map(ionTypeToTs).join(', ')}>`;
+    case 'User': {
+      if (t.args.length === 0) return t.name;
+      // Map well-known generic names to idiomatic TypeScript forms
+      if (t.name === 'Array' && t.args.length === 1) return `${ionTypeToTs(t.args[0])}[]`;
+      if (t.name === 'Map' && t.args.length === 2) return `Map<${ionTypeToTs(t.args[0])}, ${ionTypeToTs(t.args[1])}>`;
+      if (t.name === 'Set' && t.args.length === 1) return `Set<${ionTypeToTs(t.args[0])}>`;
+      if (t.name === 'Promise' && t.args.length === 1) return `Promise<${ionTypeToTs(t.args[0])}>`;
+      return `${t.name}<${t.args.map(ionTypeToTs).join(', ')}>`;
+    }
     case 'TypeVar': return 'unknown';
     case 'Never': return 'never';
     case 'Tuple': return `[${t.elements.map(ionTypeToTs).join(', ')}]`;
@@ -132,6 +145,186 @@ function needsParens(node: IonIRNode): boolean {
      BUILTIN_UNARY_OPS[(node.callee as VarNode).name] !== undefined);
 }
 
+// ---------------------------------------------------------------------------
+// OopClass emitter — produces a full TypeScript class declaration string
+// ---------------------------------------------------------------------------
+
+function emitTsClass(node: OopClassNode): string {
+  const lines: string[] = [];
+  lines.push(`class ${node.name} {`);
+
+  // Field declarations
+  for (const f of node.fields) {
+    const ft = ionTypeToTs(f.type);
+    lines.push(`  ${f.name}: ${ft};`);
+  }
+
+  // Constructor (only if there are fields)
+  if (node.fields.length > 0) {
+    const ctorParams = node.fields
+      .map(f => `${f.name}: ${ionTypeToTs(f.type)}`)
+      .join(', ');
+    const assignments = node.fields.map(f => `    this.${f.name} = ${f.name};`).join('\n');
+    lines.push(`  constructor(${ctorParams}) {`);
+    lines.push(assignments);
+    lines.push('  }');
+  }
+
+  // Methods
+  for (const m of node.methods) {
+    const params = m.params.map(p => {
+      const t = ionTypeToTs(p.type);
+      return t === 'unknown' ? p.name : `${p.name}: ${t}`;
+    }).join(', ');
+    const retT = ionTypeToTs(m.retType);
+    const retAnnotation = retT !== 'unknown' ? `: ${retT}` : '';
+    const staticPrefix = m.isStatic ? 'static ' : '';
+
+    if (m.isAbstract || m.body === undefined) {
+      // Abstract method — declaration only
+      lines.push(`  ${staticPrefix}${m.name}(${params})${retAnnotation};`);
+    } else {
+      const body = emitTsLetBlock(m.body);
+      if (body.stmts.length > 0) {
+        const stmts = body.stmts.map(s => `    ${s}`).join('\n');
+        lines.push(`  ${staticPrefix}${m.name}(${params})${retAnnotation} {`);
+        lines.push(stmts);
+        lines.push(`    return ${body.ret};`);
+        lines.push('  }');
+      } else {
+        lines.push(`  ${staticPrefix}${m.name}(${params})${retAnnotation} {`);
+        lines.push(`    return ${body.ret};`);
+        lines.push('  }');
+      }
+    }
+  }
+
+  lines.push('}');
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// OopInterface emitter — produces a TypeScript interface declaration string
+// ---------------------------------------------------------------------------
+
+function emitTsInterface(node: OopInterfaceNode): string {
+  const lines: string[] = [];
+  lines.push(`interface ${node.name} {`);
+  for (const m of node.members) {
+    const mt = ionTypeToTs(m.type);
+    // Distinguish method signatures (Fn type) from property members
+    if (m.type.kind === 'Fn') {
+      const fnParams = m.type.params
+        .map((p, i) => `_${i}: ${ionTypeToTs(p)}`)
+        .join(', ');
+      const retT = ionTypeToTs(m.type.ret);
+      lines.push(`  ${m.name}(${fnParams}): ${retT};`);
+    } else {
+      lines.push(`  ${m.name}: ${mt};`);
+    }
+  }
+  lines.push('}');
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// EffectDecl emitter — emits a type alias + structural type (TS has no effects)
+// ---------------------------------------------------------------------------
+
+function emitTsEffectDecl(node: EffectDeclNode): string {
+  const lines: string[] = [];
+  lines.push(`// Effect: ${node.name}`);
+  const opSigs = node.operations.map(op => {
+    const params = op.params.map(p => {
+      const t = ionTypeToTs(p.type);
+      return t === 'unknown' ? p.name : `${p.name}: ${t}`;
+    }).join(', ');
+    const retT = ionTypeToTs(op.retType);
+    return `${op.name}(${params}): ${retT}`;
+  }).join('; ');
+  lines.push(`type ${node.name}_Effect = { ${opSigs} };`);
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Handle emitter — wraps body in IIFE try/catch using EffectPerform class
+// ---------------------------------------------------------------------------
+
+function emitTsHandle(node: HandleNode): string {
+  const bodyExpr = emitTsExpr(node.body);
+  const returnExpr = node.returnClause !== undefined
+    ? emitTsExpr(node.returnClause)
+    : '_result';
+
+  const handlerClauses = node.handlers.map(h => {
+    const paramBindings = h.params.map((p, i) =>
+      `const ${p.name} = _e.args[${i}] as ${ionTypeToTs(p.type)};`
+    ).join(' ');
+    const handlerBody = emitTsExpr(h.body);
+    return `    if (_e instanceof EffectPerform && _e.op === ${JSON.stringify(h.operation)}) { ${paramBindings} return ${handlerBody}; }`;
+  }).join('\n');
+
+  const hasReturnClause = node.returnClause !== undefined;
+  if (hasReturnClause) {
+    return [
+      `(() => {`,
+      `  class EffectPerform { constructor(public op: string, public args: unknown[]) {} }`,
+      `  try { const _result = ${bodyExpr}; return ${returnExpr}; }`,
+      `  catch (_e) {`,
+      handlerClauses,
+      `    throw _e;`,
+      `  }`,
+      `})()`,
+    ].join('\n');
+  }
+  return [
+    `(() => {`,
+    `  class EffectPerform { constructor(public op: string, public args: unknown[]) {} }`,
+    `  try { return ${bodyExpr}; }`,
+    `  catch (_e) {`,
+    handlerClauses,
+    `    throw _e;`,
+    `  }`,
+    `})()`,
+  ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// ADT discriminated union type emitter
+// ---------------------------------------------------------------------------
+
+function emitTsAdtType(node: AdtDeclNode): string {
+  const parts: string[] = [];
+  parts.push(`// ADT: ${node.name}`);
+
+  // Discriminated union type alias
+  const unionMembers = node.variants.map(v => {
+    if (v.fields.length === 0) {
+      return `{ _tag: "${v.tag}" }`;
+    }
+    const fieldTypes = v.fields.map(f => `${f.name}: ${ionTypeToTs(f.type)}`).join('; ');
+    return `{ _tag: "${v.tag}"; ${fieldTypes} }`;
+  }).join(' | ');
+  parts.push(`type ${node.name} = ${unionMembers};`);
+
+  // Constructor functions
+  for (const v of node.variants) {
+    if (v.fields.length === 0) {
+      parts.push(`const ${v.tag} = { _tag: "${v.tag}" } as const;`);
+    } else {
+      const ps = v.fields.map(f => `${f.name}: ${ionTypeToTs(f.type)}`).join(', ');
+      const fs = v.fields.map(f => f.name).join(', ');
+      parts.push(`const ${v.tag} = (${ps}): ${node.name} => ({ _tag: "${v.tag}" as const, ${fs} });`);
+    }
+  }
+
+  return parts.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Main expression emitter
+// ---------------------------------------------------------------------------
+
 function emitTsExpr(node: IonIRNode): string {
   switch (node.kind) {
     case 'Literal': {
@@ -226,24 +419,42 @@ function emitTsExpr(node: IonIRNode): string {
 
     case 'OopThis': return 'this';
 
-    case 'AsyncBlock': return `async () => { return ${emitTsExpr(node.body)}; }`;
+    case 'AsyncBlock':
+      // Wrap in an immediately-invoked async arrow so it eagerly starts
+      return `(async () => ${emitTsExpr(node.body)})()`;
 
     case 'Await': return `await ${emitTsExpr(node.expr)}`;
 
-    case 'Perform':
-      return `(() => { throw new EffectPerform("${node.operation}", [${node.args.map(emitTsExpr).join(', ')}]); })()`;
+    case 'Perform': {
+      const perform = node as PerformNode;
+      return `(() => { throw new EffectPerform(${JSON.stringify(perform.operation)}, [${perform.args.map(emitTsExpr).join(', ')}]); })()`;
+    }
 
-    case 'Handle': return '/* handle */ undefined as unknown';
+    case 'Handle': return emitTsHandle(node as HandleNode);
 
-    case 'Resume': return `/* resume */ ${emitTsExpr(node.value)}`;
+    case 'Resume':
+      // Resume passes the value back to the continuation; in the CPS translation
+      // we represent this as just returning the value from the handler branch.
+      return emitTsExpr(node.value);
 
     case 'Effect': return emitTsExpr(node.body);
 
+    // Declaration nodes — should not appear as expressions, but handle gracefully
     case 'OopClass':
+      return `(() => { ${emitTsClass(node as OopClassNode)} return ${(node as OopClassNode).name}; })()`;
+
     case 'OopInterface':
+      // Interfaces are purely structural in TS; return undefined at expression level
+      return 'undefined';
+
     case 'AdtDecl':
+      return 'undefined';
+
     case 'EffectDecl':
       return 'undefined';
+
+    case 'RawInject':
+      return node.code;
   }
 }
 
@@ -335,6 +546,9 @@ export function emitTS(irModule: IonIRModule): string {
       case 'Accessor': collectPrelude(node.receiver); break;
       case 'ListLit': node.elements.forEach(collectPrelude); break;
       case 'MapLit': node.entries.forEach(e => { collectPrelude(e.key); collectPrelude(e.value); }); break;
+      case 'OopClass': node.methods.forEach(m => { if (m.body !== undefined) collectPrelude(m.body); }); break;
+      case 'Handle': collectPrelude(node.body); node.handlers.forEach(h => collectPrelude(h.body)); break;
+      case 'AdtMatch': collectPrelude(node.scrutinee); node.arms.forEach(a => collectPrelude(a.body)); break;
       default: break;
     }
   }
@@ -361,18 +575,21 @@ export function emitTS(irModule: IonIRModule): string {
         return bindT !== 'unknown' && bindT !== 'void' ? `: ${bindT}` : '';
       })() : '';
       parts.push(`const ${lt.name}${annotation} = ${emitTsExpr(lt.value)};`);
+
     } else if (d.kind === 'AdtDecl') {
-      const adt = d as AdtDeclNode;
-      parts.push(`// ADT: ${adt.name}`);
-      for (const v of adt.variants) {
-        if (v.fields.length === 0) {
-          parts.push(`const ${v.tag} = { _tag: "${v.tag}" } as const;`);
-        } else {
-          const ps = v.fields.map(f => `${f.name}: ${ionTypeToTs(f.type)}`).join(', ');
-          const fs = v.fields.map(f => f.name).join(', ');
-          parts.push(`const ${v.tag} = (${ps}) => ({ _tag: "${v.tag}" as const, ${fs} });`);
-        }
-      }
+      parts.push(emitTsAdtType(d as AdtDeclNode));
+
+    } else if (d.kind === 'OopClass') {
+      // Emit full class declaration at the top level (not wrapped in const = ...)
+      parts.push(emitTsClass(d as OopClassNode));
+
+    } else if (d.kind === 'OopInterface') {
+      // Emit interface declaration at the top level
+      parts.push(emitTsInterface(d as OopInterfaceNode));
+
+    } else if (d.kind === 'EffectDecl') {
+      // Emit effect as a type alias comment + structural type
+      parts.push(emitTsEffectDecl(d as EffectDeclNode));
     }
   }
 

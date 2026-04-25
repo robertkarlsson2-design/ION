@@ -396,7 +396,25 @@ export type EffectsNode = EffectDeclNode | PerformNode | HandleNode | ResumeNode
 // Top-level unions
 // ---------------------------------------------------------------------------
 
-export type IonIRNode = CoreNode | OopNode | AsyncNode | AdtNode | EffectsNode;
+// ---------------------------------------------------------------------------
+// Escape hatch — raw target-language code injection
+// ---------------------------------------------------------------------------
+
+/**
+ * Injects a verbatim string of target-language code into the output.
+ * Every emitter MUST handle this node with a single line: `return node.code`.
+ * Use this when a pattern is not yet natively supported by the emitter —
+ * the LLM can always fall back to writing the exact output it needs.
+ */
+export interface RawInjectNode {
+  readonly kind: 'RawInject';
+  /** Verbatim target-language code to emit as-is. */
+  readonly code: string;
+  readonly span: Span;
+  readonly type: IonType;
+}
+
+export type IonIRNode = CoreNode | OopNode | AsyncNode | AdtNode | EffectsNode | RawInjectNode;
 
 /** All valid `kind` strings for IonIR nodes, for runtime validation. */
 export const VALID_IR_KINDS: ReadonlySet<string> = new Set<string>([
@@ -406,6 +424,7 @@ export const VALID_IR_KINDS: ReadonlySet<string> = new Set<string>([
   'AsyncBlock', 'Await',
   'AdtDecl', 'AdtMatch',
   'EffectDecl', 'Perform', 'Handle', 'Resume',
+  'RawInject',
 ]);
 
 /** Which extension dialects are active in a given module. */
