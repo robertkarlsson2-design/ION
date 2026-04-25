@@ -1,0 +1,31 @@
+id: if-stmt
+language: javascript
+match:
+  nodeType: if_statement
+  children:
+    - pattern:
+        capture: $COND
+    - pattern:
+        capture: $THEN
+emit:
+  kind: Case
+  scrutinee:
+    recurse: $COND
+  arms:
+    - pattern:
+        kind: Constructor
+        ctorName: "True"
+        symbolId: builtin:True
+        fields: []
+      body:
+        recurse: $THEN
+    - pattern:
+        kind: Wildcard
+      body:
+        kind: Literal
+        value:
+          kind: "Null"
+        type:
+          kind: Never
+  type:
+    kind: Never

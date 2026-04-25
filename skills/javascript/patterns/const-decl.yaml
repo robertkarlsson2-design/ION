@@ -25,15 +25,7 @@ emit:
   bindingType:
     kind: Never
   value:
-    kind: Var
-    name:
-      metavar: $VALUE
-      field: text
-    symbolId:
-      metavar: $VALUE
-      field: text
-    type:
-      kind: Never
+    recurse: $VALUE
   body:
     kind: Literal
     value:

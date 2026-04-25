@@ -1,12 +1,12 @@
 import { Parser, Language, Node } from 'web-tree-sitter';
 import { createRequire } from 'module';
+import { ensureParserInit } from '../../src/ingest/parser-init.js';
 
 import type { JsTypedNode, JsProgramNode } from './node-types.js';
 
 const _require = createRequire(import.meta.url);
 
-// Top-level await: WASM init and language loading happen once at module load.
-await Parser.init();
+await ensureParserInit();
 const _jsLanguage = await Language.load(
   _require.resolve('tree-sitter-javascript/tree-sitter-javascript.wasm'),
 );

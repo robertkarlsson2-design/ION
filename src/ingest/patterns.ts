@@ -110,6 +110,9 @@ export async function loadPatterns(skillDir: string): Promise<PatternMatcher[]> 
   const yamlFiles = entries.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
   if (yamlFiles.length === 0) return [];
 
+  // The matchers array is passed by reference to each rule so { recurse: "$VAR" }
+  // in emit specs can call sibling matchers. By the time match() is invoked (lazily,
+  // not during compilation), the array is fully populated.
   const matchers: PatternMatcher[] = [];
 
   for (const file of yamlFiles) {
@@ -118,7 +121,7 @@ export async function loadPatterns(skillDir: string): Promise<PatternMatcher[]> 
       const raw = await readFile(filePath, 'utf8');
       const parsed: unknown = parseYaml(raw);
       const rule = validateRule(parsed, filePath);
-      matchers.push(compileRule(rule));
+      matchers.push(compileRule(rule, matchers));
     } catch (err) {
       process.stderr.write(`[patterns] skipping ${filePath}: ${String(err)}\n`);
     }
@@ -128,7 +131,7 @@ export async function loadPatterns(skillDir: string): Promise<PatternMatcher[]> 
 }
 
 /** Compile a single parsed PatternRule into a PatternMatcher (exposed for unit tests). */
-export function compileRule(rule: PatternRule): PatternMatcher {
+export function compileRule(rule: PatternRule, matchers: PatternMatcher[] = []): PatternMatcher {
   return {
     ruleId: rule.id,
     match(node: CSTNode): IonIRNode | null {
@@ -136,7 +139,7 @@ export function compileRule(rule: PatternRule): PatternMatcher {
         const bindings = new Map<string, CSTNode | CSTNode[]>();
         if (!matchPattern(rule.match, node, bindings)) return null;
         if (!evaluateConditions(rule.conditions, bindings, node)) return null;
-        return buildEmit(rule.emit, bindings, node, '', rule.id);
+        return buildEmit(rule.emit, bindings, node, '', rule.id, matchers);
       } catch {
         return null;
       }
@@ -394,6 +397,82 @@ function cstSpan(node: CSTNode, file: string): Span {
   };
 }
 
+/** Strip ASCII control characters so any captured text is safe as an IR name. */
+function sanitizeName(text: string): string {
+  return text.replace(/[\x00-\x1F]/g, ' ').replace(/\s+/g, ' ').trim() || '_';
+}
+
+/**
+ * Try all matchers against a CSTNode and return the first match.
+ * When no direct match is found, drills through transparent wrapper nodes
+ * (statement_block, return_statement, expression_statement, block) to reach
+ * the inner expression. This lets { recurse: "$BODY" } handle function bodies
+ * that are wrapped in a statement block.
+ */
+function tryMatch(node: CSTNode, matchers: PatternMatcher[], depth = 0): IonIRNode | null {
+  if (depth > 8) return null;
+
+  // Direct match
+  for (const m of matchers) {
+    try {
+      const r = m.match(node);
+      if (r !== null) return r;
+    } catch {
+      // skip
+    }
+  }
+
+  // Transparent wrappers: drill through single-expression containers
+  const SINGLE_DRILL_TYPES = new Set([
+    'return_statement', 'expression_statement',
+    'yield_statement',
+    'parenthesized_expression',        // (expr) — drill to inner expr
+  ]);
+  if (SINGLE_DRILL_TYPES.has(node.type)) {
+    const named = node.children.filter(c => c.isNamed);
+    const target = named.find(c => !['comment', 'decorator'].includes(c.type)) ?? named[0];
+    if (target) return tryMatch(target, matchers, depth + 1);
+  }
+
+  // statement_block / suite: try to build a Let chain for multi-statement bodies
+  if (node.type === 'statement_block' || node.type === 'block' || node.type === 'suite') {
+    const stmts = node.children.filter(c => c.isNamed && !['comment', 'decorator'].includes(c.type));
+    if (stmts.length === 0) return null;
+    if (stmts.length === 1) return tryMatch(stmts[0]!, matchers, depth + 1);
+
+    // Multi-statement: build a right-associative Let chain.
+    // Walk from the last statement backwards, threading each Let's body.
+    let tail: IonIRNode | null = null;
+    for (let i = stmts.length - 1; i >= 0; i--) {
+      const stmt = stmts[i]!;
+      const matched = tryMatch(stmt, matchers, depth + 1);
+      if (matched === null) continue;
+
+      if (matched.kind === 'Let' && i < stmts.length - 1 && tail !== null) {
+        // Replace the placeholder body with the accumulated tail
+        tail = { ...(matched as object), body: tail } as IonIRNode;
+      } else if (tail === null) {
+        tail = matched;
+      } else {
+        // Non-Let statement before others: wrap as Let("_", matched, tail)
+        tail = {
+          kind: 'Let',
+          name: '_',
+          symbolId: makeSymbolId('seq:_') as SymbolId,
+          bindingType: NEVER_TYPE,
+          value: matched,
+          body: tail,
+          span: (matched as { span?: unknown }).span,
+          type: NEVER_TYPE,
+        } as unknown as IonIRNode;
+      }
+    }
+    return tail;
+  }
+
+  return null;
+}
+
 function resolveMetavar(
   ref: Record<string, unknown>,
   bindings: Bindings,
@@ -413,11 +492,11 @@ function resolveMetavar(
   }
 
   const n = bound as CSTNode;
-  if (field === 'text') return n.text;
+  if (field === 'text') return sanitizeName(n.text);
   if (field === 'span') return cstSpan(n, rootSpan.file);
   if (field === 'type') return NEVER_TYPE;
-  // Default to text for unknown field refs
-  return n.text;
+  // Default to sanitized text for unknown field refs
+  return sanitizeName(n.text);
 }
 
 function buildValue(
@@ -425,14 +504,89 @@ function buildValue(
   bindings: Bindings,
   rootSpan: Span,
   ruleId: string,
+  matchers: PatternMatcher[],
+  contextNode: CSTNode | null = null,
 ): unknown {
-  if (Array.isArray(spec)) return spec.map(item => buildValue(item, bindings, rootSpan, ruleId));
+  if (Array.isArray(spec)) return spec.map(item => buildValue(item, bindings, rootSpan, ruleId, matchers, contextNode));
   if (spec === null || typeof spec !== 'object') return spec;
 
-  if (Array.isArray(spec))
-    return (spec as unknown[]).map(item => buildValue(item, bindings, rootSpan, ruleId));
-
   const obj = spec as Record<string, unknown>;
+
+  // { recurse: "$VAR" } — run the full pattern set on the captured sub-node.
+  // Falls back to a Var placeholder when no pattern matches.
+  if (typeof obj['recurse'] === 'string') {
+    const varName = obj['recurse'] as string;
+    const bound = bindings.get(varName);
+    if (!bound || Array.isArray(bound)) {
+      return { kind: 'Literal', value: { kind: 'Int', value: 0 }, type: { kind: 'Int' }, span: rootSpan };
+    }
+    const cstNode = bound as CSTNode;
+    const matched = tryMatch(cstNode, matchers);
+    if (matched !== null) return matched;
+    // Fallback: wrap sanitized text as a Var
+    const name = sanitizeName(cstNode.text);
+    return {
+      kind: 'Var',
+      name,
+      symbolId: makeSymbolId('recurse-fallback:' + name) as SymbolId,
+      type: NEVER_TYPE,
+      span: rootSpan,
+    };
+  }
+
+  // { recurse-each: "$$$VAR" } — map recurse over a sequence capture, returning an IonIR array.
+  if (typeof obj['recurse-each'] === 'string') {
+    const varName = obj['recurse-each'] as string;
+    const bound = bindings.get(varName);
+    if (!bound) return [];
+    const nodes: CSTNode[] = Array.isArray(bound) ? (bound as CSTNode[]) : [bound as CSTNode];
+    return nodes.map(n => {
+      const matched = tryMatch(n, matchers);
+      if (matched !== null) return matched;
+      const nm = sanitizeName(n.text);
+      return {
+        kind: 'Var',
+        name: nm,
+        symbolId: makeSymbolId('recurse-fallback:' + nm) as SymbolId,
+        type: NEVER_TYPE,
+        span: rootSpan,
+      };
+    });
+  }
+
+  // { nodeChildAt: N, field: "text" } — text of the Nth named child of the context node.
+  if (typeof obj['nodeChildAt'] === 'number') {
+    const idx = obj['nodeChildAt'] as number;
+    const child = contextNode?.children[idx];
+    if (!child) return '';
+    return sanitizeName(child.text);
+  }
+
+  // { parseNumber: "$VAR" } — parse the captured node's text as a LiteralValue (Int or Float).
+  if (typeof obj['parseNumber'] === 'string') {
+    const varName = obj['parseNumber'] as string;
+    const bound = bindings.get(varName);
+    if (!bound || Array.isArray(bound)) return { kind: 'Int', value: 0 };
+    const text = (bound as CSTNode).text.replace(/_/g, '').replace(/n$/, ''); // strip numeric separators and BigInt suffix
+    const num = parseFloat(text);
+    if (!isFinite(num)) return { kind: 'Int', value: 0 };
+    return Number.isInteger(num) ? { kind: 'Int', value: num } : { kind: 'Float', value: num };
+  }
+
+  // { inferOp: ["$LEFT", "$RIGHT"] } — infer the infix operator text between two named captures.
+  // Computes: contextNode.text.slice(left.text.length, -right.text.length).trim()
+  if (Array.isArray(obj['inferOp']) && contextNode) {
+    const [leftVar, rightVar] = obj['inferOp'] as [string, string];
+    const leftNode = bindings.get(leftVar);
+    const rightNode = bindings.get(rightVar);
+    if (leftNode && !Array.isArray(leftNode) && rightNode && !Array.isArray(rightNode)) {
+      const lLen = (leftNode as CSTNode).text.length;
+      const rLen = (rightNode as CSTNode).text.length;
+      const op = contextNode.text.slice(lLen, contextNode.text.length - rLen).trim();
+      return sanitizeName(op) || '_op_';
+    }
+    return '_op_';
+  }
 
   // Metavar reference
   if (typeof obj['metavar'] === 'string') {
@@ -442,7 +596,7 @@ function buildValue(
   // Recursively build object
   const result: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(obj)) {
-    result[key] = buildValue(val, bindings, rootSpan, ruleId);
+    result[key] = buildValue(val, bindings, rootSpan, ruleId, matchers, contextNode);
   }
   return result;
 }
@@ -453,12 +607,32 @@ function buildEmit(
   node: CSTNode,
   file: string,
   ruleId: string,
+  matchers: PatternMatcher[],
 ): IonIRNode | null {
   const rootSpan = cstSpan(node, file);
 
+  // Top-level { recurse: "$VAR" } — delegate the entire emit to the captured sub-node.
+  // Falls back to a Var placeholder when no pattern matches (same as buildValue recurse).
+  if (typeof spec['recurse'] === 'string' && Object.keys(spec).length === 1) {
+    const varName = spec['recurse'] as string;
+    const bound = bindings.get(varName);
+    if (!bound || Array.isArray(bound)) return null;
+    const cstNode = bound as CSTNode;
+    const matched = tryMatch(cstNode, matchers);
+    if (matched !== null) return matched;
+    const name = sanitizeName(cstNode.text);
+    return {
+      kind: 'Var',
+      name,
+      symbolId: makeSymbolId('recurse-fallback:' + name) as SymbolId,
+      type: NEVER_TYPE,
+      span: rootSpan,
+    } as unknown as IonIRNode;
+  }
+
   const built: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(spec)) {
-    built[key] = buildValue(val, bindings, rootSpan, ruleId);
+    built[key] = buildValue(val, bindings, rootSpan, ruleId, matchers, node);
   }
 
   // Ensure required IonIR fields are present
@@ -466,6 +640,11 @@ function buildEmit(
   if (!VALID_IR_KINDS.has(built['kind'] as string)) return null;
   if (!built['span']) built['span'] = rootSpan;
   if (!built['type']) built['type'] = NEVER_TYPE;
+
+  // Sanitize name if present (safety net for any remaining raw text captures)
+  if (typeof built['name'] === 'string') {
+    built['name'] = sanitizeName(built['name'] as string);
+  }
 
   // Derive symbolId when missing but name is available
   if (!built['symbolId'] && typeof built['name'] === 'string') {

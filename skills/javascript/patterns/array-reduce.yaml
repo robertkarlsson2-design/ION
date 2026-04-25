@@ -27,34 +27,10 @@ emit:
   callee:
     kind: Accessor
     receiver:
-      kind: Var
-      name:
-        metavar: $OBJ
-        field: text
-      symbolId:
-        metavar: $OBJ
-        field: text
-      type:
-        kind: Never
+      recurse: $OBJ
     member: reduce
     type:
       kind: Never
   args:
-    - kind: Var
-      name:
-        metavar: $FN
-        field: text
-      symbolId:
-        metavar: $FN
-        field: text
-      type:
-        kind: Never
-    - kind: Var
-      name:
-        metavar: $INIT
-        field: text
-      symbolId:
-        metavar: $INIT
-        field: text
-      type:
-        kind: Never
+    - recurse: $FN
+    - recurse: $INIT

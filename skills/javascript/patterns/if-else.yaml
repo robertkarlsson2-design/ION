@@ -14,15 +14,18 @@ match:
 emit:
   kind: Case
   scrutinee:
-    kind: Var
-    name:
-      metavar: $COND
-      field: text
-    symbolId:
-      metavar: $COND
-      field: text
-    type:
-      kind: Never
-  arms: []
+    recurse: $COND
+  arms:
+    - pattern:
+        kind: Constructor
+        ctorName: "True"
+        symbolId: builtin:True
+        fields: []
+      body:
+        recurse: $THEN
+    - pattern:
+        kind: Wildcard
+      body:
+        recurse: $ELSE
   type:
     kind: Never

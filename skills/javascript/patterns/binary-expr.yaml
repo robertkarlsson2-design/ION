@@ -1,0 +1,28 @@
+id: binary-expr
+language: javascript
+match:
+  nodeType: binary_expression
+  children:
+    - pattern:
+        capture: $LEFT
+    - pattern:
+        capture: $RIGHT
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name:
+      inferOp:
+        - $LEFT
+        - $RIGHT
+    symbolId:
+      inferOp:
+        - $LEFT
+        - $RIGHT
+    type:
+      kind: Never
+  args:
+    - recurse: $LEFT
+    - recurse: $RIGHT
+  type:
+    kind: Never

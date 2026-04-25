@@ -1,0 +1,13 @@
+"use strict";
+const map = (list, f) => list.map(f);
+const filter = (list, pred) => list.filter(pred);
+const fold = (list, init, f) => list.reduce(f, init);
+const length = list => list.length;
+const range = (start, end) => Array.from(Array(end-start),(_,i)=>start+i);
+const reverse = list => [...list].reverse();
+const slice = (list, from, to) => list.slice(from,to);
+const startsWith = (s, prefix) => s.startsWith(prefix);
+const sort = list => [...list].sort((a,b)=>a-b);
+const sumEvenSquares = n => fold(map(filter(range(1, n + 1), x => x % 2 === 0), x => x * x), 0, (_a, _b) => _a + _b);
+const topN = (ns, n) => slice(reverse(sort(ns)), 0, n);
+const tagList = (tags, prefix) => length(filter(tags, t => startsWith(t, prefix)));

@@ -1,0 +1,4 @@
+I1
+M sample v=0.0.0 d=core
+S a=users
+F let getActiveUsers:never=()->a.filter((u:never)->u.active);0 let topScorers:never=()->a.filter((u:never)->u.active)->sort(()->-(b.score,a.score))->slice(0,n);0 let averageScore:never=()->let _:never=match(===(a.length,0)){True()->0;_->null};let total:never=a.reduce(()->+(acc,u.score),0);/(total,a.length);0 let emailsFor:never=()->a.filter((u:never)->u.active).map((u:never)->u.email);0

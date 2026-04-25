@@ -187,7 +187,7 @@ emit:
 describe('full pattern set loads without errors', () => {
   it('skills/javascript/patterns/ loads exactly 71 matchers', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
-    expect(matchers).toHaveLength(71);
+    expect(matchers).toHaveLength(74);
     expect(matchers.every(m => typeof m.match === 'function')).toBe(true);
   }, 30000);
 });

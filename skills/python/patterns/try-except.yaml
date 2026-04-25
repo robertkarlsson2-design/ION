@@ -34,29 +34,13 @@ emit:
       params: []
       captures: []
       body:
-        kind: Var
-        name:
-          metavar: $BODY
-          field: text
-        symbolId:
-          metavar: $BODY
-          field: text
-        type:
-          kind: Never
+        recurse: $BODY
       type:
         kind: Never
     - kind: Abs
       params: []
       captures: []
       body:
-        kind: Var
-        name:
-          metavar: $HANDLER
-          field: text
-        symbolId:
-          metavar: $HANDLER
-          field: text
-        type:
-          kind: Never
+        recurse: $HANDLER
       type:
         kind: Never

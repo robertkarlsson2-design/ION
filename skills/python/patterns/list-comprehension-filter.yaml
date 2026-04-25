@@ -62,14 +62,6 @@ emit:
             field: span
       captures: []
       body:
-        kind: Var
-        name:
-          metavar: $PRED
-          field: text
-        symbolId:
-          metavar: $PRED
-          field: text
-        type:
-          kind: Never
+        recurse: $PRED
       type:
         kind: Never

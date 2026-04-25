@@ -20,16 +20,9 @@ match:
 emit:
   kind: OopVirtualCall
   receiver:
-    kind: Var
-    name:
-      metavar: $OBJ
-      field: text
-    symbolId:
-      metavar: $OBJ
-      field: text
-    type:
-      kind: Never
+    recurse: $OBJ
   method:
     metavar: $METHOD
     field: text
-  args: []
+  args:
+    recurse-each: $$$ARGS

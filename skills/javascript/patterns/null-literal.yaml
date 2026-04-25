@@ -5,6 +5,6 @@ match:
 emit:
   kind: Literal
   value:
-    kind: Null
+    kind: "Null"
   type:
     kind: Never

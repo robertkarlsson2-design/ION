@@ -52,14 +52,6 @@ emit:
             field: span
       captures: []
       body:
-        kind: Var
-        name:
-          metavar: $EXPR
-          field: text
-        symbolId:
-          metavar: $EXPR
-          field: text
-        type:
-          kind: Never
+        recurse: $EXPR
       type:
         kind: Never

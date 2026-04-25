@@ -6,21 +6,14 @@ match:
     - pattern:
         capture: $OBJ
     - pattern:
-        capture: $FIELD
+        nodeType: property_identifier
+        capture: $PROP
 emit:
   kind: Accessor
   receiver:
-    kind: Var
-    name:
-      metavar: $OBJ
-      field: text
-    symbolId:
-      metavar: $OBJ
-      field: text
-    type:
-      kind: Never
+    recurse: $OBJ
   member:
-    metavar: $FIELD
+    metavar: $PROP
     field: text
   type:
     kind: Never

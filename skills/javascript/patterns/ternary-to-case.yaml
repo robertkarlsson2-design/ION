@@ -24,7 +24,7 @@ emit:
   arms:
     - pattern:
         kind: Constructor
-        ctorName: True
+        ctorName: "True"
         symbolId: True
         args: []
         type:
@@ -41,7 +41,7 @@ emit:
           kind: Never
     - pattern:
         kind: Constructor
-        ctorName: False
+        ctorName: "False"
         symbolId: False
         args: []
         type:

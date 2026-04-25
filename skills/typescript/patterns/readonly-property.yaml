@@ -21,12 +21,4 @@ conditions:
     var: $READONLY_KW
     value: "readonly"
 emit:
-  kind: Var
-  name:
-    metavar: $NAME
-    field: text
-  symbolId:
-    metavar: $NAME
-    field: text
-  type:
-    kind: Never
+  recurse: $NAME

@@ -27,13 +27,5 @@ emit:
         metavar: $PARAM
         field: span
   body:
-    kind: Var
-    name:
-      metavar: $BODY
-      field: text
-    symbolId:
-      metavar: $BODY
-      field: text
-    type:
-      kind: Never
+    recurse: $BODY
   captures: []

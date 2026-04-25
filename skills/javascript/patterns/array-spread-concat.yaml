@@ -18,14 +18,6 @@ emit:
     type:
       kind: Never
   args:
-    - kind: Var
-      name:
-        metavar: $FIRST
-        field: text
-      symbolId:
-        metavar: $FIRST
-        field: text
-      type:
-        kind: Never
+    - recurse: $FIRST
   type:
     kind: Never

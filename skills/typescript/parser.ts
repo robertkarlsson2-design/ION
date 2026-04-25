@@ -1,10 +1,11 @@
 import { Parser, Language, Node } from 'web-tree-sitter';
 import { createRequire } from 'module';
+import { ensureParserInit } from '../../src/ingest/parser-init.js';
 import type { CSTNode } from '../../src/ingest/types.js';
 
 const _require = createRequire(import.meta.url);
 
-await Parser.init();
+await ensureParserInit();
 const _tsLanguage = await Language.load(
   _require.resolve('tree-sitter-typescript/tree-sitter-typescript.wasm'),
 );

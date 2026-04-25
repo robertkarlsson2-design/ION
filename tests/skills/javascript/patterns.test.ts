@@ -33,9 +33,9 @@ const JS_SKILL_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../../ski
 // ── Suite A — Loader integration ──────────────────────────────────────────────
 
 describe('A: loader integration', () => {
-  it('A1: loadPatterns returns exactly 71 PatternMatcher instances', async () => {
+  it('A1: loadPatterns returns exactly 74 PatternMatcher instances', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
-    expect(matchers).toHaveLength(71);
+    expect(matchers).toHaveLength(74);
     expect(matchers.every(m => typeof m.match === 'function')).toBe(true);
   }, 30000);
 

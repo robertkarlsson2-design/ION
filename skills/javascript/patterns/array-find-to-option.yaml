@@ -15,24 +15,8 @@ conditions:
 emit:
   kind: App
   callee:
-    kind: Var
-    name:
-      metavar: $CALLEE
-      field: text
-    symbolId:
-      metavar: $CALLEE
-      field: text
-    type:
-      kind: Never
+    recurse: $CALLEE
   args:
-    - kind: Var
-      name:
-        metavar: $ARGS
-        field: text
-      symbolId:
-        metavar: $ARGS
-        field: text
-      type:
-        kind: Never
+    - recurse: $ARGS
   type:
     kind: Never

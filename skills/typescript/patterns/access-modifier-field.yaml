@@ -21,12 +21,4 @@ conditions:
     var: $MODIFIER
     values: ["public", "private", "protected"]
 emit:
-  kind: Var
-  name:
-    metavar: $NAME
-    field: text
-  symbolId:
-    metavar: $NAME
-    field: text
-  type:
-    kind: Never
+  recurse: $NAME

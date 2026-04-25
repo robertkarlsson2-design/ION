@@ -61,6 +61,10 @@ export async function runPipeline(
  * Uses fresh child arrays so a successful LLM translation of the parent discards
  * any partial child errors that were collected during recursion.
  */
+const SKIP_NODE_TYPES = new Set([
+  'comment', 'line_comment', 'block_comment', 'hash_comment',
+]);
+
 async function walkNode(
   node: CSTNode,
   source: string,
@@ -73,6 +77,8 @@ async function walkNode(
     errors.push({ message: `CST depth limit exceeded at node type '${node.type}'`, cstNode: node });
     return false;
   }
+
+  if (SKIP_NODE_TYPES.has(node.type)) return true;
 
   // Step 1: try pattern matchers (consume whole subtree on first match)
   for (const pattern of config.patterns) {

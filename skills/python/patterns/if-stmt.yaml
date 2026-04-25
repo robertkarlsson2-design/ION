@@ -32,26 +32,10 @@ emit:
           kind: Bool
           value: true
       body:
-        kind: Var
-        name:
-          metavar: $THEN
-          field: text
-        symbolId:
-          metavar: $THEN
-          field: text
-        type:
-          kind: Never
+        recurse: $THEN
     - pattern:
         kind: Wildcard
       body:
-        kind: Var
-        name:
-          metavar: $ELSE
-          field: text
-        symbolId:
-          metavar: $ELSE
-          field: text
-        type:
-          kind: Never
+        recurse: $ELSE
   type:
     kind: Never

@@ -1,0 +1,11 @@
+id: number-literal
+language: javascript
+match:
+  nodeType: number
+  capture: $NUM
+emit:
+  kind: Literal
+  value:
+    parseNumber: $NUM
+  type:
+    kind: Never
