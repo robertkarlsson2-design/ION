@@ -37,6 +37,8 @@ import type {
   CaseNode,
   ConstructorNode,
   AccessorNode,
+  ListLitIRNode,
+  MapLitIRNode,
   ForeignRefNode,
   EffectNode,
   AsyncBlockNode,
@@ -510,6 +512,27 @@ function parseNode(raw: unknown, path: string, depth = 0): IonIRNode {
         kind: 'Accessor',
         receiver: parseNode(r['receiver'], `${path}.receiver`, depth + 1),
         member: assertString(r['member'], `${path}.member`),
+        span: parseSpan(r['span'], `${path}.span`),
+        type: parseType(r['type'], `${path}.type`),
+      };
+      return node;
+    }
+    case 'ListLit': {
+      const node: ListLitIRNode = {
+        kind: 'ListLit',
+        elements: assertArray(r['elements'], `${path}.elements`).map((e, i) => parseNode(e, `${path}.elements[${i}]`, depth + 1)),
+        span: parseSpan(r['span'], `${path}.span`),
+        type: parseType(r['type'], `${path}.type`),
+      };
+      return node;
+    }
+    case 'MapLit': {
+      const node: MapLitIRNode = {
+        kind: 'MapLit',
+        entries: assertArray(r['entries'], `${path}.entries`).map((e, i) => ({
+          key: parseNode((e as Record<string, unknown>)['key'], `${path}.entries[${i}].key`, depth + 1),
+          value: parseNode((e as Record<string, unknown>)['value'], `${path}.entries[${i}].value`, depth + 1),
+        })),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
       };

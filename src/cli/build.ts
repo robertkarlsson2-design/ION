@@ -10,6 +10,7 @@ import type { BindError } from '../binder/index.js';
 import { checkModule } from '../checker/index.js';
 import type { CheckError } from '../checker/index.js';
 import { desugarModule } from '../desugar/index.js';
+import { deserializeModule, IonIRSerdeError } from '../ir/serde.js';
 import { emitJS } from '../../emitters/javascript/emit.js';
 import { emitTS } from '../../emitters/typescript/emit.js';
 import { emitPython } from '../../emitters/python/emit.js';
@@ -283,6 +284,48 @@ async function compileFile(
         suggestion: null,
       }],
     };
+  }
+
+  // Wire format detection: if the file is IonIR JSON, deserialize directly and
+  // skip the full lex/parse/bind/check/desugar pipeline.
+  if (src.trimStart().startsWith('{')) {
+    let ir: IonIRModule;
+    try {
+      ir = deserializeModule(src);
+    } catch (err) {
+      const msg = err instanceof IonIRSerdeError ? err.message : String(err);
+      return {
+        outputPath,
+        diagnostics: [{
+          file: ionPath,
+          code: 'BD006',
+          message: `wire format error: ${msg}`,
+          span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+          suggestion: null,
+        }],
+      };
+    }
+
+    let emitted: string;
+    try {
+      emitted = emitter(ir);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        outputPath,
+        diagnostics: [{
+          file: ionPath,
+          code: 'BD005',
+          message: `emit error: ${msg}`,
+          span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+          suggestion: null,
+        }],
+      };
+    }
+
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, emitted, 'utf-8');
+    return { outputPath, diagnostics: [] };
   }
 
   const tokens = lex(src, ionPath);
