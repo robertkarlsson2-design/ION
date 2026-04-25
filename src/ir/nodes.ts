@@ -14,12 +14,19 @@ export type LiteralValue =
   | { readonly kind: 'Bool'; readonly value: boolean }
   | { readonly kind: 'Null' };
 
+/** Visibility modifier for OOP members (hoisted here so Param can reference it). */
+export type OopVisibility = 'public' | 'private' | 'protected';
+
 /** A function / lambda parameter with its resolved type and symbol. */
 export interface Param {
   readonly name: string;
   readonly symbolId: SymbolId;
   readonly type: IonType;
   readonly span: Span;
+  // NEW (for class fields):
+  readonly isReadonly?: boolean;
+  readonly isStatic?: boolean;
+  readonly visibility?: OopVisibility;
 }
 
 /** A pattern in a case arm or match expression. */
@@ -206,6 +213,20 @@ export type CoreNode =
 // ion-oop dialect nodes
 // ---------------------------------------------------------------------------
 
+/** A decorator/annotation on a class or method. */
+export interface OopAnnotation {
+  readonly name: string;
+  readonly args: readonly string[];
+}
+
+/** An explicit constructor on an OOP class. */
+export interface OopConstructor {
+  readonly params: readonly Param[];
+  readonly body?: IonIRNode;
+  readonly visibility?: OopVisibility;
+  readonly span: Span;
+}
+
 /** A method member on an OOP class or interface. */
 export interface OopMethod {
   readonly name: string;
@@ -216,6 +237,10 @@ export interface OopMethod {
   readonly isAbstract: boolean;
   readonly isStatic: boolean;
   readonly span: Span;
+  // NEW:
+  readonly visibility?: OopVisibility;
+  readonly accessorKind?: 'get' | 'set';
+  readonly annotations?: readonly OopAnnotation[];
 }
 
 /** An abstract member on an OOP interface. */
@@ -236,6 +261,10 @@ export interface OopClassNode {
   readonly methods: readonly OopMethod[];
   readonly span: Span;
   readonly type: IonType;
+  // NEW:
+  readonly typeParams?: readonly string[];
+  readonly annotations?: readonly OopAnnotation[];
+  readonly constructors?: readonly OopConstructor[];
 }
 
 export interface OopInterfaceNode {
@@ -245,6 +274,9 @@ export interface OopInterfaceNode {
   readonly members: readonly OopMember[];
   readonly span: Span;
   readonly type: IonType;
+  // NEW:
+  readonly typeParams?: readonly string[];
+  readonly annotations?: readonly OopAnnotation[];
 }
 
 export interface OopNewNode {

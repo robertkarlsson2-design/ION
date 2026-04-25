@@ -11,6 +11,9 @@ import type {
   ForeignSignature,
   OopMethod,
   OopMember,
+  OopAnnotation,
+  OopConstructor,
+  OopVisibility,
   EffectOp,
   EffectHandler,
   LiteralValue,
@@ -338,10 +341,55 @@ function parseType(cur: Cursor, ctx: DecoderContext, typeDepth = 0): IonType {
 // ---------------------------------------------------------------------------
 
 function parseParam(cur: Cursor, ctx: DecoderContext): Param {
+  // Parse field-specific prefixes: ~=static, -=private, +=protected, !=readonly
+  let isStatic = false;
+  let visibility: OopVisibility | undefined;
+  let isReadonly = false;
+  // Consume prefix characters in order
+  while (cur.pos < cur.text.length) {
+    const ch = cur.text[cur.pos];
+    if (ch === '~') { isStatic = true; cur.pos++; }
+    else if (ch === '-') { visibility = 'private'; cur.pos++; }
+    else if (ch === '+') { visibility = 'protected'; cur.pos++; }
+    else if (ch === '!') { isReadonly = true; cur.pos++; }
+    else break;
+  }
   const name = resolveName(readIdent(cur), ctx);
   consume(cur, ':');
   const type = parseType(cur, ctx);
-  return { name, symbolId: makeSymbolId(''), type, span: WIRE_SPAN };
+  const base: Param = { name, symbolId: makeSymbolId(''), type, span: WIRE_SPAN };
+  if (isStatic || visibility !== undefined || isReadonly) {
+    return {
+      ...base,
+      ...(isStatic && { isStatic }),
+      ...(visibility !== undefined && { visibility }),
+      ...(isReadonly && { isReadonly }),
+    };
+  }
+  return base;
+}
+
+/** Parse a sequence of @Anno(a,b). annotation prefixes from the cursor. */
+function parseAnnotationPrefixes(cur: Cursor, ctx: DecoderContext): OopAnnotation[] {
+  const annotations: OopAnnotation[] = [];
+  while (cur.text[cur.pos] === '@') {
+    cur.pos++; // consume '@'
+    const name = resolveName(readIdent(cur), ctx);
+    const args: string[] = [];
+    if (cur.text[cur.pos] === '(') {
+      cur.pos++; // consume '('
+      while (cur.text[cur.pos] !== ')') {
+        const start = cur.pos;
+        while (cur.pos < cur.text.length && cur.text[cur.pos] !== ',' && cur.text[cur.pos] !== ')') cur.pos++;
+        args.push(cur.text.slice(start, cur.pos));
+        if (cur.text[cur.pos] === ',') cur.pos++;
+      }
+      cur.pos++; // consume ')'
+    }
+    consume(cur, '.'); // annotation separator
+    annotations.push({ name, args });
+  }
+  return annotations;
 }
 
 function parseParamList(cur: Cursor, ctx: DecoderContext): Param[] {
@@ -566,55 +614,153 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
     return { kind: 'Effect', effectTag, body, span: WIRE_SPAN, type: { kind: 'Unit' } };
   }
 
-  // ── class name[:superId]{fields}{methods} ────────────────────────────────
-  if (cur.text.startsWith('class ', cur.pos)) {
-    cur.pos += 6;
-    const name = resolveName(readIdent(cur), ctx);
-    const superClass = peek(cur) === ':' ? (cur.pos++, makeSymbolId(readIdent(cur))) : undefined;
-    consume(cur, '{');
-    const fields: Param[] = [];
-    if (peek(cur) !== '}') {
-      fields.push(parseParam(cur, ctx));
-      while (tryConsume(cur, ',')) fields.push(parseParam(cur, ctx));
-    }
-    consume(cur, '}');
-    consume(cur, '{');
-    const methods: OopMethod[] = [];
-    while (peek(cur) !== '}') {
-      const mName = resolveName(readIdent(cur), ctx);
-      consume(cur, '(');
-      const mParams = parseParamList(cur, ctx);
-      consume(cur, ')');
-      consume(cur, '->');
-      const retType = parseType(cur, ctx);
-      consume(cur, '{');
-      const body: IonIRNode | undefined = peek(cur) !== '}' ? parseNode(cur, ctx, depth + 1) : undefined;
-      consume(cur, '}');
-      const baseMethod = { name: mName, symbolId: makeSymbolId(''), params: mParams, retType, isAbstract: false, isStatic: false, span: WIRE_SPAN };
-      methods.push(body !== undefined ? { ...baseMethod, body } : baseMethod);
-      if (peek(cur) === ';') cur.pos++;
-    }
-    consume(cur, '}');
-    const baseClass = { kind: 'OopClass' as const, name, symbolId: makeSymbolId(''), interfaces: [] as readonly import('../types.js').SymbolId[], fields, methods, span: WIRE_SPAN, type: { kind: 'Unit' as const } };
-    return superClass !== undefined ? { ...baseClass, superClass } : baseClass;
-  }
+  // ── [@Anno ]* (class | iface) ... ───────────────────────────────────────
+  // Annotation prefixes (e.g. "@Deprecated ") may appear before either keyword.
+  if (cur.text.startsWith('@', cur.pos) || cur.text.startsWith('class ', cur.pos) || cur.text.startsWith('iface ', cur.pos)) {
+    // Speculatively consume any leading @Anno. prefixes.
+    const nodeAnnotations = parseAnnotationPrefixes(cur, ctx);
 
-  // ── iface name{members} ──────────────────────────────────────────────────
-  if (cur.text.startsWith('iface ', cur.pos)) {
-    cur.pos += 6;
-    const name = resolveName(readIdent(cur), ctx);
-    consume(cur, '{');
-    const members: OopMember[] = [];
-    if (peek(cur) !== '}') {
-      do {
+    // ── class name[<T,U>][:superId]{fields}{methods}[{constructors}] ───────
+    if (cur.text.startsWith('class ', cur.pos)) {
+      cur.pos += 6;
+      const name = resolveName(readIdent(cur), ctx);
+      // Optional type params: <T,U,...>
+      const typeParams: string[] = [];
+      if (peek(cur) === '<') {
+        cur.pos++;
+        typeParams.push(readIdent(cur));
+        while (tryConsume(cur, ',')) typeParams.push(readIdent(cur));
+        consume(cur, '>');
+      }
+      const superClass = peek(cur) === ':' ? (cur.pos++, makeSymbolId(readIdent(cur))) : undefined;
+      consume(cur, '{');
+      const fields: Param[] = [];
+      if (peek(cur) !== '}') {
+        fields.push(parseParam(cur, ctx));
+        while (tryConsume(cur, ',')) fields.push(parseParam(cur, ctx));
+      }
+      consume(cur, '}');
+      consume(cur, '{');
+      const methods: OopMethod[] = [];
+      while (peek(cur) !== '}') {
+        // Each method: [@Anno.]* [~][-|+][abs:|get:|set:]name(params)->retType{body}
+        const mAnnotations = parseAnnotationPrefixes(cur, ctx);
+        // Parse modifier prefix: ~ = static, - = private, + = protected
+        let mIsStatic = false;
+        let mVisibility: OopVisibility | undefined;
+        if (cur.text[cur.pos] === '~') { mIsStatic = true; cur.pos++; }
+        if (cur.text[cur.pos] === '-') { mVisibility = 'private'; cur.pos++; }
+        else if (cur.text[cur.pos] === '+') { mVisibility = 'protected'; cur.pos++; }
+        // Parse kind prefix: abs: | get: | set:
+        let mIsAbstract = false;
+        let mAccessorKind: 'get' | 'set' | undefined;
+        if (cur.text.startsWith('abs:', cur.pos)) { mIsAbstract = true; cur.pos += 4; }
+        else if (cur.text.startsWith('get:', cur.pos)) { mAccessorKind = 'get'; cur.pos += 4; }
+        else if (cur.text.startsWith('set:', cur.pos)) { mAccessorKind = 'set'; cur.pos += 4; }
         const mName = resolveName(readIdent(cur), ctx);
-        consume(cur, ':');
-        const type = parseType(cur, ctx);
-        members.push({ name: mName, symbolId: makeSymbolId(''), type, span: WIRE_SPAN });
-      } while (tryConsume(cur, ','));
+        consume(cur, '(');
+        const mParams = parseParamList(cur, ctx);
+        consume(cur, ')');
+        consume(cur, '->');
+        const retType = parseType(cur, ctx);
+        consume(cur, '{');
+        const body: IonIRNode | undefined = peek(cur) !== '}' ? parseNode(cur, ctx, depth + 1) : undefined;
+        consume(cur, '}');
+        const baseMethod: OopMethod = {
+          name: mName,
+          symbolId: makeSymbolId(''),
+          params: mParams,
+          retType,
+          isAbstract: mIsAbstract,
+          isStatic: mIsStatic,
+          span: WIRE_SPAN,
+          ...(body !== undefined && { body }),
+          ...(mVisibility !== undefined && { visibility: mVisibility }),
+          ...(mAccessorKind !== undefined && { accessorKind: mAccessorKind }),
+          ...(mAnnotations.length > 0 && { annotations: mAnnotations }),
+        };
+        methods.push(baseMethod);
+        if (peek(cur) === ';') cur.pos++;
+      }
+      consume(cur, '}');
+      // Optional constructor section: {[visPrefix]init(params){body}[;...]}
+      const constructors: OopConstructor[] = [];
+      if (peek(cur) === '{') {
+        cur.pos++;
+        while (peek(cur) !== '}') {
+          let ctorVis: OopVisibility | undefined;
+          if (cur.text[cur.pos] === '~') { ctorVis = 'private'; cur.pos++; }
+          else if (cur.text[cur.pos] === '+') { ctorVis = 'protected'; cur.pos++; }
+          consume(cur, 'init');
+          consume(cur, '(');
+          const ctorParams = parseParamList(cur, ctx);
+          consume(cur, ')');
+          consume(cur, '{');
+          const ctorBody: IonIRNode | undefined = peek(cur) !== '}' ? parseNode(cur, ctx, depth + 1) : undefined;
+          consume(cur, '}');
+          const ctor: OopConstructor = {
+            params: ctorParams,
+            span: WIRE_SPAN,
+            ...(ctorBody !== undefined && { body: ctorBody }),
+            ...(ctorVis !== undefined && { visibility: ctorVis }),
+          };
+          constructors.push(ctor);
+          if (peek(cur) === ';') cur.pos++;
+        }
+        consume(cur, '}');
+      }
+      return {
+        kind: 'OopClass' as const,
+        name,
+        symbolId: makeSymbolId(''),
+        interfaces: [] as readonly import('../types.js').SymbolId[],
+        fields,
+        methods,
+        span: WIRE_SPAN,
+        type: { kind: 'Unit' as const },
+        ...(superClass !== undefined && { superClass }),
+        ...(typeParams.length > 0 && { typeParams }),
+        ...(nodeAnnotations.length > 0 && { annotations: nodeAnnotations }),
+        ...(constructors.length > 0 && { constructors }),
+      };
     }
-    consume(cur, '}');
-    return { kind: 'OopInterface', name, symbolId: makeSymbolId(''), members, span: WIRE_SPAN, type: { kind: 'Unit' } };
+
+    // ── iface name[<T,U>]{members} ─────────────────────────────────────────
+    if (cur.text.startsWith('iface ', cur.pos)) {
+      cur.pos += 6;
+      const name = resolveName(readIdent(cur), ctx);
+      // Optional type params: <T,U,...>
+      const ifaceTypeParams: string[] = [];
+      if (peek(cur) === '<') {
+        cur.pos++;
+        ifaceTypeParams.push(readIdent(cur));
+        while (tryConsume(cur, ',')) ifaceTypeParams.push(readIdent(cur));
+        consume(cur, '>');
+      }
+      consume(cur, '{');
+      const members: OopMember[] = [];
+      if (peek(cur) !== '}') {
+        do {
+          const mName = resolveName(readIdent(cur), ctx);
+          consume(cur, ':');
+          const type = parseType(cur, ctx);
+          members.push({ name: mName, symbolId: makeSymbolId(''), type, span: WIRE_SPAN });
+        } while (tryConsume(cur, ','));
+      }
+      consume(cur, '}');
+      return {
+        kind: 'OopInterface',
+        name,
+        symbolId: makeSymbolId(''),
+        members,
+        span: WIRE_SPAN,
+        type: { kind: 'Unit' },
+        ...(ifaceTypeParams.length > 0 && { typeParams: ifaceTypeParams }),
+        ...(nodeAnnotations.length > 0 && { annotations: nodeAnnotations }),
+      };
+    }
+
+    throw new WireDecodeError(`expected 'class' or 'iface' after annotation prefix at pos ${cur.pos}`);
   }
 
   // ── new ctorSymbolId(args) ───────────────────────────────────────────────

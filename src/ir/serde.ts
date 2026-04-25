@@ -212,14 +212,35 @@ function parseLiteralValue(raw: unknown, path: string): LiteralValue {
   }
 }
 
-function parseParam(raw: unknown, path: string, depth = 0): Param {
+function parseOopVisibility(raw: unknown, path: string): import('./nodes.js').OopVisibility {
+  const s = assertString(raw, path);
+  if (s !== 'public' && s !== 'private' && s !== 'protected') {
+    throw new IonIRSerdeError(`expected 'public', 'private', or 'protected', got '${s}'`, path);
+  }
+  return s;
+}
+
+function parseOopAnnotation(raw: unknown, path: string): import('./nodes.js').OopAnnotation {
   const r = assertRecord(raw, path);
   return {
+    name: assertString(r['name'], `${path}.name`),
+    args: assertArray(r['args'], `${path}.args`).map((a, i) => assertString(a, `${path}.args[${i}]`)),
+  };
+}
+
+function parseParam(raw: unknown, path: string, depth = 0): Param {
+  const r = assertRecord(raw, path);
+  const base = {
     name: assertString(r['name'], `${path}.name`),
     symbolId: makeSymbolId(assertString(r['symbolId'], `${path}.symbolId`)),
     type: parseType(r['type'], `${path}.type`, depth),
     span: parseSpan(r['span'], `${path}.span`),
+    // New optional field-specific properties
+    ...('isReadonly' in r && { isReadonly: assertBoolean(r['isReadonly'], `${path}.isReadonly`) }),
+    ...('isStatic' in r && { isStatic: assertBoolean(r['isStatic'], `${path}.isStatic`) }),
+    ...('visibility' in r && { visibility: parseOopVisibility(r['visibility'], `${path}.visibility`) }),
   };
+  return base;
 }
 
 function parseCasePattern(raw: unknown, path: string): CasePattern {
@@ -291,11 +312,31 @@ function parseOopMethod(raw: unknown, path: string, depth: number): OopMethod {
     isAbstract: assertBoolean(r['isAbstract'], `${path}.isAbstract`),
     isStatic: assertBoolean(r['isStatic'], `${path}.isStatic`),
     span: parseSpan(r['span'], `${path}.span`),
+    // New optional fields
+    ...('body' in r && { body: parseNode(r['body'], `${path}.body`, depth + 1) }),
+    ...('visibility' in r && { visibility: parseOopVisibility(r['visibility'], `${path}.visibility`) }),
+    ...('accessorKind' in r && {
+      accessorKind: (() => {
+        const ak = assertString(r['accessorKind'], `${path}.accessorKind`);
+        if (ak !== 'get' && ak !== 'set') throw new IonIRSerdeError(`expected 'get' or 'set', got '${ak}'`, `${path}.accessorKind`);
+        return ak as 'get' | 'set';
+      })(),
+    }),
+    ...('annotations' in r && {
+      annotations: assertArray(r['annotations'], `${path}.annotations`).map((a, i) => parseOopAnnotation(a, `${path}.annotations[${i}]`)),
+    }),
   };
-  if ('body' in r) {
-    return { ...base, body: parseNode(r['body'], `${path}.body`, depth + 1) };
-  }
   return base;
+}
+
+function parseOopConstructor(raw: unknown, path: string, depth: number): import('./nodes.js').OopConstructor {
+  const r = assertRecord(raw, path);
+  return {
+    params: assertArray(r['params'], `${path}.params`).map((p, i) => parseParam(p, `${path}.params[${i}]`, depth)),
+    span: parseSpan(r['span'], `${path}.span`),
+    ...('body' in r && { body: parseNode(r['body'], `${path}.body`, depth + 1) }),
+    ...('visibility' in r && { visibility: parseOopVisibility(r['visibility'], `${path}.visibility`) }),
+  };
 }
 
 function parseOopMember(raw: unknown, path: string, depth = 0): OopMember {
@@ -500,7 +541,7 @@ function parseNode(raw: unknown, path: string, depth = 0): IonIRNode {
     }
     // OOP
     case 'OopClass': {
-      const base = {
+      const node: OopClassNode = {
         kind: 'OopClass' as const,
         name: assertString(r['name'], `${path}.name`),
         symbolId: makeSymbolId(assertString(r['symbolId'], `${path}.symbolId`)),
@@ -509,12 +550,19 @@ function parseNode(raw: unknown, path: string, depth = 0): IonIRNode {
         methods: assertArray(r['methods'], `${path}.methods`).map((m, i) => parseOopMethod(m, `${path}.methods[${i}]`, depth)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
+        // Optional fields
+        ...('superClass' in r && { superClass: makeSymbolId(assertString(r['superClass'], `${path}.superClass`)) }),
+        ...('typeParams' in r && {
+          typeParams: assertArray(r['typeParams'], `${path}.typeParams`).map((tp, i) => assertString(tp, `${path}.typeParams[${i}]`)),
+        }),
+        ...('annotations' in r && {
+          annotations: assertArray(r['annotations'], `${path}.annotations`).map((a, i) => parseOopAnnotation(a, `${path}.annotations[${i}]`)),
+        }),
+        ...('constructors' in r && {
+          constructors: assertArray(r['constructors'], `${path}.constructors`).map((c, i) => parseOopConstructor(c, `${path}.constructors[${i}]`, depth)),
+        }),
       };
-      if ('superClass' in r) {
-        const node: OopClassNode = { ...base, superClass: makeSymbolId(assertString(r['superClass'], `${path}.superClass`)) };
-        return node;
-      }
-      return base;
+      return node;
     }
     case 'OopInterface': {
       const node: OopInterfaceNode = {
@@ -524,6 +572,13 @@ function parseNode(raw: unknown, path: string, depth = 0): IonIRNode {
         members: assertArray(r['members'], `${path}.members`).map((m, i) => parseOopMember(m, `${path}.members[${i}]`, depth)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
+        // Optional fields
+        ...('typeParams' in r && {
+          typeParams: assertArray(r['typeParams'], `${path}.typeParams`).map((tp, i) => assertString(tp, `${path}.typeParams[${i}]`)),
+        }),
+        ...('annotations' in r && {
+          annotations: assertArray(r['annotations'], `${path}.annotations`).map((a, i) => parseOopAnnotation(a, `${path}.annotations[${i}]`)),
+        }),
       };
       return node;
     }

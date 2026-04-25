@@ -209,12 +209,15 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector, depth = 0): voi
       break;
     case 'OopClass':
       c.record(node.name);
+      for (const tp of (node.typeParams ?? [])) c.record(tp);
+      for (const anno of (node.annotations ?? [])) c.record(anno.name);
       for (const f of node.fields) {
         c.record(f.name);
         collectNamesFromType(f.type, c, depth + 1);
       }
       for (const m of node.methods) {
         c.record(m.name);
+        for (const anno of (m.annotations ?? [])) c.record(anno.name);
         for (const p of m.params) {
           c.record(p.name);
           collectNamesFromType(p.type, c, depth + 1);
@@ -222,9 +225,18 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector, depth = 0): voi
         collectNamesFromType(m.retType, c, depth + 1);
         if (m.body !== undefined) collectNamesFromNode(m.body, c, depth + 1);
       }
+      for (const ctor of (node.constructors ?? [])) {
+        for (const p of ctor.params) {
+          c.record(p.name);
+          collectNamesFromType(p.type, c, depth + 1);
+        }
+        if (ctor.body !== undefined) collectNamesFromNode(ctor.body, c, depth + 1);
+      }
       break;
     case 'OopInterface':
       c.record(node.name);
+      for (const tp of (node.typeParams ?? [])) c.record(tp);
+      for (const anno of (node.annotations ?? [])) c.record(anno.name);
       for (const mem of node.members) {
         c.record(mem.name);
         collectNamesFromType(mem.type, c, depth + 1);
@@ -714,7 +726,14 @@ function encodePattern(p: CasePattern, ctx: EncoderContext, depth = 0): string {
 }
 
 function encodeParam(p: Param, ctx: EncoderContext, depth = 0): string {
-  return `${encodeName(p.name, ctx.sym)}:${encodeType(p.type, ctx, depth)}`;
+  // Encode field-specific prefixes: ~=static, -=private, +=protected, !=readonly
+  // Prefix order (outermost→innermost): static, visibility, readonly
+  let prefix = '';
+  if (p.isStatic) prefix += '~';
+  if (p.visibility === 'private') prefix += '-';
+  else if (p.visibility === 'protected') prefix += '+';
+  if (p.isReadonly) prefix += '!';
+  return `${prefix}${encodeName(p.name, ctx.sym)}:${encodeType(p.type, ctx, depth)}`;
 }
 
 /** Encodes an IonIRNode to its compact wire representation. */
@@ -786,17 +805,58 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
       const methods = node.methods.map(m => {
         const ps = m.params.map(p => encodeParam(p, ctx, depth + 1)).join(',');
         const body = m.body !== undefined ? encodeNode(m.body, ctx, depth + 1) : '';
-        return `${encodeName(m.name, ctx.sym)}(${ps})->${encodeType(m.retType, ctx, depth + 1)}{${body}}`;
+        // Encode annotations: @Anno(a,b). prefix, stacked
+        const annoPfx = (m.annotations ?? []).map(a =>
+          `@${a.name}${a.args.length > 0 ? `(${a.args.join(',')})` : ''}.`
+        ).join('');
+        // Encode modifier prefix: ~ = static, - = private, + = protected
+        let modPfx = '';
+        if (m.isStatic) modPfx += '~';
+        if (m.visibility === 'private') modPfx += '-';
+        else if (m.visibility === 'protected') modPfx += '+';
+        // Encode special method kinds
+        let kindPfx = '';
+        if (m.isAbstract) kindPfx = 'abs:';
+        else if (m.accessorKind === 'get') kindPfx = 'get:';
+        else if (m.accessorKind === 'set') kindPfx = 'set:';
+        return `${annoPfx}${modPfx}${kindPfx}${encodeName(m.name, ctx.sym)}(${ps})->${encodeType(m.retType, ctx, depth + 1)}{${body}}`;
       }).join(';');
+      // Encode class-level annotations
+      const classAnno = (node.annotations ?? []).map(a =>
+        `@${a.name}${a.args.length > 0 ? `(${a.args.join(',')})` : ''} `
+      ).join('');
+      // Encode type params
+      const tp = (node.typeParams ?? []).length > 0
+        ? `<${node.typeParams!.join(',')}>`
+        : '';
       const sup = node.superClass !== undefined ? `:${String(node.superClass)}` : '';
-      return `class ${encodeName(node.name, ctx.sym)}${sup}{${fields}}{${methods}}`;
+      // Encode constructors as third {} section
+      const hasCtors = (node.constructors ?? []).length > 0;
+      let ctorSection = '';
+      if (hasCtors) {
+        const ctors = node.constructors!.map(ctor => {
+          const ps = ctor.params.map(p => encodeParam(p, ctx, depth + 1)).join(',');
+          const body = ctor.body !== undefined ? encodeNode(ctor.body, ctx, depth + 1) : '';
+          const visPrefix = ctor.visibility === 'private' ? '~' : ctor.visibility === 'protected' ? '+' : '';
+          return `${visPrefix}init(${ps}){${body}}`;
+        }).join(';');
+        ctorSection = `{${ctors}}`;
+      }
+      return `${classAnno}class ${encodeName(node.name, ctx.sym)}${tp}${sup}{${fields}}{${methods}}${ctorSection}`;
     }
 
     case 'OopInterface': {
       const mems = node.members.map(m =>
         `${encodeName(m.name, ctx.sym)}:${encodeType(m.type, ctx, depth + 1)}`
       ).join(',');
-      return `iface ${encodeName(node.name, ctx.sym)}{${mems}}`;
+      // Encode interface-level annotations and type params
+      const ifaceAnno = (node.annotations ?? []).map(a =>
+        `@${a.name}${a.args.length > 0 ? `(${a.args.join(',')})` : ''} `
+      ).join('');
+      const tp = (node.typeParams ?? []).length > 0
+        ? `<${node.typeParams!.join(',')}>`
+        : '';
+      return `${ifaceAnno}iface ${encodeName(node.name, ctx.sym)}${tp}{${mems}}`;
     }
 
     case 'OopNew': {
