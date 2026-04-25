@@ -9,6 +9,9 @@ import type {
   AccessorNode,
   OopClassNode,
   OopInterfaceNode,
+  OopMethod,
+  OopAnnotation,
+  OopConstructor,
   AdtDeclNode,
   AdtMatchNode,
   EffectDeclNode,
@@ -334,38 +337,124 @@ function getAuraAnnotation(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Apex annotation helper
+// ---------------------------------------------------------------------------
+
+function emitApexAnnotationLines(annotations: readonly OopAnnotation[], indent: string): string[] {
+  return (annotations ?? []).map(ann => {
+    const args = ann.args.length > 0 ? `(${ann.args.join(', ')})` : '';
+    return `${indent}@${ann.name}${args}`;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Apex constructor emitter
+// ---------------------------------------------------------------------------
+
+function emitApexConstructor(ctor: OopConstructor, className: string, indent: string): string[] {
+  const lines: string[] = [];
+  const vis = ctor.visibility ?? 'public';
+  const params = ctor.params.map(p => `${ionTypeToApex(p.type)} ${p.name}`).join(', ');
+  lines.push(`${indent}${vis} ${className}(${params}) {`);
+  if (ctor.body) {
+    const bodyStr = emitApexExpr(ctor.body);
+    lines.push(`${indent}    ${bodyStr};`);
+  }
+  lines.push(`${indent}}`);
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Apex method emitter (shared by class methods)
+// ---------------------------------------------------------------------------
+
+function emitApexMethod(m: OopMethod, indent: string): string[] {
+  const lines: string[] = [];
+
+  // Annotations above the method
+  if (m.annotations && m.annotations.length > 0) {
+    lines.push(...emitApexAnnotationLines(m.annotations, indent));
+  }
+
+  const vis = m.visibility ?? 'public';
+  const staticKw = m.isStatic ? 'static ' : '';
+  const abstractKw = m.isAbstract ? 'abstract ' : '';
+  const retType = ionTypeToApex(m.retType);
+  const params = m.params.map(p => `${ionTypeToApex(p.type)} ${p.name}`).join(', ');
+
+  if (m.accessorKind === 'get') {
+    // Apex-style getter: public Type getXxx() { ... }
+    const getterName = `get${m.name.slice(0, 1).toUpperCase()}${m.name.slice(1)}`;
+    const bodyStr = m.body ? emitApexExpr(m.body) : 'null';
+    lines.push(`${indent}${vis} ${staticKw}${retType} ${getterName}() {`);
+    lines.push(`${indent}    return ${bodyStr};`);
+    lines.push(`${indent}}`);
+  } else if (m.accessorKind === 'set') {
+    // Apex-style setter: public void setXxx(Type v) { ... }
+    const setterName = `set${m.name.slice(0, 1).toUpperCase()}${m.name.slice(1)}`;
+    const bodyStr = m.body ? emitApexExpr(m.body) : '';
+    lines.push(`${indent}${vis} ${staticKw}void ${setterName}(${retType} value) {`);
+    if (bodyStr) lines.push(`${indent}    ${bodyStr};`);
+    lines.push(`${indent}}`);
+  } else if (m.isAbstract) {
+    // Abstract method — no body
+    lines.push(`${indent}${vis} ${staticKw}${abstractKw}${retType} ${m.name}(${params});`);
+  } else {
+    const bodyStr = m.body ? emitApexExpr(m.body) : 'null';
+    lines.push(`${indent}${vis} ${staticKw}${retType} ${m.name}(${params}) {`);
+    lines.push(`${indent}    return ${bodyStr};`);
+    lines.push(`${indent}}`);
+  }
+
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
 // emitApexClass — emit an OopClass node as an Apex inner class
 // ---------------------------------------------------------------------------
 
 function emitApexClass(cls: OopClassNode, indent = '    '): string {
   const lines: string[] = [];
-  lines.push(`${indent}public class ${cls.name} {`);
+  const memberIndent = `${indent}    `;
 
-  // Fields
-  for (const f of cls.fields) {
-    lines.push(`${indent}    public ${ionTypeToApex(f.type)} ${f.name};`);
+  // Class-level annotations
+  for (const ann of emitApexAnnotationLines(cls.annotations ?? [], indent)) {
+    lines.push(ann);
   }
 
-  if (cls.fields.length > 0) {
+  // Class declaration with optional type params
+  const typeParamStr = (cls.typeParams ?? []).length > 0 ? `<${cls.typeParams!.join(', ')}>` : '';
+  lines.push(`${indent}public class ${cls.name}${typeParamStr} {`);
+
+  // Fields — emit with visibility/static/readonly
+  for (const f of cls.fields) {
+    const vis = f.visibility ?? 'public';
+    const staticKw = f.isStatic ? 'static ' : '';
+    const finalKw = f.isReadonly ? 'final ' : '';
+    lines.push(`${memberIndent}${vis} ${staticKw}${finalKw}${ionTypeToApex(f.type)} ${f.name};`);
+  }
+
+  // Explicit constructors (from new OopConstructor[] field)
+  if ((cls.constructors ?? []).length > 0) {
     lines.push(``);
-    // Constructor
-    const ctorParams = cls.fields.map(f => `${ionTypeToApex(f.type)} ${f.name}`).join(', ');
-    lines.push(`${indent}    public ${cls.name}(${ctorParams}) {`);
-    for (const f of cls.fields) {
-      lines.push(`${indent}        this.${f.name} = ${f.name};`);
+    for (const ctor of cls.constructors!) {
+      lines.push(...emitApexConstructor(ctor, cls.name, memberIndent));
     }
-    lines.push(`${indent}    }`);
+  } else if (cls.fields.length > 0) {
+    // Auto-generate a constructor from fields (backwards-compat)
+    lines.push(``);
+    const ctorParams = cls.fields.map(f => `${ionTypeToApex(f.type)} ${f.name}`).join(', ');
+    lines.push(`${memberIndent}public ${cls.name}(${ctorParams}) {`);
+    for (const f of cls.fields) {
+      lines.push(`${memberIndent}    this.${f.name} = ${f.name};`);
+    }
+    lines.push(`${memberIndent}}`);
   }
 
   // Methods
   for (const m of cls.methods) {
-    const retType = ionTypeToApex(m.retType);
-    const params = m.params.map(p => `${ionTypeToApex(p.type)} ${p.name}`).join(', ');
-    const staticKw = m.isStatic ? 'static ' : '';
-    const bodyStr = m.body ? emitApexExpr(m.body) : 'null';
-    lines.push(`${indent}    public ${staticKw}${retType} ${m.name}(${params}) {`);
-    lines.push(`${indent}        return ${bodyStr};`);
-    lines.push(`${indent}    }`);
+    lines.push(``);
+    lines.push(...emitApexMethod(m, memberIndent));
   }
 
   lines.push(`${indent}}`);
@@ -378,10 +467,21 @@ function emitApexClass(cls: OopClassNode, indent = '    '): string {
 
 function emitApexInterface(iface: OopInterfaceNode, indent = '    '): string {
   const lines: string[] = [];
-  lines.push(`${indent}public interface ${iface.name} {`);
-  for (const m of iface.members) {
-    lines.push(`${indent}    ${ionTypeToApex(m.type)} get${m.name.slice(0, 1).toUpperCase() + m.name.slice(1)}();`);
+
+  // Interface-level annotations
+  for (const ann of emitApexAnnotationLines(iface.annotations ?? [], indent)) {
+    lines.push(ann);
   }
+
+  // Interface declaration with optional type params
+  const typeParamStr = (iface.typeParams ?? []).length > 0 ? `<${iface.typeParams!.join(', ')}>` : '';
+  lines.push(`${indent}public interface ${iface.name}${typeParamStr} {`);
+
+  for (const m of iface.members) {
+    const memberName = `get${m.name.slice(0, 1).toUpperCase() + m.name.slice(1)}`;
+    lines.push(`${indent}    ${ionTypeToApex(m.type)} ${memberName}();`);
+  }
+
   lines.push(`${indent}}`);
   return lines.join('\n');
 }
