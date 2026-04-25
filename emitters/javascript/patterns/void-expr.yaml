@@ -1,0 +1,21 @@
+id: void-expr
+language: javascript
+# Matches: void expr  (e.g. void 0, void undefined)
+# tree-sitter node: unary_expression with operator "void"
+# Ion treatment: void always evaluates to undefined at runtime, so emit Literal Null.
+# The operand is evaluated for side effects only; Ion has no side-effect-only
+# expression form, so the operand is dropped and null is substituted.
+match:
+  nodeType: unary_expression
+  children:
+    - pattern:
+        text: "void"
+    - pattern:
+        capture: $EXPR
+emit:
+  kind: Literal
+  value:
+    kind: Null
+  type:
+    kind: Null
+  span: {}

@@ -1,0 +1,13 @@
+id: parenthesized-expr
+language: javascript
+# Matches: (expr)  (parenthesized_expression)
+# tree-sitter node: parenthesized_expression with one inner expression child
+# Ion treatment: unwrap the parens — emit the inner expression directly.
+# Parentheses are purely syntactic grouping with no runtime effect.
+match:
+  nodeType: parenthesized_expression
+  children:
+    - pattern:
+        capture: $INNER
+emit:
+  recurse: $INNER

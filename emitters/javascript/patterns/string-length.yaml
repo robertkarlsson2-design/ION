@@ -1,0 +1,32 @@
+id: string-length
+language: javascript
+# Matches: str.length  (member_expression where property is "length" on a string)
+# tree-sitter node: member_expression with property_identifier "length"
+# Ion treatment: same as array-length — convert to prelude length(str).
+# Note: tree-sitter uses the same member_expression node for both array and
+# string .length accesses. This pattern is equivalent to array-length and is
+# provided as a named alias so the intent is clear at the call site.
+match:
+  nodeType: member_expression
+  children:
+    - pattern:
+        capture: $OBJ
+    - pattern:
+        nodeType: property_identifier
+        capture: $PROP
+conditions:
+  - kind: text-equals
+    var: $PROP
+    value: length
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: length
+    symbolId: prelude:length
+    type:
+      kind: Never
+  args:
+    - recurse: $OBJ
+  type:
+    kind: Never

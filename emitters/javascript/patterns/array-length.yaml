@@ -1,0 +1,29 @@
+id: array-length
+language: javascript
+# Matches: arr.length  (member_expression where property is "length")
+# tree-sitter node: member_expression with property_identifier "length"
+# Ion treatment: convert to prelude length(arr)
+match:
+  nodeType: member_expression
+  children:
+    - pattern:
+        capture: $OBJ
+    - pattern:
+        nodeType: property_identifier
+        capture: $PROP
+conditions:
+  - kind: text-equals
+    var: $PROP
+    value: length
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: length
+    symbolId: prelude:length
+    type:
+      kind: Never
+  args:
+    - recurse: $OBJ
+  type:
+    kind: Never

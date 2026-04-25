@@ -1,0 +1,24 @@
+id: logical-not
+language: javascript
+# Matches: !a  (logical NOT unary expression)
+# tree-sitter node: unary_expression with "!" operator
+# Ion treatment: convert to prelude not(a)
+match:
+  nodeType: unary_expression
+  children:
+    - pattern:
+        text: "!"
+    - pattern:
+        capture: $OPERAND
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: not
+    symbolId: prelude:not
+    type:
+      kind: Never
+  args:
+    - recurse: $OPERAND
+  type:
+    kind: Never

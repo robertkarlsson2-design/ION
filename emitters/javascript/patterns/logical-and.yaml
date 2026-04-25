@@ -1,0 +1,27 @@
+id: logical-and
+language: javascript
+# Matches: a && b  (logical AND binary expression)
+# tree-sitter node: binary_expression with "&&" operator
+# Ion treatment: convert to prelude and(a, b)
+match:
+  nodeType: binary_expression
+  children:
+    - pattern:
+        capture: $LEFT
+    - pattern:
+        text: "&&"
+    - pattern:
+        capture: $RIGHT
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: and
+    symbolId: prelude:and
+    type:
+      kind: Never
+  args:
+    - recurse: $LEFT
+    - recurse: $RIGHT
+  type:
+    kind: Never

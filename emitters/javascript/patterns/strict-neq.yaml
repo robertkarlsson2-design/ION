@@ -1,0 +1,29 @@
+id: strict-neq
+language: javascript
+# Matches: a !== b  (strict inequality binary expression)
+# tree-sitter node: binary_expression with "!==" operator
+# Ion treatment: convert to prelude neq(a, b)
+# Note: more specific patterns (null-check-strict-neq, undefined-check-strict-neq)
+# take priority for !== null / !== undefined comparisons.
+match:
+  nodeType: binary_expression
+  children:
+    - pattern:
+        capture: $LEFT
+    - pattern:
+        text: "!=="
+    - pattern:
+        capture: $RIGHT
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: neq
+    symbolId: prelude:neq
+    type:
+      kind: Never
+  args:
+    - recurse: $LEFT
+    - recurse: $RIGHT
+  type:
+    kind: Never

@@ -1,0 +1,29 @@
+id: typeof-check
+language: javascript
+# Matches: typeof x === 'string'  (typeof type-check binary expression)
+# tree-sitter node: binary_expression where left child is unary_expression with "typeof"
+# Ion treatment: convert to prelude eq(typeof_expr, type_str)
+match:
+  nodeType: binary_expression
+  children:
+    - pattern:
+        nodeType: unary_expression
+        capture: $TYPEOF_EXPR
+    - pattern:
+        capture: $TYPE_STR
+conditions:
+  - kind: node-text-contains
+    text: "typeof"
+emit:
+  kind: App
+  callee:
+    kind: Var
+    name: eq
+    symbolId: prelude:eq
+    type:
+      kind: Never
+  args:
+    - recurse: $TYPEOF_EXPR
+    - recurse: $TYPE_STR
+  type:
+    kind: Never
