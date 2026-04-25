@@ -5,7 +5,7 @@ import { compileRule, loadPatterns, type PatternRule } from '../../../src/ingest
 import type { CSTNode } from '../../../src/ingest/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SKILL_DIR = resolve(__dirname, '../../../skills/javascript');
+const SKILL_DIR = resolve(__dirname, '../../../emitters/javascript');
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -1086,7 +1086,7 @@ describe('ternary', () => {
 
 // ── Integration ───────────────────────────────────────────────────────────────
 
-it('loadPatterns from skills/javascript returns at least 27 matchers', async () => {
+it('loadPatterns from emitters/javascript returns at least 27 matchers', async () => {
   const matchers = await loadPatterns(SKILL_DIR);
   expect(matchers.length).toBeGreaterThanOrEqual(27);
 }, 30000);

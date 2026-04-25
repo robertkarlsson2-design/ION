@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emitApex, emitApexExpr, ionTypeToApex } from '../../skills/apex/emit.js';
+import { emitApex, emitApexExpr, ionTypeToApex } from '../../emitters/apex/emit.js';
 import type { IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
 import { makeSymbolId } from '../../src/types.js';
 

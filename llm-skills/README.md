@@ -1,6 +1,6 @@
 # ION LLM Skills
 
-This directory contains skill guides for LLMs writing ION code. It is separate from `skills/` (which holds the compiler's language-emitter plugins).
+This directory contains skill guides for LLMs writing ION code. It is separate from `emitters/` (which holds the compiler's language-emitter plugins).
 
 ## Contents
 
@@ -15,7 +15,7 @@ This directory contains skill guides for LLMs writing ION code. It is separate f
 
 ```
 llm-skills/        ← you are here — LLM-facing documentation
-skills/            ← compiler internals — one emitter per target language
+emitters/            ← compiler internals — one emitter per target language
   typescript/
   javascript/
   python/
@@ -26,5 +26,5 @@ skills/            ← compiler internals — one emitter per target language
   apex/
 ```
 
-The emitters in `skills/` are TypeScript modules invoked by the ION compiler pipeline.  
+The emitters in `emitters/` are TypeScript modules invoked by the ION compiler pipeline.  
 The documents in `llm-skills/` are consumed by LLMs as context/skills.

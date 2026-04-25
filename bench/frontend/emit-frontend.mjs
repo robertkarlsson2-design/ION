@@ -7,10 +7,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 const { decodeModule } = require('/tmp/ion-e2e/dist/src/wire/decoder.js');
-const { emitHTML } = require('/tmp/ion-e2e/dist/skills/html/emit.js');
-const { emitReact } = require('/tmp/ion-e2e/dist/skills/react/emit.js');
-const { emitVue } = require('/tmp/ion-e2e/dist/skills/vue/emit.js');
-const { emitLWC } = require('/tmp/ion-e2e/dist/skills/lwc/emit.js');
+const { emitHTML } = require('/tmp/ion-e2e/dist/emitters/html/emit.js');
+const { emitReact } = require('/tmp/ion-e2e/dist/emitters/react/emit.js');
+const { emitVue } = require('/tmp/ion-e2e/dist/emitters/vue/emit.js');
+const { emitLWC } = require('/tmp/ion-e2e/dist/emitters/lwc/emit.js');
 
 // Ensure output directory exists
 mkdirSync(join(__dirname, 'out'), { recursive: true });

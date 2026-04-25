@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { printJsModule } from '../../skills/javascript/printer.js';
-import type { JsModule, JsNode } from '../../skills/javascript/js-ast.js';
+import { printJsModule } from '../../emitters/javascript/printer.js';
+import type { JsModule, JsNode } from '../../emitters/javascript/js-ast.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

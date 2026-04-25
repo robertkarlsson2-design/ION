@@ -13,8 +13,8 @@ import type { CSTNode, PatternMatcher } from '../../src/ingest/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const JS_PATTERNS_DIR = resolve(__dirname, '../../skills/javascript/patterns');
-const JS_SKILL_DIR = resolve(__dirname, '../../skills/javascript');
+const JS_PATTERNS_DIR = resolve(__dirname, '../../emitters/javascript/patterns');
+const JS_SKILL_DIR = resolve(__dirname, '../../emitters/javascript');
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -185,7 +185,7 @@ emit:
 // ── Suite: all 71 patterns load ───────────────────────────────────────────────
 
 describe('full pattern set loads without errors', () => {
-  it('skills/javascript/patterns/ loads exactly 71 matchers', async () => {
+  it('emitters/javascript/patterns/ loads exactly 71 matchers', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
     expect(matchers).toHaveLength(74);
     expect(matchers.every(m => typeof m.match === 'function')).toBe(true);

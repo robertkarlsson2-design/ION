@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emitLWC, emitLwcNode } from '../../skills/lwc/emit.js';
+import { emitLWC, emitLwcNode } from '../../emitters/lwc/emit.js';
 import type { IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
 import { makeSymbolId } from '../../src/types.js';
 

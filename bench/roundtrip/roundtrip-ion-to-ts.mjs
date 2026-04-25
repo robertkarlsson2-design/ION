@@ -8,7 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 const { decodeModule } = require(join(__dirname, '../../dist/src/wire/decoder.js'));
-const { emitTS } = require(join(__dirname, '../../dist/skills/typescript/emit.js'));
+const { emitTS } = require(join(__dirname, '../../dist/emitters/typescript/emit.js'));
 
 // ── 1. Read the wire file ────────────────────────────────────────────────────
 const ionText = readFileSync(join(__dirname, 'advanced-app.ion'), 'utf8');

@@ -28,7 +28,7 @@ function makeParent(type: string, children: CSTNode[], row = 0): CSTNode {
   };
 }
 
-const JS_SKILL_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../../skills/javascript');
+const JS_SKILL_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../../emitters/javascript');
 
 // ── Suite A — Loader integration ──────────────────────────────────────────────
 

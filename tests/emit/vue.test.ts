@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emitVue, emitTsExprForVue } from '../../skills/vue/emit.js';
+import { emitVue, emitTsExprForVue } from '../../emitters/vue/emit.js';
 import type { IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
 import { makeSymbolId } from '../../src/types.js';
 

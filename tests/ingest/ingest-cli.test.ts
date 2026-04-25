@@ -4,7 +4,7 @@ import { join, resolve, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 
 // Prevent tree-sitter WASM initialization when importing ingest.ts.
-vi.mock('../../../skills/javascript/parser.js', () => ({
+vi.mock('../../../emitters/javascript/parser.js', () => ({
   parseJavaScript: vi.fn(() => ({
     root: {
       type: 'program',

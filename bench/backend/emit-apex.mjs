@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 const { decodeModule } = require('/tmp/ion-e2e/dist/src/wire/decoder.js');
-const { emitApex } = require('/tmp/ion-e2e/dist/skills/apex/emit.js');
+const { emitApex } = require('/tmp/ion-e2e/dist/emitters/apex/emit.js');
 
 // Ensure output directory exists
 mkdirSync(join(__dirname, 'out'), { recursive: true });

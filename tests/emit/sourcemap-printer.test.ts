@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { printJsModuleWithMappings } from '../../skills/javascript/printer.js';
-import type { JsModule, JsConst, JsArrow } from '../../skills/javascript/js-ast.js';
+import { printJsModuleWithMappings } from '../../emitters/javascript/printer.js';
+import type { JsModule, JsConst, JsArrow } from '../../emitters/javascript/js-ast.js';
 import type { Span } from '../../src/types.js';
 
 const SOURCE_FILE = '/workspace/src/test.ion';

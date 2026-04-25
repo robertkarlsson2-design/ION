@@ -19,10 +19,10 @@ All tests should pass before you submit a PR.
 
 The best places to contribute right now:
 
-- **Language plugins** — new target language support (Java, Python, TypeScript, Rust). Each plugin is a self-contained folder; see `skills/javascript/` as the reference implementation.
-- **Ingestion patterns** — YAML rules in `skills/javascript/patterns/` for recognizing common JavaScript idioms and converting them to Ion.
+- **Language plugins** — new target language support (Java, Python, TypeScript, Rust). Each plugin is a self-contained folder; see `emitters/javascript/` as the reference implementation.
+- **Ingestion patterns** — YAML rules in `emitters/javascript/patterns/` for recognizing common JavaScript idioms and converting them to Ion.
 - **Golden file tests** — add `.ion` source + expected JS output pairs to `tests/`. These are the primary regression guard for the emitter.
-- **Stdlib mappings** — expand `skills/javascript/` coverage to cover more of the Ion standard library.
+- **Stdlib mappings** — expand `emitters/javascript/` coverage to cover more of the Ion standard library.
 - **Bug reports** — open an issue with a minimal `.ion` file that reproduces the problem.
 
 ## Project structure
@@ -40,14 +40,14 @@ src/
 ├── lsp/          Language Server Protocol implementation
 └── cli/          ion build / ion check / ion fmt / ion tokens
 
-skills/
+emitters/
 └── javascript/   JavaScript language plugin
 
 tests/
 ├── roundtrip/    IR serialization round-trip tests
 ├── wire/         Wire format encode/decode tests
 ├── parser/       Parser golden tests
-└── skills/       Per-plugin compiler tests
+└── emitters/       Per-plugin compiler tests
 ```
 
 ## Code style

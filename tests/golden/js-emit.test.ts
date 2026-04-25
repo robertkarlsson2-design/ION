@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emitJS, emitJSWithSourceMap } from '../../skills/javascript/emit.js';
+import { emitJS, emitJSWithSourceMap } from '../../emitters/javascript/emit.js';
 import type {
   IonIRModule,
   IonIRNode,

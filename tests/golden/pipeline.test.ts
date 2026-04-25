@@ -7,7 +7,7 @@ import { buildModule } from '../../src/ast/builder.js';
 import { bindModule } from '../../src/binder/index.js';
 import { checkModule } from '../../src/checker/index.js';
 import { desugarModule } from '../../src/desugar/index.js';
-import { emitJS } from '../../skills/javascript/emit.js';
+import { emitJS } from '../../emitters/javascript/emit.js';
 
 const GOLDEN_DIR = new URL('./js', import.meta.url).pathname;
 

@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 
 // Load compiled modules
 const { decodeModule } = require(join(__dirname, '../../dist/src/wire/decoder.js'));
-const { emitTS } = require(join(__dirname, '../../dist/skills/typescript/emit.js'));
+const { emitTS } = require(join(__dirname, '../../dist/emitters/typescript/emit.js'));
 
 // ── 1. Read the wire file ────────────────────────────────────────────────────
 const ionText = readFileSync(join(__dirname, 'analytics.ion'), 'utf8');

@@ -27,9 +27,9 @@ const { buildModule }     = await import(`${ROOT}/dist/src/ast/builder.js`);
 const { bindModule }      = await import(`${ROOT}/dist/src/binder/index.js`);
 const { checkModule }     = await import(`${ROOT}/dist/src/checker/index.js`);
 const { desugarModule }   = await import(`${ROOT}/dist/src/desugar/index.js`);
-const { emitJS }          = await import(`${ROOT}/dist/skills/javascript/emit.js`);
-const { emitTS }          = await import(`${ROOT}/dist/skills/typescript/emit.js`);
-const { emitPython }      = await import(`${ROOT}/dist/skills/python/emit.js`);
+const { emitJS }          = await import(`${ROOT}/dist/emitters/javascript/emit.js`);
+const { emitTS }          = await import(`${ROOT}/dist/emitters/typescript/emit.js`);
+const { emitPython }      = await import(`${ROOT}/dist/emitters/python/emit.js`);
 const { getPreludeDecls } = await import(`${ROOT}/dist/src/prelude/index.js`);
 
 function compile(src, file) {

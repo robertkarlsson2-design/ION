@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseJavaScript } from '../../../skills/javascript/parser.js';
-import { isNodeOfType } from '../../../skills/javascript/node-types.js';
+import { parseJavaScript } from '../../../emitters/javascript/parser.js';
+import { isNodeOfType } from '../../../emitters/javascript/node-types.js';
 
 describe('parseJavaScript', () => {
   it('parses a valid function declaration', () => {

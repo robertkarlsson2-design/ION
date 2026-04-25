@@ -14,9 +14,9 @@ import { loadPatterns } from '../ingest/patterns.js';
 import { runPipeline } from '../ingest/pipeline.js';
 import { AnthropicLLMFallbackHandler } from '../ingest/llm-fallback.js';
 import { encodeModule } from '../wire/encoder.js';
-import { parseJavaScript } from '../../skills/javascript/parser.js';
-import { parseTypeScript } from '../../skills/typescript/parser.js';
-import { parsePython } from '../../skills/python/parser.js';
+import { parseJavaScript } from '../../emitters/javascript/parser.js';
+import { parseTypeScript } from '../../emitters/typescript/parser.js';
+import { parsePython } from '../../emitters/python/parser.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -173,7 +173,7 @@ export function resolvePlugin(skillName: string): IngestPlugin | { error: string
 
 /**
  * Locate the skill plugin directory.
- * Tries `skills/<name>/` relative to CWD first, then relative to the CLI binary.
+ * Tries `emitters/<name>/` relative to CWD first, then relative to the CLI binary.
  */
 async function resolveSkillDir(skillName: string): Promise<string | { error: string }> {
   const cwdPath = resolve(process.cwd(), 'skills', skillName);
@@ -198,9 +198,9 @@ async function resolveSkillDir(skillName: string): Promise<string | { error: str
   };
 }
 
-/** Resolve the absolute path to skills/<name> relative to this file. */
+/** Resolve the absolute path to emitters/<name> relative to this file. */
 export function resolveSkillDirSync(skillName: string): string {
-  return fileURLToPath(new URL(`../../../skills/${skillName}`, import.meta.url));
+  return fileURLToPath(new URL(`../../../emitters/${skillName}`, import.meta.url));
 }
 
 async function buildJsPlugin(skillDir: string): Promise<IngestPlugin | { error: string }> {
@@ -237,7 +237,7 @@ async function buildJsPlugin(skillDir: string): Promise<IngestPlugin | { error: 
     }
   }
 
-  return { error: 'JavaScript parser not found. Run: tsc -p skills/tsconfig.json' };
+  return { error: 'JavaScript parser not found. Run: tsc -p emitters/tsconfig.json' };
 }
 
 async function buildPlugin(
@@ -281,7 +281,7 @@ async function buildGenericPlugin(
       return { error: `failed to load ${skillName} parser: ${msg}` };
     }
   }
-  return { error: `${skillName} parser not found. Run: tsc -p skills/tsconfig.json` };
+  return { error: `${skillName} parser not found. Run: tsc -p emitters/tsconfig.json` };
 }
 
 // ---------------------------------------------------------------------------

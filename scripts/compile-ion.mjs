@@ -32,7 +32,7 @@ let lex, parseModule, buildModule, bindModule, checkModule, desugarModule, getPr
 
 try {
   ({ decodeModule } = require(join(ROOT, 'dist/src/wire/decoder.js')));
-  ({ emitTS } = require(join(ROOT, 'dist/skills/typescript/emit.js')));
+  ({ emitTS } = require(join(ROOT, 'dist/emitters/typescript/emit.js')));
 } catch (e) {
   console.error('compile-ion: dist/ not found — run `tsc` first to build the stage-0 compiler');
   console.error('  (This only needs to happen once; after that `npm run build` handles everything)');

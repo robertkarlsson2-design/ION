@@ -12,7 +12,7 @@ import type { ForeignRefNode } from '../../src/ir/nodes.js';
 import type { LetNode } from '../../src/ir/nodes.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const STDLIB_PATH = join(__dirname, '../../skills/javascript/stdlib.ion');
+const STDLIB_PATH = join(__dirname, '../../emitters/javascript/stdlib.ion');
 
 const src = readFileSync(STDLIB_PATH, 'utf-8');
 

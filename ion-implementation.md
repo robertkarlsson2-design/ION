@@ -33,7 +33,7 @@ my-project/
 │   │   │       └── UserCard.ion
 │   │   └── shared/
 │   │       └── types.ion
-│   └── skills/                   ← language plugins (one folder per target)
+│   └── emitters/                   ← language plugins (one folder per target)
 │       ├── javascript/
 │       │   ├── SKILL.md
 │       │   ├── stdlib.ion
@@ -62,7 +62,7 @@ my-project/
   "outDir": "../",
   "rootDir": "./src",
   "wireFormat": true,
-  "plugins": ["./skills/javascript"],
+  "plugins": ["./emitters/javascript"],
   "include": ["src/**/*.ion"],
   "exclude": ["**/*.test.ion"],
   "stdlib": "es2022",
@@ -86,7 +86,7 @@ ion-compiler/
 │   ├── wire/           ← wire format encoder + decoder
 │   ├── emit/           ← base emitter interface
 │   └── cli/            ← ion build / ion fmt / ion ingest / ion check
-├── skills/             ← built-in language plugins
+├── emitters/             ← built-in language plugins
 │   ├── javascript/
 │   ├── typescript/
 │   ├── java/
@@ -190,7 +190,7 @@ F a (id:i)->o { c("SELECT...",[id]).first().map(r->b(r.id,r.name,r.email)) }
 ### Plugin folder layout
 
 ```
-skills/{language}/
+emitters/{language}/
 ├── SKILL.md              ← YAML frontmatter (compiler config) + markdown body (LLM instructions)
 ├── grammar.ref           ← tree-sitter package + node-types.json path
 ├── stdlib.ion            ← extern declarations mapping Ion stdlib → target stdlib
@@ -234,7 +234,7 @@ examples: ./examples/*.md
 ### stdlib.ion format
 
 ```ion
-// skills/javascript/stdlib.ion
+// emitters/javascript/stdlib.ion
 extern "javascript" {
   fn print(s: Str)                    = "console.log($1)";
   fn len(a: List<T>)                  = "$1.length";
@@ -571,7 +571,7 @@ fn read_file(path: Str) -> Str !io
 - Expose: `parse(source: string) → CST` with typed node access via node-types.json
 - Error-tolerant: partial files produce partial CST, do not throw
 - Used for ingestion (Phase 4); wired up here for plugin interface completeness
-- Output: `skills/javascript/parser.ts`
+- Output: `emitters/javascript/parser.ts`
 - Estimate: 1 week
 - Depends on: TASK-012
 
@@ -579,7 +579,7 @@ fn read_file(path: Str) -> Str !io
 - Extern declarations for ~150 most common JS/Node API calls
 - Groups: console (log, error, warn), Array methods (map, filter, reduce, find, forEach, push, pop, slice, splice, includes, indexOf), Object (keys, values, entries, assign, fromEntries), Promise (all, race, resolve, reject), String (split, join, trim, includes, startsWith, endsWith, replace), Math (floor, ceil, round, abs, max, min), JSON (parse, stringify), fetch (basic), fs (readFile, writeFile, exists), path (join, resolve, dirname, basename)
 - Format: `extern "javascript" { fn name(...) = "template"; }`
-- Output: `skills/javascript/stdlib.ion`
+- Output: `emitters/javascript/stdlib.ion`
 - Estimate: 2 weeks
 - Depends on: TASK-019
 
@@ -594,7 +594,7 @@ fn read_file(path: Str) -> Str !io
   - `try { } catch (e) { }` → `Result<T, E>`
   - `class Foo { constructor(...) { this.x = x; } }` → Ion `data`
   - `x !== undefined && x !== null` → Ion `?` null-safe chain
-- Output: `skills/javascript/patterns/*.yaml`
+- Output: `emitters/javascript/patterns/*.yaml`
 - Estimate: 2 weeks
 - Depends on: TASK-020
 
@@ -612,21 +612,21 @@ fn read_file(path: Str) -> Str !io
   - `ForeignRef` → direct call/access per `extern` template
   - `Effect` → unwrap to sync or `await` expression
 - Uses `stdlib.ion` templates for stdlib calls
-- Output: `skills/javascript/emitter.ts`
+- Output: `emitters/javascript/emitter.ts`
 - Estimate: 2 weeks
 - Depends on: TASK-021
 
 ### TASK-023 — JavaScript pretty printer (JS AST → source text)
 - Input: JS AST (estree)
 - Output: ES2022 JavaScript source string
-- Rules from `skills/javascript/emit.md`:
+- Rules from `emitters/javascript/emit.md`:
   - single quotes for strings
   - trailing commas in multiline arrays/objects
   - 2-space indent
   - arrow functions for lambdas
   - template literals for string interpolation
   - semicolons at statement end
-- Output: `skills/javascript/printer.ts`
+- Output: `emitters/javascript/printer.ts`
 - Estimate: 1 week
 - Depends on: TASK-022
 
@@ -726,9 +726,9 @@ fn read_file(path: Str) -> Str !io
 - Extends JavaScript plugin: adds type annotation emission, removes type inference where TS has explicit types
 - Tree-sitter: `tree-sitter-typescript@0.23`
 - Emits `.d.ts` type declaration sidecar alongside `.js` output
-- `stdlib.ion`: extends `skills/javascript/stdlib.ion` with TypeScript-specific types
+- `stdlib.ion`: extends `emitters/javascript/stdlib.ion` with TypeScript-specific types
 - Additional patterns: typed function signatures, interface → Ion `data`, enum → Ion sum type
-- Output: `skills/typescript/`
+- Output: `emitters/typescript/`
 - Estimate: 3 weeks
 - Depends on: TASK-025
 
@@ -736,7 +736,7 @@ fn read_file(path: Str) -> Str !io
 - For every compiled Ion module targeting TypeScript: emit a `.d.ts` sidecar
 - Export types matching Ion's data declarations and function signatures
 - Consumers of compiled Ion output can import types without touching Ion source
-- Output: `skills/typescript/dts-emitter.ts`
+- Output: `emitters/typescript/dts-emitter.ts`
 - Estimate: 1 week
 - Depends on: TASK-032
 
@@ -810,14 +810,14 @@ fn read_file(path: Str) -> Str !io
   - `Option<T>` → `Optional<T>`
   - `Result<T,E>` → custom `Result<T,E>` wrapper (emit once per module)
   - `ForeignRef` → direct Java method call per extern template
-- Output: `skills/java/emitter.ts`
+- Output: `emitters/java/emitter.ts`
 - Estimate: 4 weeks
 - Depends on: TASK-038
 
 ### TASK-040 — Java stdlib.ion
 - Extern declarations for Java 21 stdlib
 - Groups: System (out.println, err.println, exit), String (format, valueOf, split, join, trim, contains, startsWith, endsWith, replace, toUpperCase, toLowerCase), Collections (ArrayList, HashMap, HashSet — add, get, put, contains, remove, size, isEmpty, stream), Stream API (map, filter, findFirst, collect, toList), Optional (of, empty, isPresent, get, orElse, map), Math, Objects (requireNonNull, isNull, toString), Files (readString, writeString, exists, list)
-- Output: `skills/java/stdlib.ion`
+- Output: `emitters/java/stdlib.ion`
 - Estimate: 3 weeks
 - Depends on: TASK-039
 
@@ -831,15 +831,15 @@ fn read_file(path: Str) -> Str !io
 - `List.of(...)` / `Arrays.asList(...)` → Ion list literal
 - Single-method interfaces (functional interfaces) → Ion lambda
 - `instanceof` + cast → Ion pattern match arm
-- Output: `skills/java/patterns/*.yaml`
+- Output: `emitters/java/patterns/*.yaml`
 - Estimate: 2 weeks
 - Depends on: TASK-040
 
 ### TASK-042 — Java pretty printer
 - Input: Java AST
 - Output: Java 21 source text
-- Rules from `skills/java/emit.md`: 4-space indent, Allman brace style, JavaDoc comments preserved, import organization
-- Output: `skills/java/printer.ts`
+- Rules from `emitters/java/emit.md`: 4-space indent, Allman brace style, JavaDoc comments preserved, import organization
+- Output: `emitters/java/printer.ts`
 - Estimate: 1 week
 - Depends on: TASK-039
 

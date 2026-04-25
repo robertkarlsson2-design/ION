@@ -99,7 +99,7 @@ node scripts/compile-ion.mjs
 # For wire format — pass through the decoder then emitter directly:
 node -e "
   const {decodeModule} = require('./dist/src/wire/decoder.js');
-  const {emitTS} = require('./dist/skills/typescript/emit.js');
+  const {emitTS} = require('./dist/emitters/typescript/emit.js');
   const fs = require('fs');
   const src = fs.readFileSync('path/to/file.ion', 'utf8');
   const ir = decodeModule(src);
@@ -180,14 +180,14 @@ let processItems = (items: [Str], config: Config) ->
 
 | Emitter | File | Full coverage |
 |---|---|---|
-| TypeScript | `skills/typescript/emit.ts` | ✅ All node kinds |
-| JavaScript | `skills/javascript/emit.ts` | ✅ All node kinds |
-| Python | `skills/python/emit.ts` | ✅ All node kinds |
-| HTML | `skills/html/emit.ts` | ✅ All node kinds |
-| React TSX | `skills/react/emit.ts` | ✅ All node kinds |
-| Vue 3 SFC | `skills/vue/emit.ts` | ✅ All node kinds |
-| LWC | `skills/lwc/emit.ts` | ✅ All node kinds |
-| Apex | `skills/apex/emit.ts` | ✅ All node kinds |
+| TypeScript | `emitters/typescript/emit.ts` | ✅ All node kinds |
+| JavaScript | `emitters/javascript/emit.ts` | ✅ All node kinds |
+| Python | `emitters/python/emit.ts` | ✅ All node kinds |
+| HTML | `emitters/html/emit.ts` | ✅ All node kinds |
+| React TSX | `emitters/react/emit.ts` | ✅ All node kinds |
+| Vue 3 SFC | `emitters/vue/emit.ts` | ✅ All node kinds |
+| LWC | `emitters/lwc/emit.ts` | ✅ All node kinds |
+| Apex | `emitters/apex/emit.ts` | ✅ All node kinds |
 
 All emitters support `raw(...)`. If you get an "unhandled kind" error, that means the emitter has a new gap introduced since this was written — use `raw(...)` and file an issue.
 

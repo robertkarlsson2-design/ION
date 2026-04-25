@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emitReact, emitJsxNode, emitTsExprForReact } from '../../skills/react/emit.js';
+import { emitReact, emitJsxNode, emitTsExprForReact } from '../../emitters/react/emit.js';
 import type { IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
 import { makeSymbolId } from '../../src/types.js';
 

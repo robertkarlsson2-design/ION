@@ -343,7 +343,7 @@ fn new_uuid() -> Str !io
 Each target language is a plugin — a self-contained folder the compiler loads at build time.
 
 ```
-skills/javascript/
+emitters/javascript/
 ├── SKILL.md          ← compiler config (YAML frontmatter) + LLM instructions (markdown body)
 ├── stdlib.ion        ← maps Ion stdlib calls to JS equivalents
 ├── patterns/         ← YAML rules for recognizing and converting JS idioms
@@ -364,7 +364,7 @@ extern "javascript" {
 }
 ```
 
-**Adding a new target language** means creating a `skills/{language}/` folder with these files. No changes to the compiler.
+**Adding a new target language** means creating a `emitters/{language}/` folder with these files. No changes to the compiler.
 
 ---
 
@@ -447,7 +447,7 @@ The ingestion pipeline only writes to `ion/` — your original source files are 
   "outDir": "../",
   "rootDir": "./src",
   "wireFormat": true,
-  "plugins": ["./skills/javascript"],
+  "plugins": ["./emitters/javascript"],
   "include": ["src/**/*.ion"],
   "exclude": ["**/*.test.ion"],
   "stdlib": "es2022",
@@ -495,7 +495,7 @@ ion tokens src/api/users.ion       # report wire vs pretty token counts
 
 # Plugin management
 ion plugin new rust                # scaffold a new language plugin folder
-ion plugin validate skills/rust    # validate plugin against interface spec
+ion plugin validate emitters/rust    # validate plugin against interface spec
 ```
 
 ---

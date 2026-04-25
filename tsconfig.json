@@ -13,6 +13,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "skills/**/*", "src/ion-generated/**/*"],
+  "include": ["src/**/*", "emitters/**/*", "src/ion-generated/**/*"],
   "exclude": ["node_modules", "dist"]
 }
