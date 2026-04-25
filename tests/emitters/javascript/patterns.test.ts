@@ -33,9 +33,12 @@ const JS_SKILL_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../../emi
 // ── Suite A — Loader integration ──────────────────────────────────────────────
 
 describe('A: loader integration', () => {
-  it('A1: loadPatterns returns exactly 74 PatternMatcher instances', async () => {
+  it('A1: loadPatterns returns the expected set of PatternMatcher instances', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
-    expect(matchers).toHaveLength(74);
+    // Pattern count grows over time as new ingest rules are added. Assert a
+    // floor — failures here mean rules were *removed*, which is what we want
+    // to be alerted to. Update the floor when intentional reductions happen.
+    expect(matchers.length).toBeGreaterThanOrEqual(80);
     expect(matchers.every(m => typeof m.match === 'function')).toBe(true);
   }, 30000);
 

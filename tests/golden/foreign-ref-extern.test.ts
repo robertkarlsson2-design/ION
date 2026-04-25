@@ -20,6 +20,7 @@ describe('ForeignRef extern golden — expandTemplate end-to-end', () => {
         params: [listType, intType],
         ret: unitType,
         template: '$1.push($2)',
+        paramNames: ['arr', 'item'],
       },
       span,
       type: unitType,

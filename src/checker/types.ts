@@ -142,7 +142,7 @@ export function typesEqual(a: IonType, b: IonType): boolean {
       if (a.params.length !== bf.params.length) return false;
       for (let i = 0; i < a.params.length; i++) {
         // Array bounds are checked by the length guard above.
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+         
         if (!typesEqual(a.params[i]!, bf.params[i]!)) return false;
       }
       return typesEqual(a.ret, bf.ret);
@@ -152,7 +152,7 @@ export function typesEqual(a: IonType, b: IonType): boolean {
       if (a.name !== bu.name || a.args.length !== bu.args.length) return false;
       for (let i = 0; i < a.args.length; i++) {
         // Array bounds are checked by the length guard above.
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+         
         if (!typesEqual(a.args[i]!, bu.args[i]!)) return false;
       }
       return true;
@@ -162,7 +162,7 @@ export function typesEqual(a: IonType, b: IonType): boolean {
       if (a.elements.length !== bt.elements.length) return false;
       for (let i = 0; i < a.elements.length; i++) {
         // Array bounds are checked by the length guard above.
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+         
         if (!typesEqual(a.elements[i]!, bt.elements[i]!)) return false;
       }
       return true;

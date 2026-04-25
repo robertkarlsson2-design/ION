@@ -153,7 +153,10 @@ describe('property: GroupExpr transparent elision', () => {
 
   it('result kind is never GroupExpr', () => {
     fc.assert(
-      fc.property(groupExprCstArb, (cst) => buildExpr(cst).kind !== 'GroupExpr'),
+      // GroupExpr was removed from the AST type union; assert via string
+      // comparison so the runtime check still runs even though tsc proves it
+      // can never trigger.
+      fc.property(groupExprCstArb, (cst) => (buildExpr(cst).kind as string) !== 'GroupExpr'),
     );
   });
 
@@ -167,7 +170,7 @@ describe('property: GroupExpr transparent elision', () => {
     fc.assert(
       fc.property(nestedGroupArb, (cst) => {
         const ast = buildExpr(cst);
-        return ast.kind !== 'GroupExpr' && hasNoTrivia(ast);
+        return (ast.kind as string) !== 'GroupExpr' && hasNoTrivia(ast);
       }),
     );
   });

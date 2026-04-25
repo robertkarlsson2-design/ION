@@ -288,7 +288,6 @@ describe('printJsModule', () => {
                   cond: { kind: 'JsInstanceof', expr: { kind: 'JsIdent', name: '_e' }, className: 'MyError' },
                   body: [{ kind: 'JsReturn', value: { kind: 'JsNumber', value: 0 } }],
                 }],
-                elseBranch: undefined,
               },
               { kind: 'JsThrow', value: { kind: 'JsIdent', name: '_e' } },
             ],

@@ -193,7 +193,8 @@ describe('emitJS', () => {
       target: 'js',
       module: 'console',
       symbol: 'log',
-      sig: { params: [STR], ret: { kind: 'Unit' }, template: 'console.log($1)' },
+      // Empty paramNames forces the emitter to use _p1/_p2 placeholders.
+      sig: { params: [STR], ret: { kind: 'Unit' }, template: 'console.log($1)', paramNames: [] },
       span: S,
       type: FN1,
     };
@@ -207,10 +208,12 @@ describe('emitJS', () => {
       target: 'js',
       module: 'array',
       symbol: 'push',
+      // Empty paramNames forces the emitter to use _p1/_p2 placeholders.
       sig: {
         params: [{ kind: 'List', elem: INT }, INT],
         ret: { kind: 'Unit' },
         template: '$1.push($2)',
+        paramNames: [],
       },
       span: S,
       type: { kind: 'Fn', params: [{ kind: 'List', elem: INT }, INT], ret: { kind: 'Unit' }, effects: new Set() },

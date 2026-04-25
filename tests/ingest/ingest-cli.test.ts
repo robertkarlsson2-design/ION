@@ -83,13 +83,22 @@ function makePatternMatcher(ionNode: IonIRNode): PatternMatcher {
 }
 
 function makeLetNode(): IonIRNode {
+  const span = { file: 'test.js', startLine: 1, startCol: 0, endLine: 1, endCol: 1 };
+  const lit: IonIRNode = {
+    kind: 'Literal',
+    value: { kind: 'Int', value: 1 },
+    span,
+    type: unitType,
+  };
   return {
     kind: 'Let',
     name: 'x',
     symbolId: sid,
     bindingType: unitType,
-    value: { kind: 'Lit', value: 1, litType: unitType },
-    span: { file: 'test.js', startLine: 1, startCol: 0, endLine: 1, endCol: 1 },
+    value: lit,
+    body: lit,
+    span,
+    type: unitType,
   };
 }
 

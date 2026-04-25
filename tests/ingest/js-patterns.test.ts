@@ -182,12 +182,14 @@ emit:
   });
 });
 
-// ── Suite: all 71 patterns load ───────────────────────────────────────────────
+// ── Suite: full pattern set loads ─────────────────────────────────────────────
 
 describe('full pattern set loads without errors', () => {
-  it('emitters/javascript/patterns/ loads exactly 71 matchers', async () => {
+  it('emitters/javascript/patterns/ loads at least the expected floor of matchers', async () => {
     const matchers = await loadPatterns(JS_SKILL_DIR);
-    expect(matchers).toHaveLength(74);
+    // See the matching test in tests/emitters/javascript/patterns.test.ts —
+    // floor-bounded so adding new patterns does not break CI.
+    expect(matchers.length).toBeGreaterThanOrEqual(80);
     expect(matchers.every(m => typeof m.match === 'function')).toBe(true);
   }, 30000);
 });
