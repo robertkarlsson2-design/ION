@@ -90,7 +90,7 @@ Same Ion source. Same logic. Idiomatic output per target.
 
 **LLMs already know your target language.** When an agent writes Ion, it draws on everything it knows about JavaScript, TypeScript, or Python — Ion is just a compressed grammar on top of that knowledge. The result is fewer tokens to write, fewer tokens to read, and cleaner output than asking an LLM to write the target directly.
 
-**~15–27% fewer output tokens than the target language.** Ion's surface syntax eliminates structural noise — braces, semicolons, boilerplate constructors, verbose type annotations. Measured with `cl100k_base` (the GPT-4 / Claude tokenizer) across five real benchmarks, Ion source is meaningfully more compact than the TypeScript and Python it compiles to, and slightly smaller than untyped JavaScript on logic-heavy code. The wire format compresses further by pooling repeated symbols and types, but the headline savings come from the surface grammar.
+**~15–38% fewer output tokens than the target language.** Ion's surface syntax eliminates structural noise — braces, semicolons, boilerplate constructors, verbose type annotations. Measured with `cl100k_base` (the GPT-4 / Claude tokenizer) across five real benchmarks: Ion is **38% smaller than Java**, **27% smaller than TypeScript**, **21% smaller than Python**, and **15% smaller than untyped JavaScript**. The wire format compresses further by pooling repeated symbols and types, but the headline savings come from the surface grammar.
 
 **Two modes — one language.** Ion has a human-readable surface syntax for developers and a machine-optimized wire format for LLMs and the compiler. Your IDE always shows you the pretty form. The compiler and agents work on the wire form. You never see the difference.
 
@@ -104,16 +104,16 @@ Same Ion source. Same logic. Idiomatic output per target.
 
 Five real benchmarks, tokenized with `cl100k_base` (the GPT-4 / Claude tokenizer). Reproduce with `node bench/count-tokens.mjs`.
 
-| Benchmark | Ion | JavaScript | TypeScript | Python |
-|---|---|---|---|---|
-| fibonacci | 34 | 32 (0.94×) | 35 (1.03×) | 35 (1.03×) |
-| list pipeline | 92 | 103 (1.12×) | 131 (1.42×) | 113 (1.23×) |
-| stats | 99 | 110 (1.11×) | 133 (1.34×) | 140 (1.41×) |
-| primes | 73 | 125 (1.71×) | 135 (1.85×) | 94 (1.29×) |
-| string ops | 84 | 78 (0.93×) | 92 (1.10×) | 101 (1.20×) |
-| **total** | **382** | **448 (1.17×)** | **526 (1.38×)** | **483 (1.26×)** |
+| Benchmark | Ion | JavaScript | TypeScript | Python | Java |
+|---|---|---|---|---|---|
+| fibonacci | 34 | 32 (0.94×) | 35 (1.03×) | 35 (1.03×) | 38 (1.12×) |
+| list pipeline | 92 | 103 (1.12×) | 131 (1.42×) | 113 (1.23×) | 146 (1.59×) |
+| stats | 99 | 110 (1.11×) | 133 (1.34×) | 140 (1.41×) | 160 (1.62×) |
+| primes | 73 | 125 (1.71×) | 135 (1.85×) | 94 (1.29×) | 130 (1.78×) |
+| string ops | 84 | 78 (0.93×) | 92 (1.10×) | 101 (1.20×) | 138 (1.64×) |
+| **total** | **382** | **448 (1.17×)** | **526 (1.38×)** | **483 (1.26×)** | **612 (1.60×)** |
 
-Multipliers show how many tokens the target language costs relative to Ion. A 1.38× TypeScript ratio means writing the same logic in TypeScript costs 38% more tokens than writing it in Ion.
+Multipliers show how many tokens the target language costs relative to Ion. A 1.60× Java ratio means writing the same logic in Java costs 60% more tokens than writing it in Ion. Java's idiomatic boilerplate (`public final class`, type-annotated parameters, stream collectors, explicit imports) widens the gap; tokens drop most for Ion targeting Java.
 
 ### Why this matters for LLM cost
 
@@ -123,12 +123,14 @@ LLMs are billed on both input tokens (reading/reasoning about code) and output t
 
 | Approach | Output tokens (this benchmark) | Relative cost |
 |---|---|---|
+| Generate Java directly | 612 | baseline |
+| Generate Ion → compile to Java | 382 | ~38% cheaper |
 | Generate TypeScript directly | 526 | baseline |
 | Generate Ion → compile to TS | 382 | ~27% cheaper |
-| Generate JavaScript directly | 448 | baseline |
-| Generate Ion → compile to JS | 382 | ~15% cheaper |
 | Generate Python directly | 483 | baseline |
 | Generate Ion → compile to Python | 382 | ~21% cheaper |
+| Generate JavaScript directly | 448 | baseline |
+| Generate Ion → compile to JS | 382 | ~15% cheaper |
 
 The savings are concentrated in code that's algorithmic, statically typed, or pipeline-heavy. On small numeric snippets and string-heavy code, Ion is roughly tokens-neutral with untyped JavaScript — its type annotations cost what JS saves by skipping them.
 
@@ -167,13 +169,20 @@ def fib(n):
     return n if n <= 1 else fib(n - 1) + fib(n - 2)
 ```
 
+Emits to Java:
+```java
+public static long fib(long n) {
+  return (n <= 1L) ? (n) : (fib(n - 1L) + fib(n - 2L));
+}
+```
+
 On pure numeric code with one parameter, Ion and the targets are token-comparable. Ion's lead grows on code that uses prelude functions (`map`, `filter`, `fold`) and on type-annotated TypeScript.
 
 ---
 
 ## Status
 
-> Ion is in active development. The compiler frontend, IR, and JS/TS/Python backends are production-ready. Several additional emitters exist as code but are not yet wired into the `ion build` CLI.
+> Ion is in active development. The compiler frontend, IR, and JS/TS/Python/Java backends are wired into the `ion build` CLI. Several additional emitters (HTML/React/Vue/LWC/Apex) exist as code but are not yet exposed through the CLI.
 
 | Component | Status |
 |---|---|
@@ -186,7 +195,7 @@ On pure numeric code with one parameter, Ion and the targets are token-comparabl
 | AST desugarer → IonIR | ✅ Complete |
 | Pattern matching engine + exhaustiveness check | ✅ Complete |
 | `RawInject` escape hatch (`raw(...)`) | ✅ Complete |
-| `ion build` CLI | ✅ Complete (targets: JS, TS, Python) |
+| `ion build` CLI | ✅ Complete (targets: JS, TS, Python, Java) |
 | `ion check` CLI | ✅ Complete |
 | `ion fmt` CLI | ✅ Complete |
 | `ion ingest` (convert existing code) | ✅ Complete |
@@ -195,6 +204,7 @@ On pure numeric code with one parameter, Ion and the targets are token-comparabl
 | JavaScript emitter | ✅ Complete (wired) |
 | TypeScript emitter | ✅ Complete (wired) |
 | Python emitter | ✅ Complete (wired) |
+| Java emitter | ✅ Wired (experimental — see notes below) |
 | HTML emitter | 🚧 Code present, not wired into CLI |
 | React (JSX/TSX) emitter | 🚧 Code present, not wired into CLI |
 | Vue SFC emitter | 🚧 Code present, not wired into CLI |
@@ -206,6 +216,17 @@ On pure numeric code with one parameter, Ion and the targets are token-comparabl
 | Java plugin | 📋 Planned |
 
 The five UI/Salesforce emitters live in `emitters/{html,react,vue,lwc,apex}/emit.ts` and are exercised by tests in `tests/emit/` and `tests/emitters/`. To use them today you must call them programmatically; the planned next step is registering them in `src/cli/build.ts:getEmitter()` and adding `--target` validation.
+
+### Java target — notes
+
+The Java emitter is wired and verified end-to-end: every benchmark `.ion` file emits a `.java` file that compiles cleanly with `javac 21` and produces correct output. Implementation notes:
+
+- **Module → class**: each `.ion` file becomes a `public final class <ClassName>` with all top-level functions as `public static` methods.
+- **Untyped Ion**: when the type checker leaves `TypeVar` on a parameter (no `: Int` annotation), the emitter widens to `Object` and inserts `(Long)` / `(Number)` casts at arithmetic sites. Typed Ion (`fn fib(n: Int) -> Int`) emits primitive `long`/`double`/`boolean`.
+- **Prelude runtime**: each generated file embeds a self-contained `Prelude` static inner class (~70 lines) implementing `map`, `filter`, `fold`, `range`, etc. against `Object`/`List<Object>`. No external dependencies.
+- **Pattern matching**: `if/then/else` and 2-arm Bool matches lower to ternaries (Java disallows `switch` over `boolean`); ADT matches lower to nested `instanceof` ternaries.
+- **Higher-order functions**: top-level fns passed by name (`filter(ns, isPos)`) emit as method references (`MyClass::isPos`); prelude fns passed by name (`map(words, toUpper)`) emit as wrapping lambdas.
+- **Out of scope (today)**: the OOP/Async/Effects dialects emit a `null /* TODO: ... */` placeholder. They typecheck but won't run; file an issue if you need them.
 
 ---
 
@@ -502,7 +523,7 @@ The ingestion pipeline only writes to `ion/` — your original source files are 
 ```bash
 # Compile
 ion build                          # compile all .ion files per ion.config.json
-ion build --target typescript      # override target language (javascript | typescript | python)
+ion build --target typescript      # override target language (javascript | typescript | python | java)
 ion build --watch                  # watch mode, incremental recompile
 ion build --no-token-report        # suppress the per-build token-savings summary
 
