@@ -525,6 +525,52 @@ function resolveMetavar(
   return sanitizeName(n.text);
 }
 
+/**
+ * Collapse the body nodes of one switch_case / switch_default arm into a single IonIR node.
+ * Strips return_statement / break_statement / statement_block wrappers, then tries to
+ * recursively match the last meaningful expression. Falls back to RawInject when no
+ * pattern matcher succeeds.
+ */
+function buildCaseBody(
+  bodyNodes: readonly CSTNode[],
+  _bindings: Bindings,
+  rootSpan: Span,
+  _ruleId: string,
+  matchers: readonly PatternMatcher[],
+): unknown | null {
+  // Unwrap common statement containers to reach the actual expression.
+  const unwrapped: CSTNode[] = [];
+  for (const n of bodyNodes) {
+    if (n.type === 'return_statement') {
+      const inner = n.children.find(c => c.isNamed);
+      if (inner) unwrapped.push(inner);
+    } else if (n.type === 'break_statement') {
+      // skip break — it has no IR equivalent inside a Case arm
+    } else if (n.type === 'statement_block') {
+      unwrapped.push(...n.children.filter(c => c.isNamed));
+    } else if (n.isNamed) {
+      unwrapped.push(n);
+    }
+  }
+
+  if (unwrapped.length === 0) {
+    return { kind: 'Literal', value: { kind: 'Null' }, span: rootSpan, type: { kind: 'Null' } };
+  }
+
+  // Try to recursively pattern-match the last (or only) expression.
+  const last = unwrapped[unwrapped.length - 1]!;
+  const matched = tryMatch(last, matchers as PatternMatcher[]);
+  if (matched !== null) return matched;
+
+  // Fall back to RawInject — preserves the original source text for later lowering.
+  return {
+    kind: 'RawInject',
+    code: last.text,
+    span: rootSpan,
+    type: { kind: 'Unit' },
+  };
+}
+
 function buildValue(
   spec: unknown,
   bindings: Bindings,
@@ -617,6 +663,80 @@ function buildValue(
   // Metavar reference
   if (typeof obj['metavar'] === 'string') {
     return resolveMetavar(obj, bindings, rootSpan, ruleId);
+  }
+
+  // { "switch-arms": "$$$CASES" }
+  // Converts a sequence capture of switch_body children (switch_case / switch_default
+  // CST nodes) into an array of CaseArm-shaped objects for use in a Case node's `arms`.
+  if (typeof obj['switch-arms'] === 'string') {
+    const seqVar = obj['switch-arms'] as string;
+    const raw = bindings.get(seqVar);
+    const caseNodes: readonly CSTNode[] = Array.isArray(raw)
+      ? (raw as CSTNode[])
+      : raw
+        ? [raw as CSTNode]
+        : [];
+
+    const arms: Array<{ pattern: unknown; body: unknown; span: unknown }> = [];
+
+    for (const caseNode of caseNodes) {
+      if (caseNode.type !== 'switch_case' && caseNode.type !== 'switch_default') continue;
+
+      const named = caseNode.children.filter(c => c.isNamed);
+
+      if (caseNode.type === 'switch_default') {
+        // default: → wildcard arm (matches everything not caught above)
+        const body = buildCaseBody(named, bindings, rootSpan, ruleId, matchers);
+        if (body !== null) {
+          arms.push({ pattern: { kind: 'Wildcard', span: rootSpan }, body, span: rootSpan });
+        }
+      } else {
+        // case VALUE: → pattern arm keyed on the discriminant value
+        const tagNode = named[0];
+        const bodyNodes = named.slice(1);
+        if (!tagNode) continue;
+
+        const body = buildCaseBody(bodyNodes, bindings, rootSpan, ruleId, matchers);
+        if (body === null) continue;
+
+        // Strip surrounding quotes from string literals
+        const tagText = tagNode.text.replace(/^['"`]|['"`]$/g, '');
+        const isStringLit =
+          tagNode.type === 'string' ||
+          tagNode.type === 'string_fragment' ||
+          tagNode.text.startsWith("'") ||
+          tagNode.text.startsWith('"') ||
+          tagNode.text.startsWith('`');
+        const isNumberLit = tagNode.type === 'number';
+
+        let patternNode: unknown;
+        if (isStringLit) {
+          patternNode = {
+            kind: 'Literal',
+            value: { kind: 'Str', value: tagText },
+            span: rootSpan,
+          };
+        } else if (isNumberLit) {
+          patternNode = {
+            kind: 'Literal',
+            value: { kind: 'Int', value: parseInt(tagText, 10) },
+            span: rootSpan,
+          };
+        } else {
+          // Identifier or member-expression (e.g. MyEnum.Foo) — treat as Var pattern
+          patternNode = {
+            kind: 'Var',
+            name: tagText,
+            symbolId: makeSymbolId('case:' + tagText),
+            span: rootSpan,
+          };
+        }
+
+        arms.push({ pattern: patternNode, body, span: rootSpan });
+      }
+    }
+
+    return arms;
   }
 
   // Recursively build object

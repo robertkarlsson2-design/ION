@@ -1,0 +1,20 @@
+id: switch-to-case
+language: typescript
+match:
+  nodeType: switch_statement
+  children:
+    - pattern:
+        capture: $SCRUTINEE
+    - pattern:
+        nodeType: switch_body
+        children:
+          - pattern:
+              capture: $$$CASES
+emit:
+  kind: Case
+  scrutinee:
+    recurse: $SCRUTINEE
+  arms:
+    switch-arms: $$$CASES
+  type:
+    kind: Never
