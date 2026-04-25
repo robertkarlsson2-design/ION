@@ -12,7 +12,7 @@ importers:
         specifier: ^0.36.0
         version: 0.36.3
       '@dqbd/tiktoken':
-        specifier: ^1.0.15
+        specifier: ^1.0.22
         version: 1.0.22
       tree-sitter-javascript:
         specifier: ^0.25.0
