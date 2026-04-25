@@ -149,18 +149,70 @@ function needsParens(node: IonIRNode): boolean {
 // OopClass emitter — produces a full TypeScript class declaration string
 // ---------------------------------------------------------------------------
 
+function emitTsAnnotations(annotations: readonly import('../../src/ir/nodes.js').OopAnnotation[] | undefined): string[] {
+  if (!annotations || annotations.length === 0) return [];
+  return annotations.map(a =>
+    '@' + a.name + (a.args.length > 0 ? '(' + a.args.join(', ') + ')' : '')
+  );
+}
+
 function emitTsClass(node: OopClassNode): string {
   const lines: string[] = [];
-  lines.push(`class ${node.name} {`);
 
-  // Field declarations
-  for (const f of node.fields) {
-    const ft = ionTypeToTs(f.type);
-    lines.push(`  ${f.name}: ${ft};`);
+  // Class-level annotations
+  for (const ann of emitTsAnnotations(node.annotations)) {
+    lines.push(ann);
   }
 
-  // Constructor (only if there are fields)
-  if (node.fields.length > 0) {
+  // Class header with optional type params, extends, implements
+  const typeParamsStr = (node.typeParams ?? []).length > 0
+    ? '<' + node.typeParams!.join(', ') + '>'
+    : '';
+  const superStr = node.superClass !== undefined ? ` extends ${String(node.superClass)}` : '';
+  const implStr = node.interfaces.length > 0
+    ? ` implements ${node.interfaces.map(String).join(', ')}`
+    : '';
+  lines.push(`class ${node.name}${typeParamsStr}${superStr}${implStr} {`);
+
+  // Field declarations with visibility / static / readonly modifiers
+  for (const f of node.fields) {
+    const ft = ionTypeToTs(f.type);
+    const visPrefix = f.visibility === 'private' ? 'private '
+      : f.visibility === 'protected' ? 'protected '
+      : '';
+    const staticPrefix = f.isStatic ? 'static ' : '';
+    const readonlyPrefix = f.isReadonly ? 'readonly ' : '';
+    lines.push(`  ${visPrefix}${staticPrefix}${readonlyPrefix}${f.name}: ${ft};`);
+  }
+
+  // Explicit constructors (from node.constructors)
+  if (node.constructors && node.constructors.length > 0) {
+    for (const ctor of node.constructors) {
+      const visPrefix = ctor.visibility === 'private' ? 'private '
+        : ctor.visibility === 'protected' ? 'protected '
+        : '';
+      const ctorParams = ctor.params
+        .map(p => `${p.name}: ${ionTypeToTs(p.type)}`)
+        .join(', ');
+      if (ctor.body !== undefined) {
+        const body = emitTsLetBlock(ctor.body);
+        if (body.stmts.length > 0) {
+          const stmts = body.stmts.map(s => `    ${s}`).join('\n');
+          lines.push(`  ${visPrefix}constructor(${ctorParams}) {`);
+          lines.push(stmts);
+          lines.push(`    return ${body.ret};`);
+          lines.push('  }');
+        } else {
+          lines.push(`  ${visPrefix}constructor(${ctorParams}) {`);
+          lines.push(`    return ${body.ret};`);
+          lines.push('  }');
+        }
+      } else {
+        lines.push(`  ${visPrefix}constructor(${ctorParams}) {}`);
+      }
+    }
+  } else if (node.fields.length > 0) {
+    // Auto-generate constructor from fields if no explicit constructors are provided
     const ctorParams = node.fields
       .map(f => `${f.name}: ${ionTypeToTs(f.type)}`)
       .join(', ');
@@ -172,27 +224,40 @@ function emitTsClass(node: OopClassNode): string {
 
   // Methods
   for (const m of node.methods) {
+    // Method-level annotations
+    for (const ann of emitTsAnnotations(m.annotations)) {
+      lines.push(`  ${ann}`);
+    }
+
     const params = m.params.map(p => {
       const t = ionTypeToTs(p.type);
       return t === 'unknown' ? p.name : `${p.name}: ${t}`;
     }).join(', ');
     const retT = ionTypeToTs(m.retType);
     const retAnnotation = retT !== 'unknown' ? `: ${retT}` : '';
+    const visPrefix = m.visibility === 'private' ? 'private '
+      : m.visibility === 'protected' ? 'protected '
+      : '';
     const staticPrefix = m.isStatic ? 'static ' : '';
+    const abstractPrefix = m.isAbstract ? 'abstract ' : '';
+    const accessorPrefix = m.accessorKind === 'get' ? 'get '
+      : m.accessorKind === 'set' ? 'set '
+      : '';
+    const methodHead = `  ${visPrefix}${staticPrefix}${abstractPrefix}${accessorPrefix}${m.name}(${params})${retAnnotation}`;
 
     if (m.isAbstract || m.body === undefined) {
       // Abstract method — declaration only
-      lines.push(`  ${staticPrefix}${m.name}(${params})${retAnnotation};`);
+      lines.push(`${methodHead};`);
     } else {
       const body = emitTsLetBlock(m.body);
       if (body.stmts.length > 0) {
         const stmts = body.stmts.map(s => `    ${s}`).join('\n');
-        lines.push(`  ${staticPrefix}${m.name}(${params})${retAnnotation} {`);
+        lines.push(`${methodHead} {`);
         lines.push(stmts);
         lines.push(`    return ${body.ret};`);
         lines.push('  }');
       } else {
-        lines.push(`  ${staticPrefix}${m.name}(${params})${retAnnotation} {`);
+        lines.push(`${methodHead} {`);
         lines.push(`    return ${body.ret};`);
         lines.push('  }');
       }
@@ -209,7 +274,18 @@ function emitTsClass(node: OopClassNode): string {
 
 function emitTsInterface(node: OopInterfaceNode): string {
   const lines: string[] = [];
-  lines.push(`interface ${node.name} {`);
+
+  // Interface-level annotations
+  for (const ann of emitTsAnnotations(node.annotations)) {
+    lines.push(ann);
+  }
+
+  // Interface header with optional type params
+  const typeParamsStr = (node.typeParams ?? []).length > 0
+    ? '<' + node.typeParams!.join(', ') + '>'
+    : '';
+  lines.push(`interface ${node.name}${typeParamsStr} {`);
+
   for (const m of node.members) {
     const mt = ionTypeToTs(m.type);
     // Distinguish method signatures (Fn type) from property members

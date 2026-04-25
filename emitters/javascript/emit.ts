@@ -525,38 +525,147 @@ function ensureEffectPerformHelper(ctx: BuildCtx): void {
   }
 }
 
-function buildOopClass(node: OopClassNode, ctx: BuildCtx): JsClass {
-  const ctorBody: JsNode[] = node.fields.map(f => ({
-    kind: 'JsAssign' as const,
-    lhs: { kind: 'JsMember' as const, receiver: { kind: 'JsIdent' as const, name: 'this' }, member: f.name },
-    rhs: { kind: 'JsIdent' as const, name: f.name },
-  }));
+/** Emit a JS decorator line, e.g. `@log` or `@decorator(arg1, arg2)`. */
+function emitJsAnnotation(a: import('../../src/ir/nodes.js').OopAnnotation): string {
+  return '@' + a.name + (a.args.length > 0 ? '(' + a.args.join(', ') + ')' : '');
+}
 
-  const ctor: JsMethod = {
-    kind: 'JsMethod',
-    name: 'constructor',
-    params: node.fields.map(f => f.name),
-    isStatic: false,
-    body: ctorBody,
-  };
+/**
+ * Build the JS name for a field or method, applying the private-fields `#` prefix
+ * for `visibility === 'private'`. JS has no `protected` syntax; we emit a JSDoc
+ * comment for that instead.
+ */
+function jsPrivateName(name: string, visibility: string | undefined): string {
+  return visibility === 'private' ? `#${name}` : name;
+}
 
-  const methods: JsMethod[] = node.methods.map(m => ({
-    kind: 'JsMethod' as const,
-    name: m.name,
-    params: m.params.map(p => p.name),
-    isStatic: m.isStatic,
-    body: m.body !== undefined
-      ? [{ kind: 'JsReturn' as const, value: buildExpr(m.body, ctx) }]
-      : [],
-  }));
+function buildOopClass(node: OopClassNode, ctx: BuildCtx): JsNode {
+  const hasNewFeatures =
+    node.annotations !== undefined ||
+    node.constructors !== undefined ||
+    node.fields.some(f => f.visibility !== undefined || f.isStatic || f.isReadonly) ||
+    node.methods.some(m => m.annotations !== undefined || m.visibility !== undefined || m.accessorKind !== undefined);
 
-  return {
-    kind: 'JsClass',
-    name: node.name,
-    ...(node.superClass !== undefined ? { superClass: String(node.superClass) } : {}),
-    ctor,
-    methods,
-  };
+  if (!hasNewFeatures) {
+    // Fast path — use the structured JsClass AST (printer handles it)
+    const ctorBody: JsNode[] = node.fields.map(f => ({
+      kind: 'JsAssign' as const,
+      lhs: { kind: 'JsMember' as const, receiver: { kind: 'JsIdent' as const, name: 'this' }, member: f.name },
+      rhs: { kind: 'JsIdent' as const, name: f.name },
+    }));
+
+    const ctor: JsMethod = {
+      kind: 'JsMethod',
+      name: 'constructor',
+      params: node.fields.map(f => f.name),
+      isStatic: false,
+      body: ctorBody,
+    };
+
+    const methods: JsMethod[] = node.methods.map(m => ({
+      kind: 'JsMethod' as const,
+      name: m.name,
+      params: m.params.map(p => p.name),
+      isStatic: m.isStatic,
+      body: m.body !== undefined
+        ? [{ kind: 'JsReturn' as const, value: buildExpr(m.body, ctx) }]
+        : [],
+    }));
+
+    return {
+      kind: 'JsClass' as const,
+      name: node.name,
+      ...(node.superClass !== undefined ? { superClass: String(node.superClass) } : {}),
+      ctor,
+      methods,
+    };
+  }
+
+  // Slow path — emit raw code to handle private fields, accessors, annotations, constructors
+  const lines: string[] = [];
+
+  // Class-level annotations
+  for (const a of node.annotations ?? []) {
+    lines.push(emitJsAnnotation(a));
+  }
+
+  const superStr = node.superClass !== undefined ? ` extends ${String(node.superClass)}` : '';
+  lines.push(`class ${node.name}${superStr} {`);
+
+  // Field declarations (only private and static are syntactically significant in JS)
+  for (const f of node.fields) {
+    if (f.visibility === 'protected') {
+      lines.push(`  /** @protected */`);
+    }
+    const staticPrefix = f.isStatic ? 'static ' : '';
+    const fieldName = jsPrivateName(f.name, f.visibility);
+    lines.push(`  ${staticPrefix}${fieldName};`);
+  }
+
+  // Explicit constructors
+  if (node.constructors && node.constructors.length > 0) {
+    for (const ctor of node.constructors) {
+      if (ctor.visibility === 'protected') {
+        lines.push(`  /** @protected */`);
+      }
+      const ctorParams = ctor.params.map(p => p.name).join(', ');
+      if (ctor.body !== undefined) {
+        const bodyExpr = printJsExpr(buildExpr(ctor.body, ctx));
+        lines.push(`  constructor(${ctorParams}) {`);
+        lines.push(`    return ${bodyExpr};`);
+        lines.push('  }');
+      } else {
+        // Auto-assign fields from params
+        const assignments = node.fields.map(f => {
+          const fieldName = jsPrivateName(f.name, f.visibility);
+          return `    this.${fieldName} = ${f.name};`;
+        }).join('\n');
+        lines.push(`  constructor(${ctorParams}) {`);
+        if (assignments) lines.push(assignments);
+        lines.push('  }');
+      }
+    }
+  } else if (node.fields.length > 0) {
+    // Auto-generate constructor from fields
+    const ctorParams = node.fields.map(f => f.name).join(', ');
+    const assignments = node.fields.map(f => {
+      const fieldName = jsPrivateName(f.name, f.visibility);
+      return `    this.${fieldName} = ${f.name};`;
+    }).join('\n');
+    lines.push(`  constructor(${ctorParams}) {`);
+    lines.push(assignments);
+    lines.push('  }');
+  }
+
+  // Methods
+  for (const m of node.methods) {
+    // Method-level annotations
+    for (const a of m.annotations ?? []) {
+      lines.push(`  ${emitJsAnnotation(a)}`);
+    }
+    if (m.visibility === 'protected') {
+      lines.push(`  /** @protected */`);
+    }
+
+    const params = m.params.map(p => p.name).join(', ');
+    const staticPrefix = m.isStatic ? 'static ' : '';
+    const accessorPrefix = m.accessorKind === 'get' ? 'get '
+      : m.accessorKind === 'set' ? 'set '
+      : '';
+    const methodName = jsPrivateName(m.name, m.visibility);
+
+    if (m.body !== undefined) {
+      const bodyExpr = printJsExpr(buildExpr(m.body, ctx));
+      lines.push(`  ${staticPrefix}${accessorPrefix}${methodName}(${params}) {`);
+      lines.push(`    return ${bodyExpr};`);
+      lines.push('  }');
+    } else {
+      lines.push(`  ${staticPrefix}${accessorPrefix}${methodName}(${params}) {}`);
+    }
+  }
+
+  lines.push('}');
+  return { kind: 'JsRaw', code: lines.join('\n') };
 }
 
 /**
@@ -578,6 +687,11 @@ function buildOopInterface(node: OopInterfaceNode): JsNode[] {
     `/**`,
     ` * @interface ${node.name}`,
   ];
+  // Emit annotations as @decorator tags inside the JSDoc block
+  for (const a of node.annotations ?? []) {
+    const argsStr = a.args.length > 0 ? '(' + a.args.join(', ') + ')' : '';
+    lines.push(` * @decorator ${a.name}${argsStr}`);
+  }
   for (const member of node.members) {
     lines.push(` * @property {*} ${member.name}`);
   }
