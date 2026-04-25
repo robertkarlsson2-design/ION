@@ -9,6 +9,11 @@ import type {
   AdtDeclNode,
   AdtMatchNode,
   VarNode,
+  OopClassNode,
+  OopInterfaceNode,
+  OopMethod,
+  OopAnnotation,
+  OopConstructor,
 } from '../../src/ir/nodes.js';
 import { expandTemplate, wrapEmitted } from '../../src/emit/template.js';
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
@@ -293,6 +298,200 @@ function emitPyFnBody(node: IonIRNode, indent: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Python OOP helpers
+// ---------------------------------------------------------------------------
+
+/** Apply Python visibility naming convention. */
+function pyMemberName(name: string, visibility?: string): string {
+  if (visibility === 'private') return `__${name}`;
+  if (visibility === 'protected') return `_${name}`;
+  return name;
+}
+
+/** Emit OopAnnotation items as Python decorator lines. */
+function emitPyAnnotationLines(annotations: readonly OopAnnotation[], indent: string): string[] {
+  return annotations.map(ann => {
+    if (ann.args.length === 0) return `${indent}@${ann.name}`;
+    return `${indent}@${ann.name}(${ann.args.join(', ')})`;
+  });
+}
+
+/** Emit a single OopMethod as Python method source lines. */
+function emitPyMethod(m: OopMethod, indent: string): string[] {
+  const lines: string[] = [];
+  const methodName = pyMemberName(m.name, m.visibility);
+  const bodyIndent = `${indent}    `;
+
+  // User-defined annotations
+  if (m.annotations && m.annotations.length > 0) {
+    lines.push(...emitPyAnnotationLines(m.annotations, indent));
+  }
+
+  if (m.accessorKind === 'get') {
+    lines.push(`${indent}@property`);
+    lines.push(`${indent}def ${methodName}(self):`);
+    if (m.body) {
+      lines.push(emitPyFnBody(m.body, bodyIndent));
+    } else {
+      lines.push(`${bodyIndent}pass`);
+    }
+  } else if (m.accessorKind === 'set') {
+    lines.push(`${indent}@${methodName}.setter`);
+    const paramNames = m.params.map(p => p.name).join(', ');
+    lines.push(`${indent}def ${methodName}(self, ${paramNames}):`);
+    if (m.body) {
+      lines.push(emitPyFnBody(m.body, bodyIndent));
+    } else {
+      lines.push(`${bodyIndent}pass`);
+    }
+  } else {
+    if (m.isStatic) {
+      lines.push(`${indent}@staticmethod`);
+    }
+    if (m.isAbstract) {
+      lines.push(`${indent}@abstractmethod`);
+    }
+    const paramList = m.isStatic
+      ? m.params.map(p => p.name).join(', ')
+      : ['self', ...m.params.map(p => p.name)].join(', ');
+    lines.push(`${indent}def ${methodName}(${paramList}):`);
+    if (m.body) {
+      lines.push(emitPyFnBody(m.body, bodyIndent));
+    } else if (m.isAbstract) {
+      lines.push(`${bodyIndent}...`);
+    } else {
+      lines.push(`${bodyIndent}pass`);
+    }
+  }
+
+  return lines;
+}
+
+/** Emit an OopConstructor as a Python __init__ method. */
+function emitPyConstructorMethod(ctor: OopConstructor, indent: string): string[] {
+  const lines: string[] = [];
+  const bodyIndent = `${indent}    `;
+  const paramList = ['self', ...ctor.params.map(p => p.name)].join(', ');
+  lines.push(`${indent}def __init__(${paramList}):`);
+  if (ctor.body) {
+    lines.push(emitPyFnBody(ctor.body, bodyIndent));
+  } else {
+    lines.push(`${bodyIndent}pass`);
+  }
+  return lines;
+}
+
+/** Emit an OopClassNode as a complete Python class definition. */
+function emitPyClass(cls: OopClassNode): string {
+  const memberIndent = '    ';
+  const preamble: string[] = [];
+  const bodyLines: string[] = [];
+
+  const hasAbstract = cls.methods.some(m => m.isAbstract);
+  const hasTypeParams = !!(cls.typeParams && cls.typeParams.length > 0);
+
+  // Preamble imports
+  if (hasAbstract) preamble.push('from abc import ABC, abstractmethod');
+  if (hasTypeParams) preamble.push('from typing import Generic, TypeVar');
+
+  // TypeVar declarations
+  if (hasTypeParams) {
+    for (const tp of cls.typeParams!) {
+      preamble.push(`${tp} = TypeVar('${tp}')`);
+    }
+  }
+  if (preamble.length > 0) preamble.push('');
+
+  // Class-level decorators
+  const decoratorLines: string[] = [];
+  if (cls.annotations && cls.annotations.length > 0) {
+    decoratorLines.push(...emitPyAnnotationLines(cls.annotations, ''));
+  }
+
+  // Build base class list
+  const bases: string[] = [];
+  if (hasAbstract) bases.push('ABC');
+  if (hasTypeParams) bases.push(`Generic[${cls.typeParams!.join(', ')}]`);
+  const basesStr = bases.length > 0 ? `(${bases.join(', ')})` : '';
+
+  // Static field declarations (class-level)
+  const staticFields = cls.fields.filter(f => f.isStatic);
+  for (const f of staticFields) {
+    const fieldName = pyMemberName(f.name, f.visibility);
+    const readonlySuffix = f.isReadonly ? '  # readonly' : '';
+    bodyLines.push(`${memberIndent}${fieldName} = None${readonlySuffix}`);
+  }
+  if (staticFields.length > 0) bodyLines.push('');
+
+  // Constructor — from explicit constructors array first, then auto-gen from fields
+  const instanceFields = cls.fields.filter(f => !f.isStatic);
+  if (cls.constructors && cls.constructors.length > 0) {
+    bodyLines.push(...emitPyConstructorMethod(cls.constructors[0]!, memberIndent));
+    bodyLines.push('');
+  } else if (instanceFields.length > 0) {
+    // Auto-generate __init__ assigning instance fields
+    const paramList = ['self', ...instanceFields.map(f => f.name)].join(', ');
+    bodyLines.push(`${memberIndent}def __init__(${paramList}):`);
+    for (const f of instanceFields) {
+      const fieldName = pyMemberName(f.name, f.visibility);
+      const readonlyComment = f.isReadonly ? '  # readonly' : '';
+      bodyLines.push(`${memberIndent}    self.${fieldName} = ${f.name}${readonlyComment}`);
+    }
+    bodyLines.push('');
+  }
+
+  // Methods
+  for (const m of cls.methods) {
+    bodyLines.push(...emitPyMethod(m, memberIndent));
+    bodyLines.push('');
+  }
+
+  // Ensure body is non-empty
+  if (bodyLines.length === 0 || bodyLines.every(l => l === '')) {
+    bodyLines.push(`${memberIndent}pass`);
+  } else {
+    // Remove trailing blank lines
+    while (bodyLines[bodyLines.length - 1] === '') bodyLines.pop();
+  }
+
+  const classHeader = `class ${cls.name}${basesStr}:`;
+  return [...preamble, ...decoratorLines, classHeader, ...bodyLines].join('\n');
+}
+
+/** Emit an OopInterfaceNode as a Python ABC. */
+function emitPyInterface(iface: OopInterfaceNode): string {
+  const memberIndent = '    ';
+  const preamble: string[] = ['from abc import ABC, abstractmethod'];
+  const hasTypeParams = !!(iface.typeParams && iface.typeParams.length > 0);
+
+  if (hasTypeParams) {
+    preamble.push('from typing import Generic, TypeVar');
+    for (const tp of iface.typeParams!) {
+      preamble.push(`${tp} = TypeVar('${tp}')`);
+    }
+  }
+  preamble.push('');
+
+  const decoratorLines: string[] = [];
+  if (iface.annotations && iface.annotations.length > 0) {
+    decoratorLines.push(...emitPyAnnotationLines(iface.annotations, ''));
+  }
+
+  const bases: string[] = ['ABC'];
+  if (hasTypeParams) bases.push(`Generic[${iface.typeParams!.join(', ')}]`);
+  const bodyLines: string[] = [];
+
+  for (const m of iface.members) {
+    bodyLines.push(`${memberIndent}@abstractmethod`);
+    bodyLines.push(`${memberIndent}def ${m.name}(self): ...`);
+  }
+  if (bodyLines.length === 0) bodyLines.push(`${memberIndent}pass`);
+
+  const classHeader = `class ${iface.name}(${bases.join(', ')}):`;
+  return [...preamble, ...decoratorLines, classHeader, ...bodyLines].join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Top-level module emit
 // ---------------------------------------------------------------------------
 
@@ -301,6 +500,14 @@ export function emitPython(irModule: IonIRModule): string {
   const parts: string[] = [];
 
   for (const d of module.decls) {
+    if (d.kind === 'OopClass') {
+      parts.push(emitPyClass(d as OopClassNode));
+      continue;
+    }
+    if (d.kind === 'OopInterface') {
+      parts.push(emitPyInterface(d as OopInterfaceNode));
+      continue;
+    }
     if (d.kind !== 'Let') continue;
     const lt = d as LetNode;
     if (PRELUDE_NAMES.has(lt.name)) continue;
