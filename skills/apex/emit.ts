@@ -36,7 +36,7 @@ export function ionTypeToApex(t: IonType): string {
 // ---------------------------------------------------------------------------
 
 function toClassName(module: string): string {
-  return module.split(/[-_]/).map(w => w.length === 0 ? '' : w[0]!.toUpperCase() + w.slice(1)).join('');
+  return module.split(/[-_.]/).map(w => w.length === 0 ? '' : w[0]!.toUpperCase() + w.slice(1)).join('');
 }
 
 // ---------------------------------------------------------------------------
