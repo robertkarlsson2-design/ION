@@ -578,7 +578,22 @@ export async function runIngest(args: string[], overrides?: IngestOverrides): Pr
       process.stderr.write(`error: ${r.error}\n`);
       return { exitCode: 2 };
     }
-    patterns = overrides?.patterns ?? await loadPatterns(r);
+    if (overrides?.patterns !== undefined) {
+      patterns = overrides.patterns;
+    } else {
+      // TypeScript is a superset of JavaScript: load TS patterns first into a
+      // shared array, then load JS patterns into the SAME array so that cross-skill
+      // recurse calls (e.g. TS function body → JS call expression) work correctly.
+      if (parsed.skill === 'typescript') {
+        const shared: PatternMatcher[] = [];
+        await loadPatterns(r, shared);                      // TS patterns first (priority)
+        const jsDir = await resolveSkillDir('javascript');
+        if (typeof jsDir === 'string') await loadPatterns(jsDir, shared);  // JS patterns as base
+        patterns = shared;
+      } else {
+        patterns = await loadPatterns(r);
+      }
+    }
     if (overrides?.plugin !== undefined) {
       plugin = overrides.plugin;
     } else {

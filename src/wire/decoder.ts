@@ -439,6 +439,28 @@ function parseNodeArgs(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNo
   return args;
 }
 
+/** Consume a chain of ->method(args) and .field suffixes on an already-parsed node. */
+function parseChain(node: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
+  let result = node;
+  for (;;) {
+    if (peek(cur) === '-' && cur.text[cur.pos + 1] === '>') {
+      cur.pos += 2;
+      const method = resolveName(readIdent(cur), ctx);
+      consume(cur, '(');
+      const args = parseNodeArgs(cur, ctx, depth + 1);
+      consume(cur, ')');
+      result = { kind: 'OopVirtualCall', receiver: result, method, args, span: WIRE_SPAN, type: { kind: 'Unit' } };
+    } else if (peek(cur) === '.') {
+      cur.pos++;
+      const member = resolveName(readIdent(cur), ctx);
+      result = { kind: 'Accessor', receiver: result, member, span: WIRE_SPAN, type: { kind: 'Unit' } };
+    } else {
+      break;
+    }
+  }
+  return result;
+}
+
 function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
   if (depth > MAX_ENCODE_DEPTH) {
     throw new WireDecodeError('module exceeds maximum encoding depth');
@@ -745,7 +767,7 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
   const rawId = readIdent(cur);
   const next = peek(cur);
 
-  // App: name(args)
+  // App: name(args)   — may be followed by ->method(args) or .field chains
   if (next === '(') {
     cur.pos++;
     const callee: IonIRNode = {
@@ -753,13 +775,14 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
     };
     const args = parseNodeArgs(cur, ctx, depth + 1);
     consume(cur, ')');
-    return { kind: 'App', callee, args, span: WIRE_SPAN, type: { kind: 'Unit' } };
+    return parseChain({ kind: 'App', callee, args, span: WIRE_SPAN, type: { kind: 'Unit' } }, cur, ctx, depth);
   }
 
   // Accessor or ModuleRef: name.name... or name.name::symbolId
   if (next === '.') {
     const segments = [rawId];
-    while (peek(cur) === '.') {
+    // Only accumulate simple dot-chain segments (not dots after complex expressions)
+    while (peek(cur) === '.' && cur.text[cur.pos + 1] !== undefined && !IDENT_STOP.has(cur.text[cur.pos + 1]!)) {
       cur.pos++;
       segments.push(readIdent(cur));
     }
@@ -776,32 +799,21 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
       };
     }
     // Accessor chain: fold left — [a, b, c] → Accessor(Accessor(Var(a), b), c)
-    let receiver: IonIRNode = {
+    let acc: IonIRNode = {
       kind: 'Var', name: resolveName(segments[0]!, ctx), symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' },
     };
-    for (let i = 1; i < segments.length - 1; i++) {
-      receiver = { kind: 'Accessor', receiver, member: resolveName(segments[i]!, ctx), span: WIRE_SPAN, type: { kind: 'Unit' } };
+    for (let i = 1; i < segments.length; i++) {
+      acc = { kind: 'Accessor', receiver: acc, member: resolveName(segments[i]!, ctx), span: WIRE_SPAN, type: { kind: 'Unit' } };
     }
-    return {
-      kind: 'Accessor',
-      receiver,
-      member: resolveName(segments[segments.length - 1]!, ctx),
-      span: WIRE_SPAN,
-      type: { kind: 'Unit' },
-    };
+    return parseChain(acc, cur, ctx, depth);
   }
 
-  // OopVirtualCall: receiver->method(args)
+  // OopVirtualCall: receiver->method(args), possibly chained: a->b(…)->c(…)->…
   if (next === '-' && cur.text[cur.pos + 1] === '>') {
-    cur.pos += 2;
-    const method = resolveName(readIdent(cur), ctx);
-    const receiver: IonIRNode = {
+    const varNode: IonIRNode = {
       kind: 'Var', name: resolveName(rawId, ctx), symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' },
     };
-    consume(cur, '(');
-    const args = parseNodeArgs(cur, ctx, depth + 1);
-    consume(cur, ')');
-    return { kind: 'OopVirtualCall', receiver, method, args, span: WIRE_SPAN, type: { kind: 'Unit' } };
+    return parseChain(varNode, cur, ctx, depth);
   }
 
   // Var

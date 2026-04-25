@@ -70,7 +70,9 @@ export interface ChildPattern {
 /** Guard conditions on captured bindings. */
 export type Condition =
   | { readonly kind: 'has-children'; readonly count: number }
+  | { readonly kind: 'has-child'; readonly nodeType: string }
   | { readonly kind: 'is-type'; readonly var: string; readonly type: string }
+  | { readonly kind: 'is-one-of'; readonly var: string; readonly values: readonly string[] }
   | { readonly kind: 'not-mutated-in'; readonly var: string; readonly scope: string }
   | { readonly kind: 'text-equals'; readonly var: string; readonly value: string }
   | { readonly kind: 'node-text-contains'; readonly text: string };
@@ -97,23 +99,29 @@ export interface PatternRule {
  * Returns [] if the directory is missing or contains no .yaml files.
  * Skips malformed YAML files with a stderr warning.
  */
-export async function loadPatterns(skillDir: string): Promise<PatternMatcher[]> {
+export async function loadPatterns(
+  skillDir: string,
+  sharedMatchers?: PatternMatcher[],
+): Promise<PatternMatcher[]> {
   const patternsDir = join(skillDir, 'patterns');
 
   let entries: string[];
   try {
     entries = await readdir(patternsDir);
   } catch {
-    return [];
+    return sharedMatchers ?? [];
   }
 
   const yamlFiles = entries.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
-  if (yamlFiles.length === 0) return [];
+  if (yamlFiles.length === 0) return sharedMatchers ?? [];
 
   // The matchers array is passed by reference to each rule so { recurse: "$VAR" }
   // in emit specs can call sibling matchers. By the time match() is invoked (lazily,
   // not during compilation), the array is fully populated.
-  const matchers: PatternMatcher[] = [];
+  // When sharedMatchers is provided, all new rules are added to it so that
+  // cross-skill recursion (e.g. TypeScript patterns recursing into JS sub-expressions)
+  // works correctly.
+  const matchers: PatternMatcher[] = sharedMatchers ?? [];
 
   for (const file of yamlFiles) {
     const filePath = join(patternsDir, file);
@@ -216,6 +224,16 @@ function parseCondition(raw: unknown): Condition {
   if (kind === 'has-children') {
     if (typeof c['count'] !== 'number') throw new Error("has-children condition requires numeric 'count'");
     return { kind: 'has-children', count: c['count'] as number };
+  }
+  if (kind === 'has-child') {
+    if (typeof c['nodeType'] !== 'string') throw new Error("has-child condition requires string 'nodeType'");
+    return { kind: 'has-child', nodeType: c['nodeType'] as string };
+  }
+  if (kind === 'is-one-of') {
+    if (typeof c['var'] !== 'string' || !Array.isArray(c['values'])) {
+      throw new Error("is-one-of condition requires string 'var' and array 'values'");
+    }
+    return { kind: 'is-one-of', var: c['var'] as string, values: c['values'] as string[] };
   }
   if (kind === 'is-type') {
     if (typeof c['var'] !== 'string' || typeof c['type'] !== 'string') {
@@ -360,6 +378,14 @@ function evaluateCondition(cond: Condition, bindings: Bindings, node: CSTNode): 
     case 'has-children': {
       const namedChildren = node.children.filter(c => c.isNamed);
       return namedChildren.length === cond.count;
+    }
+    case 'has-child': {
+      return node.children.some(c => c.type === cond.nodeType);
+    }
+    case 'is-one-of': {
+      const bound = bindings.get(cond.var);
+      if (!bound || Array.isArray(bound)) return false;
+      return cond.values.includes((bound as CSTNode).text);
     }
     case 'is-type': {
       const bound = bindings.get(cond.var);

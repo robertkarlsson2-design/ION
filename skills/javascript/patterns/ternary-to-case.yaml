@@ -26,7 +26,7 @@ emit:
         kind: Constructor
         ctorName: "True"
         symbolId: True
-        args: []
+        fields: []
         type:
           kind: Never
       body:
@@ -43,7 +43,7 @@ emit:
         kind: Constructor
         ctorName: "False"
         symbolId: False
-        args: []
+        fields: []
         type:
           kind: Never
       body:

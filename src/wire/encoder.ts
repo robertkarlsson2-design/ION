@@ -144,7 +144,7 @@ function collectNamesFromPattern(p: CasePattern, c: NameCollector, depth = 0): v
       break;
     case 'Constructor':
       c.record(p.ctorName);
-      for (const f of p.fields) collectNamesFromPattern(f, c, depth + 1);
+      for (const f of (p.fields ?? [])) collectNamesFromPattern(f, c, depth + 1);
       break;
     default:
       assertNever(p);
@@ -535,16 +535,36 @@ function shouldPool(len: number, count: number): boolean {
   return count * (cost - 1) > 2 + cost;
 }
 
+// Characters that would break the decoder if present verbatim in an identifier.
+// Matches the IDENT_STOP set in decoder.ts.
+const WIRE_DELIMITER_RE = /[ (){}[\],;:<>!=|\-.\n\r]/;
+
+/** Returns true when the name contains characters the decoder can't read verbatim. */
+function mustPool(name: string): boolean {
+  return WIRE_DELIMITER_RE.test(name);
+}
+
 /**
  * Pooling heuristic:
  *   tokenCost(name) = ceil(name.length / 4)
  *   pool if: count * (tokenCost(name) - 1) > 2 + tokenCost(name)
+ *   Always pool names containing wire-format delimiter characters (operators, spaces, etc.)
+ *   so the decoder can read them back via their alias.
  * Sort entries by firstPos ascending.
  */
 function buildSymbolPool(names: Map<string, NameRecord>): SymbolPool {
-  const candidates = [...names.entries()]
+  // Split into two groups:
+  // 1. shouldPool entries: sorted by firstPos for token savings (stable through JSON serde
+  //    as long as module structure traversal order is consistent).
+  // 2. mustPool-only entries: sorted alphabetically, so they're deterministic regardless
+  //    of collection order (e.g., Set<EffectTag> iteration order changes after JSON sort).
+  const shouldPoolEntries = [...names.entries()]
     .filter(([name, rec]) => shouldPool(name.length, rec.count))
     .sort(([, a], [, b]) => a.firstPos - b.firstPos);
+  const mustPoolOnlyEntries = [...names.entries()]
+    .filter(([name, rec]) => !shouldPool(name.length, rec.count) && mustPool(name))
+    .sort(([a], [b]) => a.localeCompare(b));
+  const candidates = [...shouldPoolEntries, ...mustPoolOnlyEntries];
 
   const toAlias = new Map<string, Alias>();
   const entries: PoolEntry[] = [];
@@ -681,7 +701,7 @@ function encodePattern(p: CasePattern, ctx: EncoderContext, depth = 0): string {
     case 'Wildcard': return '_';
     case 'Var':      return encodeName(p.name, ctx.sym);
     case 'Constructor': {
-      const fields = p.fields.map(f => encodePattern(f, ctx, depth + 1)).join(',');
+      const fields = (p.fields ?? []).map(f => encodePattern(f, ctx, depth + 1)).join(',');
       return `${encodeName(p.ctorName, ctx.sym)}(${fields})`;
     }
     case 'Literal': return encodeLiteral(p.value);
@@ -706,6 +726,14 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
 
     case 'App': {
       const args = node.args.map(a => encodeNode(a, ctx, depth + 1)).join(',');
+      // When callee is Accessor(receiver, member), encode as OopVirtualCall syntax
+      // (receiver->member(args)) so the decoder can round-trip it. The decoder does
+      // not support callee-as-expression calls like "a.b(args)".
+      if (node.callee.kind === 'Accessor') {
+        const recv = encodeNode(node.callee.receiver, ctx, depth + 1);
+        const meth = encodeName(node.callee.member, ctx.sym);
+        return `${recv}->${meth}(${args})`;
+      }
       return `${encodeNode(node.callee, ctx, depth + 1)}(${args})`;
     }
 
