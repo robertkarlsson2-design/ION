@@ -21,8 +21,8 @@ emit:
     type:
       kind: Never
   arms:
-    - ctor: Ok
-      binding: _
+    - tag: Ok
+      bindings: []
       body:
         kind: Var
         name:
@@ -33,7 +33,8 @@ emit:
           field: text
         type:
           kind: Never
-    - ctor: Err
+    - tag: Err
+      bindings: []
       body:
         kind: Var
         name:

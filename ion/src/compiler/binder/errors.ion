@@ -1,0 +1,4 @@
+I1
+M binder.errors v=0.0.0 d=core
+S a=default b=interface CircularImportError { readonly kind: 'CircularImport'; readonly cycle: readonly string[]; readonly message: string; readonly span: Span; } c=interface DuplicateBindingError { readonly kind: 'DuplicateBinding'; readonly name: string; readonly message: string; readonly span: Span; readonly previousSpan: Span; } d=interface UndefinedNameError { readonly kind: 'UndefinedName'; readonly name: string; readonly message: string; readonly span: Span; } e=type BindError = UndefinedNameError | DuplicateBindingError | CircularImportError; f=type BindErrorKind = BindError['kind'];
+F let a:never=d;0 let a:never=c;0 let a:never=b;0 let a:never=e;0 let a:never=f;0

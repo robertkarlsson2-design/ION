@@ -1,0 +1,4 @@
+I1
+M ast.types v=0.0.0 d=core
+S a=default b=interface FnTypeAnnotation { readonly kind: 'Fn'; readonly params: readonly TypeAnnotation[]; readonly ret: TypeAnnotation; readonly effects: readonly EffectTag[]; readonly span: Span; } c=interface GenericTypeAnnotation { readonly kind: 'Generic'; readonly name: string; readonly args: readonly TypeAnnotation[]; readonly span: Span; } d=interface NamedTypeAnnotation { readonly kind: 'Named'; readonly name: string; readonly span: Span; } e=interface TupleTypeAnnotation { readonly kind: 'Tuple'; readonly elements: readonly TypeAnnotation[]; readonly span: Span; } f=type EffectTag = 'io' | 'async' | 'llm' | (string & Record<never, never>); g=type TypeAnnotation = | NamedTypeAnnotation | GenericTypeAnnotation | FnTypeAnnotation | TupleTypeAnnotation;
+F let a:never=f;0 let a:never=g;0 let a:never=d;0 let a:never=c;0 let a:never=b;0 let a:never=e;0

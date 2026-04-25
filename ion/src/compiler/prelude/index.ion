@@ -1,0 +1,4 @@
+I1
+M prelude.index v=0.0.0 d=core
+S a=function getPreludeDecls(): readonly AstDeclNode[] { if (_cached !== null) return _cached; const tokens = lex(PRELUDE_SRC, '<prelude>'); const cst = parseModule(tokens); const ast = buildModule(cst); _cached = ast.decls; return _cached; } b=ion:str
+F let PRELUDE_SRC:never=ffi:format:b:format();0 null null let default:never=a;0

@@ -1,0 +1,4 @@
+I1
+M cli.ion v=0.0.0 d=core,ion-oop
+S a=[, , command, ...rest] b={ switch (command) { case 'build': return (await runBuild(rest)).exitCode; case 'check': return (await runCheck(rest)).exitCode; case 'fmt': return (await runFmt(rest)).exitCode; case 'grammar': return (await runGrammar(rest)).exitCode; case 'ingest': return (await runIngest(rest)).exitCode; case 'tokens': return (await runTokens(rest)).exitCode; default: process.stderr.write(command !== undefined ? `error: unknown command: ${command}\n${USAGE}` : USAGE, ); return 2; } } c=ion:str d=main() e=process.argv
+F let a:never=e;0 let USAGE:never=ffi:format:c:format();0 let main:never=()->b;0 d->then((exitCode:never)->process->exit(exitCode))->catch(()->0)

@@ -1,0 +1,4 @@
+I1
+M types v=0.0.0 d=core
+S a=function makeSymbolId(raw: string): SymbolId { return raw as SymbolId; } b=interface Span { /** Absolute path to the source file. */ file: string; /** 1-based line number of the first character. */ startLine: number; /** 0-based column of the first character. */ startCol: number; /** 1-based line number of the last character. */ endLine: number; /** 0-based column past the last character. */ endCol: number; } c=type SymbolId = string & { readonly __brand: 'SymbolId' };
+F let default:never=b;0 let default:never=c;0 let default:never=a;0

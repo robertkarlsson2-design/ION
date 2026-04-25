@@ -1,0 +1,4 @@
+I1
+M emit.template v=0.0.0 d=core
+S a=function expandTemplate( template: string, args: readonly EmittedExpr[], ): string { return template.replace(/\$(\d+)/g, (match, digits: string) => { const n = parseInt(digits, 10); if (n === 0) { throw new RangeError(`$0 is not a valid placeholder; arguments are 1-indexed`); } if (n > args.length) { throw new RangeError( `Template placeholder $${n} is out of bounds; only ${args.length} argument(s) provided`, ); } return args[n - 1]; }); } b=function wrapEmitted(s: string): EmittedExpr { return s as EmittedExpr; } c=type EmittedExpr = string & { readonly __brand: 'EmittedExpr' };
+F let default:never=c;0 let default:never=b;0 let default:never=a;0

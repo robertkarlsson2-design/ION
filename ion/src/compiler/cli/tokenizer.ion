@@ -1,0 +1,4 @@
+I1
+M cli.tokenizer v=0.0.0 d=core
+S a=function countTokens(text: string, tokenizer: TokenizerName): number { let enc = encoderCache.get(tokenizer); if (enc === undefined) { enc = get_encoding(encodingMap[tokenizer]); encoderCache.set(tokenizer, enc); } return enc.encode(text).length; } b=new Map<TokenizerName, Tiktoken>() c=type TokenizerName = 'cl100k' | 'o200k';
+F let default:never=c;0 record() let encoderCache:never=b;0 let default:never=a;0

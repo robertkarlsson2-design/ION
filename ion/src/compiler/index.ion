@@ -1,0 +1,4 @@
+I1
+M index v=0.0.0 d=core
+S a='./ast/index.js' b='./checker/index.js' c='./grammar/index.js'
+F let default:never=a;0 let default:never=c;0 let default:never=b;0

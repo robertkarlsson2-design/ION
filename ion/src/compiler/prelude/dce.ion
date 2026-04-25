@@ -1,0 +1,4 @@
+I1
+M prelude.dce v=0.0.0 d=core
+S a=function shakePreludeDecls(module: IonIRModule): IonIRModule { const names = collectAllNames(module.decls); const filteredDecls = module.decls.filter(d => shouldKeepDecl(d, names)); return { ...module, decls: filteredDecls }; }
+F let collectAllNames:never=_rawCollectAllNames;0 let shouldKeepDecl:never=_rawShouldKeepDecl;0 let default:never=a;0

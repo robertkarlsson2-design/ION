@@ -260,7 +260,7 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector, depth = 0): voi
       collectNamesFromNode(node.scrutinee, c, depth + 1);
       for (const arm of node.arms) {
         c.record(arm.tag);
-        for (const b of arm.bindings) {
+        for (const b of (arm.bindings ?? [])) {
           c.record(b.name);
           collectNamesFromType(b.type, c, depth + 1);
         }
@@ -470,7 +470,7 @@ function collectTypesFromNode(node: IonIRNode, out: Map<string, number>, depth =
     case 'AdtMatch':
       collectTypesFromNode(node.scrutinee, out, depth + 1);
       for (const arm of node.arms) {
-        for (const b of arm.bindings) collectTypesFromType(b.type, out, depth + 1);
+        for (const b of (arm.bindings ?? [])) collectTypesFromType(b.type, out, depth + 1);
         collectTypesFromNode(arm.body, out, depth + 1);
       }
       break;
@@ -832,7 +832,7 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
 
     case 'AdtMatch': {
       const arms = node.arms.map(arm => {
-        const bindings = arm.bindings.map(b => encodeParam(b, ctx, depth + 1)).join(',');
+        const bindings = (arm.bindings ?? []).map(b => encodeParam(b, ctx, depth + 1)).join(',');
         return `${encodeName(arm.tag, ctx.sym)}(${bindings})->${encodeNode(arm.body, ctx, depth + 1)}`;
       }).join(';');
       return `adt(${encodeNode(node.scrutinee, ctx, depth + 1)}){${arms}}`;

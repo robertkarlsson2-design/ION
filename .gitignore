@@ -8,6 +8,8 @@ coverage/
 bench/out/
 bench/roundtrip/out/
 src/ion-generated/
+src/**/*.ion
+emitters/**/*.ion
 *.log
 .DS_Store
 Thumbs.db
