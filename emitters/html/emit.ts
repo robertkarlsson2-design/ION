@@ -7,6 +7,8 @@ import type {
   CaseNode,
   OopClassNode,
   OopMethod,
+  OopAnnotation,
+  OopConstructor,
   AdtDeclNode,
   AdtMatchNode,
   OopInterfaceNode,
@@ -166,24 +168,56 @@ function emitScriptDecl(node: IonIRNode): string {
     case 'OopClass': {
       const cls = node as OopClassNode;
       const lines: string[] = [];
+
+      // annotations → check for customElement annotation to use as a comment
+      const annotations: readonly OopAnnotation[] = cls.annotations ?? [];
+      const customElementAnnotation = annotations.find(a => a.name === 'customElement');
+      if (customElementAnnotation) {
+        const tagName = customElementAnnotation.args[0] ?? cls.name.toLowerCase();
+        lines.push(`// Custom element: <${tagName}>`);
+      }
+
       lines.push(`class ${cls.name} {`);
-      // Constructor from fields
-      if (cls.fields.length > 0) {
+
+      // Explicit constructors (new field) — emit as connectedCallback if present, or plain constructor
+      const constructors: readonly OopConstructor[] = cls.constructors ?? [];
+      if (constructors.length > 0) {
+        const ctor = constructors[0]!;
+        const params = ctor.params.map(p => p.name).join(', ');
+        const bodyStr = ctor.body ? emitJsExpr(ctor.body) : '';
+        lines.push(`  connectedCallback(${params}) {`);
+        if (bodyStr) lines.push(`    ${bodyStr};`);
+        lines.push(`  }`);
+      } else if (cls.fields.length > 0) {
+        // Constructor from fields (legacy path)
         const fieldParams = cls.fields.map(f => f.name).join(', ');
         const fieldAssigns = cls.fields.map(f => `    this.${f.name} = ${f.name};`).join('\n');
         lines.push(`  constructor(${fieldParams}) {`);
         lines.push(fieldAssigns);
         lines.push(`  }`);
       }
-      // Methods
+
+      // Methods — handle accessorKind (get/set) and annotations; ignore visibility
       for (const m of cls.methods) {
         const params = m.params.map(p => p.name).join(', ');
         const bodyStr = m.body ? emitJsExpr(m.body) : 'undefined';
         const staticKw = m.isStatic ? 'static ' : '';
-        lines.push(`  ${staticKw}${m.name}(${params}) {`);
-        lines.push(`    return ${bodyStr};`);
-        lines.push(`  }`);
+        if (m.accessorKind === 'get') {
+          lines.push(`  ${staticKw}get ${m.name}() {`);
+          lines.push(`    return ${bodyStr};`);
+          lines.push(`  }`);
+        } else if (m.accessorKind === 'set') {
+          const setParam = m.params[0]?.name ?? 'value';
+          lines.push(`  ${staticKw}set ${m.name}(${setParam}) {`);
+          lines.push(`    ${bodyStr};`);
+          lines.push(`  }`);
+        } else {
+          lines.push(`  ${staticKw}${m.name}(${params}) {`);
+          lines.push(`    return ${bodyStr};`);
+          lines.push(`  }`);
+        }
       }
+
       lines.push(`}`);
       return lines.join('\n');
     }
@@ -191,6 +225,7 @@ function emitScriptDecl(node: IonIRNode): string {
     case 'OopInterface': {
       const iface = node as OopInterfaceNode;
       const lines: string[] = [];
+      // typeParams → ignored in HTML (no generics); annotations → ignored
       lines.push(`/**`);
       lines.push(` * @interface ${iface.name}`);
       for (const m of iface.members) {

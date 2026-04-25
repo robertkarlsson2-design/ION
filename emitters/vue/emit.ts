@@ -7,6 +7,8 @@ import type {
   AppNode,
   AccessorNode,
   OopClassNode,
+  OopAnnotation,
+  OopConstructor,
   OopInterfaceNode,
   AdtDeclNode,
   AdtMatchNode,
@@ -147,8 +149,25 @@ function emitScriptDeclForVue(node: IonIRNode): string {
     case 'OopClass': {
       const cls = node as OopClassNode;
       const lines: string[] = [];
+
+      // annotations → emit as vue-class-component @Component decorator if present
+      const annotations: readonly OopAnnotation[] = cls.annotations ?? [];
+      const componentAnnotation = annotations.find(a => a.name === 'Component');
+      if (componentAnnotation) {
+        const args = componentAnnotation.args.length > 0
+          ? `({ ${componentAnnotation.args.join(', ')} })`
+          : '({})';
+        lines.push(`@Component${args}`);
+      } else if (annotations.length > 0) {
+        for (const ann of annotations) {
+          const args = ann.args.length > 0 ? `(${ann.args.join(', ')})` : '';
+          lines.push(`@${ann.name}${args}`);
+        }
+      }
+
       // In Vue Composition API context, emit as a class or composable
       lines.push(`// Class: ${cls.name}`);
+      // typeParams → skipped (Vue SFCs don't parameterize component class)
       if (cls.fields.length > 0) {
         lines.push(`interface ${cls.name}Options {`);
         for (const f of cls.fields) {
@@ -157,7 +176,16 @@ function emitScriptDeclForVue(node: IonIRNode): string {
         lines.push(`}`);
       }
       lines.push(`class ${cls.name} {`);
-      if (cls.fields.length > 0) {
+
+      // Explicit constructors → emit body as created() lifecycle hook instead of constructor
+      const constructors: readonly OopConstructor[] = cls.constructors ?? [];
+      if (constructors.length > 0) {
+        const ctor = constructors[0]!;
+        const bodyStr = ctor.body ? emitTsExprForVue(ctor.body) : '';
+        lines.push(`  created() {`);
+        if (bodyStr) lines.push(`    ${bodyStr};`);
+        lines.push(`  }`);
+      } else if (cls.fields.length > 0) {
         const fieldParams = cls.fields.map(f => `${f.name}: ${ionTypeToTs(f.type)}`).join(', ');
         lines.push(`  constructor(${fieldParams}) {`);
         for (const f of cls.fields) {
@@ -165,14 +193,28 @@ function emitScriptDeclForVue(node: IonIRNode): string {
         }
         lines.push(`  }`);
       }
+
       for (const m of cls.methods) {
         const params = m.params.map(p => `${p.name}: ${ionTypeToTs(p.type)}`).join(', ');
         const retType = ionTypeToTs(m.retType);
         const bodyStr = m.body ? emitTsExprForVue(m.body) : 'undefined';
         const staticKw = m.isStatic ? 'static ' : '';
-        lines.push(`  ${staticKw}${m.name}(${params}): ${retType} {`);
-        lines.push(`    return ${bodyStr};`);
-        lines.push(`  }`);
+        // accessorKind === 'get' → Vue computed property getter
+        if (m.accessorKind === 'get') {
+          lines.push(`  // computed`);
+          lines.push(`  ${staticKw}get ${m.name}(): ${retType} {`);
+          lines.push(`    return ${bodyStr};`);
+          lines.push(`  }`);
+        } else if (m.accessorKind === 'set') {
+          const setParam = m.params[0] ? `${m.params[0].name}: ${ionTypeToTs(m.params[0].type)}` : 'value: any';
+          lines.push(`  ${staticKw}set ${m.name}(${setParam}) {`);
+          lines.push(`    ${bodyStr};`);
+          lines.push(`  }`);
+        } else {
+          lines.push(`  ${staticKw}${m.name}(${params}): ${retType} {`);
+          lines.push(`    return ${bodyStr};`);
+          lines.push(`  }`);
+        }
       }
       lines.push(`}`);
       return lines.join('\n');
@@ -181,6 +223,11 @@ function emitScriptDeclForVue(node: IonIRNode): string {
     case 'OopInterface': {
       const iface = node as OopInterfaceNode;
       const lines: string[] = [];
+      // typeParams → skipped (Vue SFCs don't typically parameterize interfaces)
+      // annotations → emit as comments
+      for (const ann of iface.annotations ?? []) {
+        lines.push(`// @${ann.name}${ann.args.length > 0 ? `(${ann.args.join(', ')})` : ''}`);
+      }
       lines.push(`interface ${iface.name} {`);
       for (const m of iface.members) {
         lines.push(`  ${m.name}: ${ionTypeToTs(m.type)};`);

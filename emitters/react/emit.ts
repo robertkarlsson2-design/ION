@@ -7,6 +7,8 @@ import type {
   CaseNode,
   VarNode,
   OopClassNode,
+  OopAnnotation,
+  OopConstructor,
   OopInterfaceNode,
   AdtDeclNode,
   AdtMatchNode,
@@ -375,8 +377,24 @@ function emitTopLevelDecl(node: IonIRNode): string {
       const cls = node as OopClassNode;
       const lines: string[] = [];
 
-      // Build props interface if there are fields
-      if (cls.fields.length > 0) {
+      // annotations → emit as decorators (e.g. @observer)
+      const annotations: readonly OopAnnotation[] = cls.annotations ?? [];
+      for (const ann of annotations) {
+        const args = ann.args.length > 0 ? `(${ann.args.join(', ')})` : '';
+        lines.push(`@${ann.name}${args}`);
+      }
+
+      // typeParams → use first two as Props and State generics if present
+      const typeParams: readonly string[] = cls.typeParams ?? [];
+      let classGeneric = '';
+      if (typeParams.length >= 2) {
+        classGeneric = `<${typeParams[0]}, ${typeParams[1]}>`;
+      } else if (typeParams.length === 1) {
+        classGeneric = `<${typeParams[0]}>`;
+      }
+
+      // Build props interface if there are fields (and no explicit typeParams)
+      if (cls.fields.length > 0 && typeParams.length === 0) {
         lines.push(`interface ${cls.name}Props {`);
         for (const f of cls.fields) {
           lines.push(`  ${f.name}: ${ionTypeToTs(f.type)};`);
@@ -384,8 +402,21 @@ function emitTopLevelDecl(node: IonIRNode): string {
         lines.push(`}`);
         lines.push(``);
         lines.push(`class ${cls.name} extends React.Component<${cls.name}Props> {`);
+      } else if (classGeneric) {
+        lines.push(`class ${cls.name} extends React.Component${classGeneric} {`);
       } else {
         lines.push(`class ${cls.name} extends React.Component {`);
+      }
+
+      // Explicit constructors (new field)
+      const constructors: readonly OopConstructor[] = cls.constructors ?? [];
+      for (const ctor of constructors) {
+        const ctorParams = ctor.params.map(p => `${p.name}: ${ionTypeToTs(p.type)}`).join(', ');
+        const bodyStr = ctor.body ? emitTsExprForReact(ctor.body) : '';
+        lines.push(`  constructor(props: any) {`);
+        lines.push(`    super(props);`);
+        if (bodyStr) lines.push(`    ${bodyStr};`);
+        lines.push(`  }`);
       }
 
       // render method (look for a method named 'render', otherwise emit empty)
@@ -400,16 +431,32 @@ function emitTopLevelDecl(node: IonIRNode): string {
         lines.push(`  }`);
       }
 
-      // Other methods
+      // Other methods — handle accessorKind, annotations, static; skip visibility
       for (const m of cls.methods) {
         if (m.name === 'render') continue;
+        const methodAnnotations = m.annotations ?? [];
+        for (const ann of methodAnnotations) {
+          const args = ann.args.length > 0 ? `(${ann.args.join(', ')})` : '';
+          lines.push(`  @${ann.name}${args}`);
+        }
         const params = m.params.map(p => `${p.name}: ${ionTypeToTs(p.type)}`).join(', ');
         const retType = ionTypeToTs(m.retType);
         const bodyStr = m.body ? emitTsExprForReact(m.body) : 'undefined';
         const staticKw = m.isStatic ? 'static ' : '';
-        lines.push(`  ${staticKw}${m.name}(${params}): ${retType} {`);
-        lines.push(`    return ${bodyStr};`);
-        lines.push(`  }`);
+        if (m.accessorKind === 'get') {
+          lines.push(`  ${staticKw}get ${m.name}(): ${retType} {`);
+          lines.push(`    return ${bodyStr};`);
+          lines.push(`  }`);
+        } else if (m.accessorKind === 'set') {
+          const setParam = m.params[0] ? `${m.params[0].name}: ${ionTypeToTs(m.params[0].type)}` : 'value: any';
+          lines.push(`  ${staticKw}set ${m.name}(${setParam}) {`);
+          lines.push(`    ${bodyStr};`);
+          lines.push(`  }`);
+        } else {
+          lines.push(`  ${staticKw}${m.name}(${params}): ${retType} {`);
+          lines.push(`    return ${bodyStr};`);
+          lines.push(`  }`);
+        }
       }
 
       lines.push(`}`);
@@ -419,7 +466,14 @@ function emitTopLevelDecl(node: IonIRNode): string {
     case 'OopInterface': {
       const iface = node as OopInterfaceNode;
       const lines: string[] = [];
-      lines.push(`interface ${iface.name} {`);
+      // typeParams → include in interface declaration if present
+      const typeParams: readonly string[] = iface.typeParams ?? [];
+      const generic = typeParams.length > 0 ? `<${typeParams.join(', ')}>` : '';
+      // annotations → emit as JSDoc comments
+      for (const ann of iface.annotations ?? []) {
+        lines.push(`// @${ann.name}${ann.args.length > 0 ? `(${ann.args.join(', ')})` : ''}`);
+      }
+      lines.push(`interface ${iface.name}${generic} {`);
       for (const m of iface.members) {
         lines.push(`  ${m.name}: ${ionTypeToTs(m.type)};`);
       }

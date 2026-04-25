@@ -7,6 +7,8 @@ import type {
   CaseNode,
   VarNode,
   OopClassNode,
+  OopAnnotation,
+  OopConstructor,
   OopInterfaceNode,
   AdtDeclNode,
   AdtMatchNode,
@@ -420,19 +422,57 @@ function emitJsDecl(node: IonIRNode): string {
       lines.push(`/**`);
       lines.push(` * @class ${cls.name}`);
       lines.push(` */`);
+      // typeParams → skipped (LWC is plain JS, no generics)
+      // annotations on the class itself → emit as class-level decorators (comment form in JS)
+      for (const ann of cls.annotations ?? []) {
+        lines.push(`// @${ann.name}${ann.args.length > 0 ? `(${ann.args.join(', ')})` : ''}`);
+      }
       if (cls.fields.length > 0) {
         for (const f of cls.fields) {
           lines.push(`/** @type {${ionTypeToJsDoc(f.type)}} */`);
-          lines.push(`@api ${f.name};`);
+          // visibility === 'public' → emit @api decorator (LWC convention)
+          if (f.visibility === 'public') {
+            lines.push(`@api ${f.name};`);
+          } else if (f.isStatic) {
+            lines.push(`static ${f.name};`);
+          } else {
+            lines.push(`@api ${f.name};`);
+          }
         }
       }
+      // Explicit constructors
+      const constructors: readonly OopConstructor[] = cls.constructors ?? [];
+      for (const ctor of constructors) {
+        const params = ctor.params.map(p => p.name).join(', ');
+        const bodyStr = ctor.body ? emitLwcExpr(ctor.body) : '';
+        lines.push(`constructor(${params}) {`);
+        lines.push(`    super();`);
+        if (bodyStr) lines.push(`    ${bodyStr};`);
+        lines.push(`}`);
+      }
       for (const m of cls.methods) {
+        // annotations on methods → emit as LWC decorators
+        for (const ann of m.annotations ?? []) {
+          const args = ann.args.length > 0 ? `(${ann.args.join(', ')})` : '';
+          lines.push(`@${ann.name}${args}`);
+        }
         const params = m.params.map(p => p.name).join(', ');
         const bodyStr = m.body ? emitLwcExpr(m.body) : 'undefined';
         const staticKw = m.isStatic ? 'static ' : '';
-        lines.push(`${staticKw}${m.name}(${params}) {`);
-        lines.push(`    return ${bodyStr};`);
-        lines.push(`}`);
+        if (m.accessorKind === 'get') {
+          lines.push(`${staticKw}get ${m.name}() {`);
+          lines.push(`    return ${bodyStr};`);
+          lines.push(`}`);
+        } else if (m.accessorKind === 'set') {
+          const setParam = m.params[0]?.name ?? 'value';
+          lines.push(`${staticKw}set ${m.name}(${setParam}) {`);
+          lines.push(`    ${bodyStr};`);
+          lines.push(`}`);
+        } else {
+          lines.push(`${staticKw}${m.name}(${params}) {`);
+          lines.push(`    return ${bodyStr};`);
+          lines.push(`}`);
+        }
       }
       return lines.join('\n');
     }
@@ -496,15 +536,49 @@ function buildLwcJs(irModule: IonIRModule): string {
     if (d.kind === 'OopClass') {
       // A nested OopClass within LWC: emit @AuraEnabled-style methods extracted into the main class
       const cls = d as OopClassNode;
+
+      // Explicit constructors → emit as constructor() { super(); body }
+      for (const ctor of cls.constructors ?? []) {
+        const ctorParams = ctor.params.map(p => p.name).join(', ');
+        const bodyStr = ctor.body ? emitLwcExpr(ctor.body) : '';
+        const ctorLines = [
+          `    constructor(${ctorParams}) {`,
+          `        super();`,
+        ];
+        if (bodyStr) ctorLines.push(`        ${bodyStr};`);
+        ctorLines.push(`    }`);
+        methods.push(ctorLines.join('\n'));
+      }
+
       for (const m of cls.methods) {
+        // annotations → emit as LWC decorators inline
+        const annLines = (m.annotations ?? []).map((ann: OopAnnotation) => {
+          const args = ann.args.length > 0 ? `(${ann.args.join(', ')})` : '';
+          return `    @${ann.name}${args}`;
+        });
         const params = m.params.map(p => p.name).join(', ');
         const bodyStr = m.body ? emitLwcExpr(m.body) : 'undefined';
         const staticKw = m.isStatic ? 'static ' : '';
-        methods.push(`    ${staticKw}${m.name}(${params}) {\n        return ${bodyStr};\n    }`);
+        let methodStr: string;
+        if (m.accessorKind === 'get') {
+          methodStr = `    ${staticKw}get ${m.name}() {\n        return ${bodyStr};\n    }`;
+        } else if (m.accessorKind === 'set') {
+          const setParam = m.params[0]?.name ?? 'value';
+          methodStr = `    ${staticKw}set ${m.name}(${setParam}) {\n        ${bodyStr};\n    }`;
+        } else {
+          methodStr = `    ${staticKw}${m.name}(${params}) {\n        return ${bodyStr};\n    }`;
+        }
+        methods.push([...annLines, methodStr].join('\n'));
       }
-      // Fields become @api props
+      // Fields → @api for public or general, @track if explicitly tracked via annotation
       for (const f of cls.fields) {
-        apiProps.push(`    @api ${f.name};`);
+        if (f.visibility === 'public') {
+          apiProps.push(`    @api ${f.name};`);
+        } else if (f.isStatic) {
+          apiProps.push(`    static ${f.name};`);
+        } else {
+          apiProps.push(`    @api ${f.name};`);
+        }
       }
       continue;
     }
