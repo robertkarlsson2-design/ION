@@ -6,7 +6,7 @@
 
 **A token-efficient, AI-native programming language that compiles to anything.**
 
-Write once in Ion. Ship idiomatic JavaScript, TypeScript, Java, Python, or any registered target. Ion is not a framework or a runtime — it compiles away entirely, leaving clean, human-readable output in your target language.
+Write once in Ion. Ship idiomatic JavaScript, TypeScript, Python, HTML, React JSX, Vue SFC, Lightning Web Components, Salesforce Apex, or any registered target. Ion is not a framework or a runtime — it compiles away entirely, leaving clean, human-readable output in your target language.
 
 ```ion
 data User { id: Int, name: Str, email: Str, active: Bool = true }
@@ -41,14 +41,44 @@ def get_active(users):
     return list(map(lambda u: u.name, filter(lambda u: u.active, users)))
 ```
 
-Compiles to Java:
+Compiles to React JSX:
 
-```java
-public static List<String> getActive(List<User> users) {
-    return users.stream()
-        .filter(u -> u.active)
-        .map(u -> u.name)
-        .toList();
+```tsx
+export const GetActive: React.FC = () => (
+  <ul>
+    {users.filter(u => u.active).map(u => <li key={u.id}>{u.name}</li>)}
+  </ul>
+);
+```
+
+Compiles to Lightning Web Component:
+
+```html
+<!-- getActive.html -->
+<template>
+  <template for:each={activeUsers} for:item="u">
+    <li key={u.id}>{u.name}</li>
+  </template>
+</template>
+```
+
+```js
+// getActive.js
+import { LightningElement, track } from 'lwc';
+export default class GetActive extends LightningElement {
+  @track users = [];
+  getActiveUsers(users) { return users.filter(u => u.active); }
+}
+```
+
+Compiles to Salesforce Apex:
+
+```apex
+public with sharing class GetActiveController {
+  @AuraEnabled(cacheable=true)
+  public static Object getActive(Object users) {
+    return users;
+  }
 }
 ```
 
@@ -147,6 +177,11 @@ The savings are largest when prelude functions are used — each Ion `map`, `fil
 | JavaScript emitter | ✅ Complete |
 | TypeScript emitter | ✅ Complete |
 | Python emitter | ✅ Complete |
+| HTML emitter | ✅ Complete |
+| React (JSX/TSX) emitter | ✅ Complete |
+| Vue SFC emitter | ✅ Complete |
+| Lightning Web Component (LWC) emitter | ✅ Complete |
+| Salesforce Apex emitter | ✅ Complete |
 | `ion build` CLI | ✅ Complete |
 | `ion ingest` (convert existing code) | 🔧 In progress |
 | Java plugin | 📋 Planned — Phase 5 |
@@ -330,6 +365,50 @@ extern "javascript" {
 ```
 
 **Adding a new target language** means creating a `skills/{language}/` folder with these files. No changes to the compiler.
+
+---
+
+## Frontend and Salesforce targets
+
+The same `.ion` file can emit to multiple frontend formats simultaneously. A single ION module describing a claims form produces:
+
+| Target | Output |
+|---|---|
+| `html` | Static `<!DOCTYPE html>` page |
+| `react` | `.tsx` with typed `React.FC` components |
+| `vue` | `.vue` SFC with `<template>`, `<script setup lang="ts">`, `<style scoped>` |
+| `lwc` | LWC bundle: `{html, js, css, meta}` — ready to deploy to a Salesforce org |
+| `apex` | `public with sharing class XController` with `@AuraEnabled` methods |
+
+### Lightning Web Component output
+
+The LWC emitter produces all four files in a bundle:
+
+```
+claimsPage/
+├── claimsPage.html        ← <template> with lwc:if, for:each, {bindings}
+├── claimsPage.js          ← extends LightningElement, @api/@track, getters, handlers
+├── claimsPage.css         ← scoped styles
+└── claimsPage.js-meta.xml ← apiVersion 59.0, lightning__AppPage/RecordPage/HomePage
+```
+
+Convention used by the emitter:
+- Names ending in `Id` → `@api` (externally set record IDs)
+- Other values → `@track` (reactive state)
+- Names starting with `get` → getter (`get claimCount()`)
+- Names starting with `handle` → event handler with `event.preventDefault()`
+- Identifier attr values → `{value}`, string values → `"value"`
+- `Case` nodes → `<template lwc:if={cond}> … <template lwc:else>`
+
+### Apex output
+
+The Apex emitter produces a `public with sharing class {Name}Controller`:
+
+- `@AuraEnabled(cacheable=true)` for read functions (`filter*`, `get*`, `find*`, `search*`, `count*`, `total*`, `is*`, `has*`, `sort*`, `rank*`, `average*`)
+- `@AuraEnabled` (non-cacheable) for write functions (`create*`, `update*`, `delete*`, `set*`, `add*`, `remove*`, `merge*`, `validate*`)
+- ION type → Apex type: `Str→String`, `Int→Integer`, `Float→Decimal`, `Bool→Boolean`, `List<T>→List<T>`
+- `.includes()` → `.contains()`, `.length`/`.k` → `.size()`, `.slice()` → `.subList()`
+- String literals use single quotes throughout; `__eq__` maps to `==`
 
 ---
 
