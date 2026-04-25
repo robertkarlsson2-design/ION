@@ -13,7 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22]
+        # Ion uses fs.promises.glob (Node 22+) in the CLI's --all paths.
+        # If engines is broadened later, add Node 20 back.
+        node-version: [22]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,4 +55,4 @@ jobs:
           echo "$output" | grep -q "usage: ion"
 
       - name: Verify npm pack
-        run: pnpm pack --dry-run
+        run: npm pack --dry-run
