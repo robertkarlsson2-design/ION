@@ -2,9 +2,10 @@
 /**
  * compile-ion.mjs — compile all ION source files in ion/ to TypeScript in src/ion-generated/
  *
- * This is part of ION's self-hosting build pipeline. ION source lives in ion/**\/*.ion,
- * and the generated TypeScript is committed to src/ion-generated/ so the repo can
- * bootstrap without a pre-built compiler.
+ * Supports two source formats:
+ *   - Wire format  (starts with "I1"): decoded directly via decodeModule → emitTS
+ *   - Surface syntax (.ion files):     full pipeline — lex → parse → build → bind →
+ *                                      check → desugar → emitTS
  *
  * Run: node scripts/compile-ion.mjs
  * Automatically run as part of: npm run build
@@ -13,7 +14,7 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'fs';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
-import { dirname, join, relative, extname, basename, sep } from 'path';
+import { dirname, join, relative, extname } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -21,12 +22,14 @@ const ION_SRC = join(ROOT, 'ion');
 const GEN_OUT = join(ROOT, 'src', 'ion-generated');
 
 // ---------------------------------------------------------------------------
-// Load the ION compiler from dist/ (stage-0 compiler)
+// Load the stage-0 compiler from dist/
 // ---------------------------------------------------------------------------
 
 const require = createRequire(import.meta.url);
 
 let decodeModule, emitTS;
+let lex, parseModule, buildModule, bindModule, checkModule, desugarModule, getPreludeDecls;
+
 try {
   ({ decodeModule } = require(join(ROOT, 'dist/src/wire/decoder.js')));
   ({ emitTS } = require(join(ROOT, 'dist/skills/typescript/emit.js')));
@@ -34,6 +37,26 @@ try {
   console.error('compile-ion: dist/ not found — run `tsc` first to build the stage-0 compiler');
   console.error('  (This only needs to happen once; after that `npm run build` handles everything)');
   process.exit(1);
+}
+
+// Surface-syntax pipeline — optional; loaded lazily on first surface-syntax file
+let surfacePipelineLoaded = false;
+
+function loadSurfacePipeline() {
+  if (surfacePipelineLoaded) return true;
+  try {
+    ({ lex } = require(join(ROOT, 'dist/src/lexer/index.js')));
+    ({ parseModule } = require(join(ROOT, 'dist/src/parser/declarations.js')));
+    ({ buildModule } = require(join(ROOT, 'dist/src/ast/builder.js')));
+    ({ bindModule } = require(join(ROOT, 'dist/src/binder/index.js')));
+    ({ checkModule } = require(join(ROOT, 'dist/src/checker/index.js')));
+    ({ desugarModule } = require(join(ROOT, 'dist/src/desugar/index.js')));
+    ({ getPreludeDecls } = require(join(ROOT, 'dist/src/prelude/index.js')));
+    surfacePipelineLoaded = true;
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -59,7 +82,6 @@ function findIonFiles(dir, results = []) {
 function postProcess(ts, sourceRel) {
   const lines = ts.split('\n');
   const out = lines.map(line => {
-    // Export top-level const and type declarations
     if (/^const /.test(line)) return 'export ' + line;
     if (/^type /.test(line)) return 'export ' + line;
     return line;
@@ -81,9 +103,61 @@ function postProcess(ts, sourceRel) {
 // ---------------------------------------------------------------------------
 
 function outputPath(ionFile) {
-  const rel = relative(join(ION_SRC, 'src'), ionFile); // e.g. prelude/shake.ion
-  const tsRel = rel.replace(/\.ion$/, '.ts');           // e.g. prelude/shake.ts
+  const rel = relative(join(ION_SRC, 'src'), ionFile);
+  const tsRel = rel.replace(/\.ion$/, '.ts');
   return join(GEN_OUT, tsRel);
+}
+
+// ---------------------------------------------------------------------------
+// Compile a single file
+// ---------------------------------------------------------------------------
+
+function isWireFormat(src) {
+  return src.startsWith('I1\n') || src.startsWith('I1\r\n');
+}
+
+function compileWire(src, relSrc) {
+  const decoded = decodeModule(src);
+  if (decoded && 'error' in decoded) {
+    throw new Error(`decode error — ${decoded.error}`);
+  }
+  return emitTS(decoded);
+}
+
+function compileSurface(src, ionFile, relSrc) {
+  if (!loadSurfacePipeline()) {
+    throw new Error(
+      'surface-syntax pipeline not available — dist/ may be missing checker/binder modules'
+    );
+  }
+
+  const tokens = lex(src, ionFile);
+  let cst;
+  try {
+    cst = parseModule(tokens);
+  } catch (e) {
+    throw new Error(`parse error — ${e.message}`);
+  }
+
+  const rawAst = buildModule(cst);
+  const ast = { ...rawAst, decls: [...getPreludeDecls(), ...rawAst.decls] };
+
+  const bindResult = bindModule(ast, ionFile);
+  const bindErrors = bindResult.errors ?? [];
+  if (bindErrors.length > 0) {
+    const msgs = bindErrors.map(e => `  ${e.code}: ${e.message}`).join('\n');
+    throw new Error(`bind errors:\n${msgs}`);
+  }
+
+  const checkResult = checkModule(ast, bindResult, ionFile);
+  const checkErrors = checkResult.errors ?? [];
+  if (checkErrors.length > 0) {
+    const msgs = checkErrors.map(e => `  ${e.code}: ${e.message}`).join('\n');
+    throw new Error(`type errors:\n${msgs}`);
+  }
+
+  const ir = desugarModule(ast, bindResult, checkResult, ionFile, '0.0.0');
+  return emitTS(ir);
 }
 
 // ---------------------------------------------------------------------------
@@ -104,15 +178,12 @@ for (const ionFile of ionFiles) {
   const relSrc = relative(ROOT, ionFile);
   try {
     const src = readFileSync(ionFile, 'utf8');
-    const decoded = decodeModule(src);
+    const wire = isWireFormat(src);
 
-    if (decoded && 'error' in decoded) {
-      console.error(`  ✗ ${relSrc}: decode error — ${decoded.error}`);
-      fail++;
-      continue;
-    }
+    const emitted = wire
+      ? compileWire(src, relSrc)
+      : compileSurface(src, ionFile, relSrc);
 
-    const emitted = emitTS(decoded);
     const processed = postProcess(emitted, relSrc);
 
     const outFile = outputPath(ionFile);
@@ -120,8 +191,9 @@ for (const ionFile of ionFiles) {
     writeFileSync(outFile, processed, 'utf8');
 
     const relOut = relative(ROOT, outFile);
+    const fmt = wire ? 'wire' : 'surface';
     const ratio = (emitted.length / src.length).toFixed(1);
-    console.log(`  ✓ ${relSrc} → ${relOut} (${src.length}B → ${emitted.length}B, ${ratio}×)`);
+    console.log(`  ✓ [${fmt}] ${relSrc} → ${relOut} (${src.length}B → ${emitted.length}B, ${ratio}×)`);
     ok++;
   } catch (e) {
     console.error(`  ✗ ${relSrc}: ${e.message}`);
