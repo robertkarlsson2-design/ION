@@ -17,6 +17,7 @@ import { loadConfig } from './config.js';
 import type { IonConfig } from './config.js';
 import { generateSourceMap } from '../emit/sourcemap.js';
 import { getPreludeDecls } from '../prelude/index.js';
+import { countTokens } from './tokenizer.js';
 import type { Span } from '../types.js';
 import type { IonIRModule } from '../ir/nodes.js';
 
@@ -38,7 +39,20 @@ interface ParsedArgs {
   watchMode: boolean;
   noSourcemap: boolean;
   json: boolean;
+  noTokenReport: boolean;
 }
+
+/** Per-file token measurement (cl100k_base). */
+interface TokenStats {
+  ion: number;
+  out: number;
+}
+
+const TARGET_LABEL: Record<string, string> = {
+  javascript: 'JS',
+  typescript: 'TS',
+  python: 'Py',
+};
 
 interface BuildDiagnostic {
   file: string;
@@ -64,6 +78,11 @@ interface JsonOutput {
     };
     suggestion: string | null;
   }[];
+  tokens?: {
+    target: string;
+    files: { file: string; ion: number; out: number; saved: number; pct: number }[];
+    total: { ion: number; out: number; saved: number; pct: number };
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +114,7 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
   let watchMode = false;
   let noSourcemap = false;
   let json = false;
+  let noTokenReport = false;
 
   let i = 0;
   while (i < args.length) {
@@ -103,6 +123,8 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
       watchMode = true;
     } else if (arg === '--no-sourcemap') {
       noSourcemap = true;
+    } else if (arg === '--no-token-report') {
+      noTokenReport = true;
     } else if (arg === '--json') {
       json = true;
     } else if (arg === '--config') {
@@ -123,7 +145,7 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
     i++;
   }
 
-  return { configFile, targetOverride, watchMode, noSourcemap, json };
+  return { configFile, targetOverride, watchMode, noSourcemap, json, noTokenReport };
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +264,8 @@ function mapCheckError(e: CheckError): BuildDiagnostic {
 interface CompileFileResult {
   outputPath: string;
   diagnostics: BuildDiagnostic[];
+  /** Token counts (cl100k_base). Absent when compilation failed before emit. */
+  tokens?: TokenStats;
 }
 
 async function compileFile(
@@ -353,7 +377,15 @@ async function compileFile(
   }
 
   await writeFile(outputPath, emitted, 'utf-8');
-  return { outputPath, diagnostics: [] };
+
+  // Token-savings telemetry — measured against the actual emitted output
+  // (without the source-map comment, which is metadata, not generated code).
+  const tokenStats: TokenStats = {
+    ion: countTokens(src, 'cl100k'),
+    out: countTokens(emitted.replace(/\n\/\/# sourceMappingURL=.*$/, ''), 'cl100k'),
+  };
+
+  return { outputPath, diagnostics: [], tokens: tokenStats };
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +404,12 @@ function formatHuman(diags: BuildDiagnostic[]): string {
   return lines.join('\n');
 }
 
-function formatJson(fileCount: number, diags: BuildDiagnostic[]): string {
+function formatJson(
+  fileCount: number,
+  diags: BuildDiagnostic[],
+  results?: CompileFileResult[],
+  target?: string,
+): string {
   const output: JsonOutput = {
     fileCount,
     errorCount: diags.length,
@@ -390,7 +427,53 @@ function formatJson(fileCount: number, diags: BuildDiagnostic[]): string {
       suggestion: d.suggestion,
     })),
   };
+  if (results !== undefined && target !== undefined) {
+    const tokenStats = aggregateTokenStats(results);
+    if (tokenStats !== null) {
+      output.tokens = {
+        target: TARGET_LABEL[target] ?? target,
+        files: tokenStats.perFile,
+        total: tokenStats.total,
+      };
+    }
+  }
   return JSON.stringify(output, null, 2);
+}
+
+interface AggregatedTokenStats {
+  perFile: { file: string; ion: number; out: number; saved: number; pct: number }[];
+  total: { ion: number; out: number; saved: number; pct: number };
+}
+
+function aggregateTokenStats(results: CompileFileResult[]): AggregatedTokenStats | null {
+  const withTokens = results.filter((r): r is CompileFileResult & { tokens: TokenStats } =>
+    r.tokens !== undefined,
+  );
+  if (withTokens.length === 0) return null;
+  const perFile = withTokens.map(r => {
+    const saved = r.tokens.out - r.tokens.ion;
+    const pct = r.tokens.out > 0 ? Math.round((saved / r.tokens.out) * 100) : 0;
+    return { file: r.outputPath, ion: r.tokens.ion, out: r.tokens.out, saved, pct };
+  });
+  const totalIon = perFile.reduce((s, f) => s + f.ion, 0);
+  const totalOut = perFile.reduce((s, f) => s + f.out, 0);
+  const totalSaved = totalOut - totalIon;
+  const totalPct = totalOut > 0 ? Math.round((totalSaved / totalOut) * 100) : 0;
+  return {
+    perFile,
+    total: { ion: totalIon, out: totalOut, saved: totalSaved, pct: totalPct },
+  };
+}
+
+function formatTokenSavings(results: CompileFileResult[], target: string): string | null {
+  const stats = aggregateTokenStats(results);
+  if (stats === null) return null;
+  const label = TARGET_LABEL[target] ?? target;
+  const { ion, out, saved, pct } = stats.total;
+  if (saved <= 0) {
+    return `tokens (cl100k): Ion ${ion} → ${label} ${out} — no savings on this batch`;
+  }
+  return `tokens (cl100k): Ion ${ion} → ${label} ${out} — saved ${saved} (${pct}%) vs writing ${label} directly`;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +488,7 @@ async function runBuildOnce(
   target: string,
   noSourcemap: boolean,
   json: boolean,
+  noTokenReport: boolean,
 ): Promise<{ fileCount: number; diagnostics: BuildDiagnostic[] }> {
   const includePatterns = config.include ?? ['**/*.ion'];
   const excludePatterns = config.exclude ?? ['**/*.test.ion'];
@@ -446,8 +530,12 @@ async function runBuildOnce(
       process.stdout.write(formatHuman(allDiags) + '\n');
     }
     process.stdout.write(`${okCount} file(s) compiled, ${errCount} error(s)\n`);
+    if (!noTokenReport) {
+      const report = formatTokenSavings(results, target);
+      if (report !== null) process.stdout.write(report + '\n');
+    }
   } else {
-    process.stdout.write(formatJson(ionFiles.length, allDiags) + '\n');
+    process.stdout.write(formatJson(ionFiles.length, allDiags, results, target) + '\n');
   }
 
   return { fileCount: ionFiles.length, diagnostics: allDiags };
@@ -457,7 +545,7 @@ async function runBuildOnce(
 // Main entry point
 // ---------------------------------------------------------------------------
 
-const USAGE = 'usage: ion build [--config <path>] [--target <lang>] [--watch] [--no-sourcemap] [--json]\n';
+const USAGE = 'usage: ion build [--config <path>] [--target <lang>] [--watch] [--no-sourcemap] [--no-token-report] [--json]\n';
 
 /**
  * Runs the `ion build` command.
@@ -500,12 +588,24 @@ export async function runBuild(args: string[]): Promise<RunResult> {
       target,
       parsed.noSourcemap,
       parsed.json,
+      parsed.noTokenReport,
     );
     return { exitCode: diagnostics.length > 0 ? 1 : 0 };
   }
 
-  // Watch mode: initial build then watch for changes
-  await runBuildOnce(config, resolvedRootDir, resolvedOutDir, emitter, target, parsed.noSourcemap, false);
+  // Watch mode: initial build then watch for changes. Suppress the per-build
+  // token report by default — it's noise on every keystroke. Users can opt in
+  // by dropping --no-token-report.
+  await runBuildOnce(
+    config,
+    resolvedRootDir,
+    resolvedOutDir,
+    emitter,
+    target,
+    parsed.noSourcemap,
+    false,
+    true,
+  );
 
   // Return a promise that keeps the process alive via the fs.Watch handle
   return new Promise(() => {

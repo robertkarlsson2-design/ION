@@ -84,12 +84,12 @@ function makeOopClass(): IonIRNode {
 
 /** Pattern that matches every node with the given IonIR result. */
 function matchAll(ionNode: IonIRNode): PatternMatcher {
-  return { match: () => ionNode };
+  return { ruleId: 'test:matchAll', match: () => ionNode };
 }
 
 /** Pattern that matches nodes by CST type. */
 function matchType(type: string, ionNode: IonIRNode): PatternMatcher {
-  return { match: (node: CSTNode) => (node.type === type ? ionNode : null) };
+  return { ruleId: `test:matchType(${type})`, match: (node: CSTNode) => (node.type === type ? ionNode : null) };
 }
 
 /** LLM that always succeeds with the given IonIR node. */
@@ -391,6 +391,7 @@ describe('E: edge cases', () => {
 
   it('E5: pattern.match throws → error pushed for that node, pipeline continues', async () => {
     const throwingMatcher: PatternMatcher = {
+      ruleId: 'test:throwingMatcher',
       match: () => { throw new Error('matcher exploded'); },
     };
     const root = makeRoot([makeLeaf('a'), makeLeaf('b')]);

@@ -244,7 +244,7 @@ describe('exhaustiveness guard on resolveExpr (ION-69)', () => {
     const ast = parse('fn foo() = 1');
     // Inject an unrecognised kind into the fn body after building, simulating a
     // future AstExprNode variant that the switch does not handle.
-    const fnDecl = ast.decls[0] as Record<string, unknown>;
+    const fnDecl = ast.decls[0] as unknown as Record<string, unknown>;
     (fnDecl['body'] as Record<string, unknown>)['kind'] = 'UnknownFutureExpr';
     expect(() => bindModule(ast, 'test')).toThrow('Unhandled expr kind');
   });

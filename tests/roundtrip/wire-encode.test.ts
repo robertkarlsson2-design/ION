@@ -475,6 +475,7 @@ const { ionTypeArb, nodeArb } = fc.letrec<{ ionTypeArb: IonType; nodeArb: IonIRN
         params: fc.array(tie('ionTypeArb'), { maxLength: 2 }),
         ret: tie('ionTypeArb'),
         template: fc.string({ maxLength: 20 }),
+        paramNames: fc.array(fc.string({ minLength: 1, maxLength: 8 }), { maxLength: 2 }),
       }),
       span: spanArb,
       type: tie('ionTypeArb'),

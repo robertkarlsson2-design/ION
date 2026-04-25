@@ -2,19 +2,55 @@
   "name": "ion-compiler",
   "type": "module",
   "version": "0.1.0",
+  "description": "A token-efficient, AI-native programming language that compiles to JavaScript, TypeScript, and Python.",
+  "license": "MIT",
+  "homepage": "https://github.com/robertkarlsson2-design/ION#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/robertkarlsson2-design/ION.git"
+  },
+  "bugs": {
+    "url": "https://github.com/robertkarlsson2-design/ION/issues"
+  },
+  "keywords": [
+    "ion",
+    "compiler",
+    "language",
+    "ai",
+    "llm",
+    "transpiler",
+    "javascript",
+    "typescript",
+    "python",
+    "token-efficient"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "emitters",
+    "llm-skills",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "ion": "./dist/src/cli/ion.js"
   },
   "scripts": {
     "build:ion": "node scripts/compile-ion.mjs",
-    "build": "npm run build:ion && tsc",
+    "build:ts": "tsc",
+    "build": "npm run build:ts && npm run build:ion && npm run build:ts",
+    "clean": "rm -rf dist",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.test.json",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "bench:tokens": "node bench/count-tokens.mjs",
+    "prepublishOnly": "npm run clean && npm run build && npm test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.0",
-    "@dqbd/tiktoken": "^1.0.15",
+    "@dqbd/tiktoken": "^1.0.22",
     "tree-sitter-javascript": "^0.25.0",
     "tree-sitter-python": "^0.25.0",
     "tree-sitter-typescript": "^0.23.2",

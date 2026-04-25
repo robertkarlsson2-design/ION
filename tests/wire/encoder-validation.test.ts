@@ -129,7 +129,7 @@ describe('Suite V — newline validation', () => {
       target: 'js',
       module: 'some\nmodule',
       symbol: 'fn',
-      sig: { params: [], ret: intType, template: '$1()' },
+      sig: { params: [], ret: intType, template: '$1()', paramNames: [] },
       span,
       type: intType,
     };
@@ -178,7 +178,7 @@ describe('Suite V — newline validation', () => {
       target: 'bad\ntarget',
       module: 'legit',
       symbol: 'fn',
-      sig: { params: [], ret: intType, template: '$1()' },
+      sig: { params: [], ret: intType, template: '$1()', paramNames: [] },
       span,
       type: intType,
     };
@@ -192,7 +192,7 @@ describe('Suite V — newline validation', () => {
       target: 'js',
       module: 'legit',
       symbol: 'bad\nsym',
-      sig: { params: [], ret: intType, template: '$1()' },
+      sig: { params: [], ret: intType, template: '$1()', paramNames: [] },
       span,
       type: intType,
     };

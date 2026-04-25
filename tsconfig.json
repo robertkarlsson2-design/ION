@@ -13,6 +13,16 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "emitters/**/*", "src/ion-generated/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*",
+    "emitters/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/ion-generated/**"
+  ],
+  "files": [
+    "src/ion-generated/prelude/shake.ts"
+  ]
 }

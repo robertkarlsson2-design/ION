@@ -137,25 +137,25 @@ describe('prettyPrintNode — leaf nodes', () => {
   });
 
   it('ForeignRef', () => {
-    const sig = { params: [intType], ret: intType, template: '$1' };
+    const sig = { params: [intType], ret: intType, template: '$1', paramNames: ['x'] };
     const node: IonIRNode = { kind: 'ForeignRef', target: 'console.log', module: 'node:console', symbol: 'log', sig, span, type: intType };
     expect(prettyPrintNode(node)).toBe('@foreign("node:console::log")');
   });
 
   it('ForeignRef — double-quote in module name', () => {
-    const sig = { params: [], ret: intType, template: '$1' };
+    const sig = { params: [], ret: intType, template: '$1', paramNames: [] };
     const node: IonIRNode = { kind: 'ForeignRef', target: 'log', module: 'std::"foo"bar', symbol: 'log', sig, span, type: intType };
     expect(prettyPrintNode(node)).toBe('@foreign("std::\\"foo\\"bar::log")');
   });
 
   it('ForeignRef — double-quote in symbol name', () => {
-    const sig = { params: [], ret: intType, template: '$1' };
+    const sig = { params: [], ret: intType, template: '$1', paramNames: [] };
     const node: IonIRNode = { kind: 'ForeignRef', target: 'say"hi"', module: 'node:console', symbol: 'say"hi"', sig, span, type: intType };
     expect(prettyPrintNode(node)).toBe('@foreign("node:console::say\\"hi\\"")');
   });
 
   it('ForeignRef — backslash in module name', () => {
-    const sig = { params: [], ret: intType, template: '$1' };
+    const sig = { params: [], ret: intType, template: '$1', paramNames: [] };
     const node: IonIRNode = { kind: 'ForeignRef', target: 'fn', module: 'path\\to\\mod', symbol: 'fn', sig, span, type: intType };
     expect(prettyPrintNode(node)).toBe('@foreign("path\\\\to\\\\mod::fn")');
   });

@@ -55,6 +55,8 @@ function visitNode(node: IonIRNode): string {
     case 'Case': return 'Case';
     case 'Constructor': return 'Constructor';
     case 'Accessor': return 'Accessor';
+    case 'ListLit': return 'ListLit';
+    case 'MapLit': return 'MapLit';
     case 'ModuleRef': return 'ModuleRef';
     case 'ForeignRef': return 'ForeignRef';
     case 'Effect': return 'Effect';
@@ -67,6 +69,8 @@ function visitNode(node: IonIRNode): string {
     // Async
     case 'AsyncBlock': return 'AsyncBlock';
     case 'Await': return 'Await';
+    // Escape hatch
+    case 'RawInject': return 'RawInject';
     // ADT
     case 'AdtDecl': return 'AdtDecl';
     case 'AdtMatch': return 'AdtMatch';
@@ -90,6 +94,8 @@ function visitCoreNode(node: CoreNode): string {
     case 'Case': return 'Case';
     case 'Constructor': return 'Constructor';
     case 'Accessor': return 'Accessor';
+    case 'ListLit': return 'ListLit';
+    case 'MapLit': return 'MapLit';
     case 'ModuleRef': return 'ModuleRef';
     case 'ForeignRef': return 'ForeignRef';
     case 'Effect': return 'Effect';

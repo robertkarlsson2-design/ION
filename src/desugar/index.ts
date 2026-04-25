@@ -18,7 +18,6 @@ import type {
   LiteralNullNode,
   BinopKind,
   UnaryKind,
-  AstListLitNode,
 } from '../ast/nodes.js';
 import type { BindResult, ResolutionMap } from '../binder/index.js';
 import type { ModuleSymbolTable } from '../binder/symbol-table.js';
@@ -49,7 +48,6 @@ import type {
   ForeignRefNode,
   ForeignSignature,
   ModuleRefNode,
-  ListLitIRNode,
 } from '../ir/nodes.js';
 import type { IonType, FnType } from '../ir/types.js';
 import type { Span, SymbolId } from '../types.js';

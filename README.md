@@ -88,32 +88,32 @@ Same Ion source. Same logic. Idiomatic output per target.
 
 ## Why Ion
 
-**LLMs already know your target language.** When an agent writes Ion, it draws on everything it knows about JavaScript, Java, or Python — Ion is just a compressed grammar on top of that knowledge. The result is fewer tokens to write, fewer tokens to read, and cleaner output than asking an LLM to write Java directly.
+**LLMs already know your target language.** When an agent writes Ion, it draws on everything it knows about JavaScript, TypeScript, or Python — Ion is just a compressed grammar on top of that knowledge. The result is fewer tokens to write, fewer tokens to read, and cleaner output than asking an LLM to write the target directly.
 
-**48–61% fewer tokens than equivalent source.** Ion's surface syntax eliminates structural noise — braces, semicolons, boilerplate constructors, verbose type annotations. Measured across five real benchmarks, Ion is consistently more compact than every target it compiles to. The wire format goes further, achieving up to 90% effective cost reduction in cached multi-turn agent sessions.
+**~15–27% fewer output tokens than the target language.** Ion's surface syntax eliminates structural noise — braces, semicolons, boilerplate constructors, verbose type annotations. Measured with `cl100k_base` (the GPT-4 / Claude tokenizer) across five real benchmarks, Ion source is meaningfully more compact than the TypeScript and Python it compiles to, and slightly smaller than untyped JavaScript on logic-heavy code. The wire format compresses further by pooling repeated symbols and types, but the headline savings come from the surface grammar.
 
 **Two modes — one language.** Ion has a human-readable surface syntax for developers and a machine-optimized wire format for LLMs and the compiler. Your IDE always shows you the pretty form. The compiler and agents work on the wire form. You never see the difference.
 
-**Adding a new target language is a folder, not a fork.** Supporting a new output language means writing an emitter folder — a few YAML pattern files, a stdlib mapping, and a SKILL.md. No changes to the compiler.
+**Backends live in their own folder.** Each target language is a self-contained `emitters/<lang>/` directory containing the emitter, an `emit.md` style guide, and a `patterns/` set of YAML rules used by the ingest tool. Adding a new target means writing one new emitter file plus registering it in `src/cli/build.ts`.
 
-**Built-in escape hatch for emitter gaps.** When an emitter doesn't yet support a construct, use `raw("verbatim target code")` inline. Every emitter is guaranteed to pass it through unchanged. This means LLMs can always make forward progress — write as much as possible in ION, drop to `raw(...)` only for the unsupported parts, and file an issue. See `llm-skills/write-ion.md` for the full gap-handling workflow.
+**Built-in escape hatch for emitter gaps.** When an emitter doesn't yet support a construct, use `raw("verbatim target code")` inline. Every emitter is guaranteed to pass it through unchanged. This means LLMs can always make forward progress — write as much as possible in Ion, drop to `raw(...)` only for the unsupported parts, and file an issue. See `llm-skills/write-ion.md` for the full gap-handling workflow.
 
 ---
 
 ## Token efficiency — measured
 
-Five real benchmarks, compiled to all three current targets. Token counts use `cl100k` (GPT-4 / Claude tokenizer).
+Five real benchmarks, tokenized with `cl100k_base` (the GPT-4 / Claude tokenizer). Reproduce with `node bench/count-tokens.mjs`.
 
 | Benchmark | Ion | JavaScript | TypeScript | Python |
 |---|---|---|---|---|
-| fibonacci | 18 | 15 (0.83×) | 17 (0.94×) | 15 (0.83×) |
-| list pipeline | 42 | 116 (2.76×) | 160 (3.81×) | 56 (1.33×) |
-| stats | 56 | 74 (1.32×) | 93 (1.66×) | 68 (1.21×) |
-| primes | 32 | 63 (1.97×) | 82 (2.56×) | 38 (1.19×) |
-| string ops | 38 | 91 (2.39×) | 127 (3.34×) | 43 (1.13×) |
-| **total** | **186** | **359 (1.93×)** | **479 (2.58×)** | **220 (1.18×)** |
+| fibonacci | 34 | 32 (0.94×) | 35 (1.03×) | 35 (1.03×) |
+| list pipeline | 92 | 103 (1.12×) | 131 (1.42×) | 113 (1.23×) |
+| stats | 99 | 110 (1.11×) | 133 (1.34×) | 140 (1.41×) |
+| primes | 73 | 125 (1.71×) | 135 (1.85×) | 94 (1.29×) |
+| string ops | 84 | 78 (0.93×) | 92 (1.10×) | 101 (1.20×) |
+| **total** | **382** | **448 (1.17×)** | **526 (1.38×)** | **483 (1.26×)** |
 
-Multipliers show how many times larger the compiled output is versus the Ion source. A 1.93× JS ratio means the same logic written directly in JavaScript costs nearly twice the tokens.
+Multipliers show how many tokens the target language costs relative to Ion. A 1.38× TypeScript ratio means writing the same logic in TypeScript costs 38% more tokens than writing it in Ion.
 
 ### Why this matters for LLM cost
 
@@ -121,16 +121,27 @@ LLMs are billed on both input tokens (reading/reasoning about code) and output t
 
 **If an LLM generates Ion source and the compiler emits the target language:**
 
-| Approach | Output tokens | Relative cost |
+| Approach | Output tokens (this benchmark) | Relative cost |
 |---|---|---|
-| Generate TypeScript directly | 479 | baseline |
-| Generate Ion → compile to TS | 186 | ~61% cheaper |
-| Generate JavaScript directly | 359 | baseline |
-| Generate Ion → compile to JS | 186 | ~48% cheaper |
+| Generate TypeScript directly | 526 | baseline |
+| Generate Ion → compile to TS | 382 | ~27% cheaper |
+| Generate JavaScript directly | 448 | baseline |
+| Generate Ion → compile to JS | 382 | ~15% cheaper |
+| Generate Python directly | 483 | baseline |
+| Generate Ion → compile to Python | 382 | ~21% cheaper |
 
-At scale this compounds: a system generating 1 million TypeScript files saves ~293 million output tokens per run. At $15/M output tokens, that's ~$4,400 per million generations — from tokenizer efficiency alone, before any caching.
+The savings are concentrated in code that's algorithmic, statically typed, or pipeline-heavy. On small numeric snippets and string-heavy code, Ion is roughly tokens-neutral with untyped JavaScript — its type annotations cost what JS saves by skipping them.
 
-The tradeoff: the LLM must know Ion syntax. A one-time system prompt cost of ~500 tokens covers the full grammar and pays back on the second generation.
+The tradeoff: the LLM must know Ion syntax. A one-time system-prompt cost of a few hundred tokens covers the grammar; pays back on the second generation against TypeScript.
+
+> **Note on the wire format.** `.ionw` compresses further by pooling repeated symbols and types into 1-letter aliases (see `src/wire/`). The headline savings reported above are for surface syntax only; wire-format gains depend on workload (multi-file projects with shared symbols benefit most) and are not yet benchmarked end-to-end.
+
+> **See your own savings.** Every `ion build` prints a token-savings summary measured against the actual emitted output. Example:
+> ```
+> 3 file(s) compiled, 0 error(s)
+> tokens (cl100k): Ion 264 → TS 709 — saved 445 (63%) vs writing TS directly
+> ```
+> Add `--json` to get a per-file breakdown machine-readably, or `--no-token-report` to suppress it.
 
 ### Example: fibonacci
 
@@ -140,29 +151,29 @@ pub fn fib(n: Int) -> Int =
   else fib(n - 1) + fib(n - 2)
 ```
 
-Emits to JavaScript (15 tokens — same as Ion for pure numeric code):
+Emits to JavaScript:
 ```js
 const fib = n => n <= 1 ? n : fib(n - 1) + fib(n - 2);
 ```
 
-Emits to TypeScript (17 tokens):
+Emits to TypeScript:
 ```ts
 const fib = (n: number): number => n <= 1 ? n : fib(n - 1) + fib(n - 2);
 ```
 
-Emits to Python (15 tokens):
+Emits to Python:
 ```python
 def fib(n):
     return n if n <= 1 else fib(n - 1) + fib(n - 2)
 ```
 
-The savings are largest when prelude functions are used — each Ion `map`, `filter`, `fold` call maps to a one-word token, while the equivalent target-language boilerplate expands to 5–15 tokens per call.
+On pure numeric code with one parameter, Ion and the targets are token-comparable. Ion's lead grows on code that uses prelude functions (`map`, `filter`, `fold`) and on type-annotated TypeScript.
 
 ---
 
 ## Status
 
-> Ion is in active development. The compiler frontend is complete. The JavaScript backend and `ion build` CLI are in progress.
+> Ion is in active development. The compiler frontend, IR, and JS/TS/Python backends are production-ready. Several additional emitters exist as code but are not yet wired into the `ion build` CLI.
 
 | Component | Status |
 |---|---|
@@ -171,25 +182,30 @@ The savings are largest when prelude functions are used — each Ion `map`, `fil
 | Lexer | ✅ Complete |
 | Parser | ✅ Complete |
 | Binder (symbol resolution) | ✅ Complete |
-| Type checker | ✅ Complete |
+| Type checker (incl. effect tracking) | ✅ Complete |
 | AST desugarer → IonIR | ✅ Complete |
-| `ion fmt` CLI | ✅ Complete |
-| Pattern matching engine | ✅ Complete |
-| VS Code extension | ✅ Complete |
-| JavaScript emitter | ✅ Complete |
-| TypeScript emitter | ✅ Complete |
-| Python emitter | ✅ Complete |
-| HTML emitter | ✅ Complete |
-| React (JSX/TSX) emitter | ✅ Complete |
-| Vue SFC emitter | ✅ Complete |
-| Lightning Web Component (LWC) emitter | ✅ Complete |
-| Salesforce Apex emitter | ✅ Complete |
-| `ion build` CLI | ✅ Complete |
+| Pattern matching engine + exhaustiveness check | ✅ Complete |
 | `RawInject` escape hatch (`raw(...)`) | ✅ Complete |
-| LLM skill guides (`llm-skills/`) | ✅ Complete |
+| `ion build` CLI | ✅ Complete (targets: JS, TS, Python) |
+| `ion check` CLI | ✅ Complete |
+| `ion fmt` CLI | ✅ Complete |
 | `ion ingest` (convert existing code) | ✅ Complete |
-| Java plugin | 📋 Planned — Phase 5 |
-| LSP server | 📋 Planned — Phase 4 |
+| `ion tokens` CLI | ✅ Complete |
+| `ion grammar` CLI | ✅ Complete |
+| JavaScript emitter | ✅ Complete (wired) |
+| TypeScript emitter | ✅ Complete (wired) |
+| Python emitter | ✅ Complete (wired) |
+| HTML emitter | 🚧 Code present, not wired into CLI |
+| React (JSX/TSX) emitter | 🚧 Code present, not wired into CLI |
+| Vue SFC emitter | 🚧 Code present, not wired into CLI |
+| Lightning Web Component (LWC) emitter | 🚧 Code present, not wired into CLI |
+| Salesforce Apex emitter | 🚧 Code present, not wired into CLI |
+| VS Code extension (`ion-vscode/`) | ✅ Syntax highlighting + formatter |
+| LSP server | 🚧 Code present, no `ion lsp` launcher yet |
+| LLM skill guides (`llm-skills/`) | ✅ Complete |
+| Java plugin | 📋 Planned |
+
+The five UI/Salesforce emitters live in `emitters/{html,react,vue,lwc,apex}/emit.ts` and are exercised by tests in `tests/emit/` and `tests/emitters/`. To use them today you must call them programmatically; the planned next step is registering them in `src/cli/build.ts:getEmitter()` and adding `--target` validation.
 
 ---
 
@@ -221,10 +237,10 @@ Every `.ion` file produces exactly one output file. The mapping is always 1-to-1
 ### The compiler pipeline
 
 ```
-.ion source → Lexer → Parser → Type Checker → IonIR → Plugin → Output
+.ion source → Lexer → Parser → AST → Binder → Type Checker → Desugarer → IonIR → Emitter → Output
 ```
 
-IonIR is the stable intermediate representation shared by all target backends. It is versioned, JSON-serializable, and the boundary between the frontend and all plugins. Rewriting the frontend in Rust (planned) or adding a new backend requires no changes to the other side.
+IonIR is the stable intermediate representation shared by all target backends. It is versioned (`ionir: '1.0'`), JSON-serializable, and the boundary between the frontend and all backends. Rewriting the frontend (e.g. in Rust) or adding a new backend requires no changes to the other side.
 
 ### Surface syntax vs wire format
 
@@ -342,39 +358,49 @@ fn new_uuid() -> Str !io
 
 ---
 
-## Plugin system
+## Backend layout
 
-Each target language is a plugin — a self-contained folder the compiler loads at build time.
+Each target language is a folder under `emitters/`. The compiler dispatches to a backend by importing its emitter function and registering it in `src/cli/build.ts`.
 
 ```
 emitters/javascript/
-├── SKILL.md          ← compiler config (YAML frontmatter) + LLM instructions (markdown body)
-├── stdlib.ion        ← maps Ion stdlib calls to JS equivalents
-├── patterns/         ← YAML rules for recognizing and converting JS idioms
-│   ├── for-to-foreach.yaml
-│   └── promise-to-async.yaml
-└── examples/         ← Ion ↔ JS pairs used as few-shot prompts and regression tests
+├── emit.ts        ← the emitter — walks IonIR and produces target source
+├── emit.md        ← style guide / convention notes for this target
+├── patterns/      ← YAML rules used by `ion ingest` to convert target → Ion
+├── parser.ts      ← Tree-sitter wrapper used by ingest
+├── printer.ts     ← code-formatting helpers
+└── ...            ← target-specific helpers (e.g. js-ast.ts)
 ```
 
-The `stdlib.ion` file is bidirectional — it drives both emission (Ion → JS) and ingestion (JS → Ion):
+Each emitter exports a single function, e.g.:
 
-```ion
-extern "javascript" {
-  fn push(a: List<T>, x: T)    = "$1.push($2)";
-  fn map(a: List<T>, f: T->U)  = "$1.map($2)";
-  fn first(a: List<T>)         = "$1[0] ?? null";
-  type List<T>                 = "Array<$T>";
-  type Option<T>               = "$T | null";
+```ts
+export function emitJS(module: IonIRModule): string;
+```
+
+The CLI registers it explicitly:
+
+```ts
+// src/cli/build.ts
+function getEmitter(target: string): EmitFn | null {
+  if (target === 'javascript') return emitJS;
+  if (target === 'typescript') return emitTS;
+  if (target === 'python') return emitPython;
+  return null;
 }
 ```
 
-**Adding a new target language** means creating a `emitters/{language}/` folder with these files. No changes to the compiler.
+**Adding a new target language** means writing an `emit.ts` against the IonIR in `src/ir/nodes.ts`, optionally adding ingest patterns under `patterns/`, and registering the emitter in `getEmitter()`. The IR is the only contract the emitter must conform to — the rest of the compiler is unaware of which target is selected.
+
+> A folder-discovered plugin loader (so adding a backend requires zero code changes) is on the roadmap — the IR is already structured for it. Today the registration step is one line.
 
 ---
 
 ## Frontend and Salesforce targets
 
-The same `.ion` file can emit to multiple frontend formats simultaneously. A single ION module describing a claims form produces:
+> **Status:** The five targets in this section (`html`, `react`, `vue`, `lwc`, `apex`) are implemented as emitter modules with passing unit tests, but are **not yet exposed through the `ion build` CLI**. Wiring them up is tracked as the next milestone. Until then, the emitters can be invoked programmatically — see `tests/emit/` for usage.
+
+The same `.ion` file can emit to multiple frontend formats simultaneously. A single Ion module describing a claims form produces:
 
 | Target | Output |
 |---|---|
@@ -476,8 +502,9 @@ The ingestion pipeline only writes to `ion/` — your original source files are 
 ```bash
 # Compile
 ion build                          # compile all .ion files per ion.config.json
-ion build --target java            # override target language
+ion build --target typescript      # override target language (javascript | typescript | python)
 ion build --watch                  # watch mode, incremental recompile
+ion build --no-token-report        # suppress the per-build token-savings summary
 
 # Type checking
 ion check src/api/users.ion        # parse and type-check one file
@@ -490,16 +517,15 @@ ion fmt --wire src/api/users.ion   # convert to wire format
 ion fmt --pretty src/api/users.ionw  # convert wire to surface syntax
 ion fmt --check                    # exit non-zero if file would change (CI)
 
-# Ingestion
+# Ingestion (convert existing source to Ion)
 ion ingest src/users.js --skill javascript
 ion ingest src/ --skill javascript --batch --report
 
 # Token analysis
 ion tokens src/api/users.ion       # report wire vs pretty token counts
 
-# Plugin management
-ion plugin new rust                # scaffold a new language plugin folder
-ion plugin validate emitters/rust    # validate plugin against interface spec
+# Grammar inspection
+ion grammar                        # print the active grammar definition
 ```
 
 ---
@@ -512,19 +538,27 @@ git clone https://github.com/robertkarlsson2-design/ION.git
 cd ION
 npm install
 npm run build
+npm link                # exposes the `ion` binary on your PATH
 
-# Create a new project
-mkdir my-project && cd my-project
-ion init --target javascript
+# Set up a project — Ion uses an `ion/` folder convention
+mkdir -p my-project/ion/src && cd my-project
 
-# Write some Ion
+cat > ion/ion.config.json << 'EOF'
+{
+  "version": "1",
+  "target": "javascript",
+  "rootDir": "./src",
+  "outDir": "../"
+}
+EOF
+
 cat > ion/src/hello.ion << 'EOF'
 module hello
 
 fn main() = console.log("Hello, World!")
 EOF
 
-# Compile
+# Compile (run from the directory containing `ion/`)
 ion build
 
 # Output appears at src/hello.js
@@ -535,7 +569,7 @@ cat src/hello.js
 
 ## Design decisions
 
-**Why not just use TypeScript?** TypeScript is a superset of JavaScript, which means it inherits JavaScript's verbosity. Measured across five benchmarks, Ion source is 61% smaller than the TypeScript it compiles to. Ion's structural compression (data classes replacing POJOs, `?` replacing try/catch, pipelines replacing nested calls) drives that gap — and Ion's wire format and constrained-decoding grammar make it the first language designed to be *written* by an LLM with systematically fewer errors.
+**Why not just use TypeScript?** TypeScript is a superset of JavaScript, which means it inherits JavaScript's verbosity. Measured across five benchmarks, Ion source is ~27% smaller than the TypeScript it compiles to. Ion's structural compression (data classes replacing POJOs, `?` replacing try/catch, pipelines replacing nested calls) drives that gap — and Ion's wire format and constrained-decoding grammar make it amenable to being *written* by an LLM with systematically fewer errors.
 
 **Why braces, not indentation?** Python's token efficiency advantage comes from training data volume, not indentation syntax. A new language cannot rely on that. Braces are unambiguous, familiar to LLMs from C/Java/JS/Rust training data, and parse correctly from partial files.
 

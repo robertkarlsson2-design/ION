@@ -315,7 +315,7 @@ describe('D7: ForeignRef node', () => {
           target: 'js',
           module: 'console',
           symbol: 'log',
-          sig: { params: [{ kind: 'Str' }], ret: { kind: 'Unit' }, template: '$1.log($2)' },
+          sig: { params: [{ kind: 'Str' }], ret: { kind: 'Unit' }, template: '$1.log($2)', paramNames: ['msg'] },
           span,
           type: { kind: 'Unit' },
         },
