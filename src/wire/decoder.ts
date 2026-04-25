@@ -474,6 +474,18 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
     return { kind: 'Literal', value: parseLiteral(cur), span: WIRE_SPAN, type: { kind: 'Str' } };
   }
 
+  // ── List literal [elem1,elem2,...] ───────────────────────────────────────
+  if (c === '[') {
+    cur.pos++;
+    const elements: IonIRNode[] = [];
+    while (peek(cur) !== ']') {
+      if (elements.length > 0) consume(cur, ',');
+      elements.push(parseNode(cur, ctx, depth + 1));
+    }
+    consume(cur, ']');
+    return { kind: 'ListLit', elements, span: WIRE_SPAN, type: { kind: 'Unit' } };
+  }
+
   // ── Numeric literal (int / float, possibly negative) ────────────────────
   if (c === '-' || /[0-9]/.test(c)) {
     const value = parseLiteral(cur);

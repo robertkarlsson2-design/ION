@@ -509,3 +509,76 @@ describe('WireDecodeError', () => {
     expect(e).toBeInstanceOf(Error);
   });
 });
+
+// ---------------------------------------------------------------------------
+// D10: list literal [...]  — decoder parity with encoder
+// ---------------------------------------------------------------------------
+
+describe('D10: list literal', () => {
+  it('decodes an empty list literal []', () => {
+    const wire = `I1\nM test v=0.1.0\nS\nF let xs:never=[];0\n`;
+    const mod = decodeModule(wire);
+    expect('error' in mod).toBe(false);
+    if ('error' in mod) return;
+    const decl = mod.decls[0];
+    expect(decl?.kind).toBe('Let');
+    if (decl?.kind !== 'Let') return;
+    expect(decl.value.kind).toBe('ListLit');
+    if (decl.value.kind !== 'ListLit') return;
+    expect(decl.value.elements).toHaveLength(0);
+  });
+
+  it('decodes a single-element list [x]', () => {
+    const wire = `I1\nM test v=0.1.0\nS\nF let xs:never=[42];0\n`;
+    const mod = decodeModule(wire);
+    expect('error' in mod).toBe(false);
+    if ('error' in mod) return;
+    const decl = mod.decls[0];
+    if (decl?.kind !== 'Let') return;
+    expect(decl.value.kind).toBe('ListLit');
+    if (decl.value.kind !== 'ListLit') return;
+    expect(decl.value.elements).toHaveLength(1);
+    const el = decl.value.elements[0];
+    expect(el?.kind).toBe('Literal');
+    if (el?.kind !== 'Literal') return;
+    expect(el.value).toEqual({ kind: 'Int', value: 42 });
+  });
+
+  it('decodes a multi-element list ["a","b","c"]', () => {
+    const wire = `I1\nM test v=0.1.0\nS\nF let xs:never=["a","b","c"];0\n`;
+    const mod = decodeModule(wire);
+    expect('error' in mod).toBe(false);
+    if ('error' in mod) return;
+    const decl = mod.decls[0];
+    if (decl?.kind !== 'Let') return;
+    if (decl.value.kind !== 'ListLit') return;
+    expect(decl.value.elements).toHaveLength(3);
+    expect((decl.value.elements[1] as any).value).toEqual({ kind: 'Str', value: 'b' });
+  });
+
+  it('round-trips a ListLit through encode → decode', () => {
+    const mod: IonIRModule = {
+      ionir: '1.0', module: 'test', version: '0.1.0',
+      dialects: [], imports: [], data: [],
+      decls: [{
+        kind: 'Let', name: 'nums', symbolId: sid,
+        bindingType: { kind: 'Unit' },
+        value: {
+          kind: 'ListLit',
+          elements: [
+            { kind: 'Literal', value: { kind: 'Int', value: 1 }, span, type: { kind: 'Int' } },
+            { kind: 'Literal', value: { kind: 'Int', value: 2 }, span, type: { kind: 'Int' } },
+          ],
+          span, type: { kind: 'Unit' },
+        },
+        body: { kind: 'Literal', value: { kind: 'Int', value: 0 }, span, type: { kind: 'Int' } },
+        span, type: { kind: 'Unit' },
+      }],
+    };
+    const w1 = encodeModule(mod);
+    const decoded = decodeModule(w1);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    expect(encodeModule(decoded)).toBe(w1);
+  });
+});

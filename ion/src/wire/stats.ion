@@ -1,0 +1,4 @@
+I1
+M ion.wire.stats v=0.1.0 d=core
+S a=split b=length af=__sub__ ag=__div__
+F let byteSize:never=(src:never)->src.b;0 let lineCount:never=(src:never)->src->a("\n").b;0 let expansionRatio:never=(wire:never,compiled:never)->ag(compiled.b,wire.b);0 let compressionRate:never=(wire:never,source:never)->ag(af(source.b,wire.b),source.b);0

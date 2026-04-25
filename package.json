@@ -6,7 +6,8 @@
     "ion": "./dist/src/cli/ion.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build:ion": "node scripts/compile-ion.mjs",
+    "build": "npm run build:ion && tsc",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.test.json",
     "lint": "eslint src"
