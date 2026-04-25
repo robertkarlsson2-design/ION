@@ -163,6 +163,105 @@ pub extern fn toInt(s: Str) -> Int
 
 @foreign("", "length", "$1.length")
 pub extern fn strLen(s: Str) -> Int
+
+@foreign("", "charAt", "$1[$2] ?? ''")
+pub extern fn strAt(s: Str, i: Int) -> Str
+
+@foreign("", "slice", "$1.slice($2,$3)")
+pub extern fn strSlice(s: Str, from_: Int, to: Int) -> Str
+
+@foreign("", "charCodeAt", "$1.charCodeAt($2)")
+pub extern fn strCharCode(s: Str, i: Int) -> Int
+
+@foreign("String", "fromCharCode", "String.fromCharCode($1)")
+pub extern fn charFromCode(n: Int) -> Str
+
+@foreign("", "padStart", "$1.padStart($2,$3)")
+pub extern fn strPadStart(s: Str, len: Int, pad: Str) -> Str
+
+@foreign("", "padEnd", "$1.padEnd($2,$3)")
+pub extern fn strPadEnd(s: Str, len: Int, pad: Str) -> Str
+
+@foreign("", "match", "$1.match(new RegExp($2)) !== null")
+pub extern fn strMatchesRegex(s: Str, pattern: Str) -> Bool
+
+@foreign("Map", "new", "new Map()")
+pub extern fn mapNew() -> Map<a, b>
+
+@foreign("", "get", "$1.get($2)")
+pub extern fn mapGet(m: Map<k, v>, k: k) -> v
+
+@foreign("", "set", "($1.set($2,$3),$1)")
+pub extern fn mapSet(m: Map<k, v>, k: k, v: v) -> Map<k, v>
+
+@foreign("", "has", "$1.has($2)")
+pub extern fn mapHas(m: Map<k, v>, k: k) -> Bool
+
+@foreign("", "delete", "($1.delete($2),$1)")
+pub extern fn mapDelete(m: Map<k, v>, k: k) -> Map<k, v>
+
+@foreign("", "size", "$1.size")
+pub extern fn mapSize(m: Map<k, v>) -> Int
+
+@foreign("Array", "from", "[...$1.keys()]")
+pub extern fn mapKeys(m: Map<k, v>) -> List<k>
+
+@foreign("Array", "from", "[...$1.values()]")
+pub extern fn mapValues(m: Map<k, v>) -> List<v>
+
+@foreign("Array", "from", "[...$1.entries()].map(([k,v])=>[k,v])")
+pub extern fn mapEntries(m: Map<k, v>) -> List<List<a>>
+
+@foreign("", "at", "$1[$2]")
+pub extern fn arrGet(a: List<v>, i: Int) -> v
+
+@foreign("", "push", "($1.push($2),$1)")
+pub extern fn arrPush(a: List<v>, v: v) -> List<v>
+
+@foreign("", "pop", "($1.pop(),$1)")
+pub extern fn arrPop(a: List<v>) -> List<v>
+
+@foreign("", "includes", "$1.includes($2)")
+pub extern fn arrIncludes(a: List<v>, v: v) -> Bool
+
+@foreign("", "findIndex", "$1.findIndex($2)")
+pub extern fn arrFindIndex(a: List<v>, pred: fn(v) -> Bool) -> Int
+
+@foreign("", "indexOf", "$1.indexOf($2)")
+pub extern fn arrIndexOf(a: List<v>, v: v) -> Int
+
+@foreign("", "join", "$1.join('')")
+pub extern fn arrJoin(a: List<Str>) -> Str
+
+@foreign("", "parseInt", "parseInt($1,$2)")
+pub extern fn parseIntRadix(s: Str, radix: Int) -> Int
+
+@foreign("", "parseFloat", "parseFloat($1)")
+pub extern fn parseFloatStr(s: Str) -> Float
+
+@foreign("Number", "isNaN", "Number.isNaN($1)")
+pub extern fn isNaN(n: Float) -> Bool
+
+@foreign("Number", "isFinite", "Number.isFinite($1)")
+pub extern fn isFinite(n: Float) -> Bool
+
+@foreign("", "toFixed", "$1.toFixed($2)")
+pub extern fn numToFixed(n: Float, digits: Int) -> Str
+
+@foreign("JSON", "stringify", "JSON.stringify($1)")
+pub extern fn jsonStringify(v: a) -> Str
+
+@foreign("JSON", "parse", "JSON.parse($1)")
+pub extern fn jsonParse(s: Str) -> a
+
+@foreign("process", "argv", "process.argv.slice($1)")
+pub extern fn processArgs(skip: Int) -> List<Str>
+
+@foreign("process", "env", "process.env[$1] ?? ''")
+pub extern fn processEnv(key: Str) -> Str
+
+@foreign("process", "exit", "process.exit($1)")
+pub extern fn exit(code: Int) -> Unit
 `;
 
 let _cached: readonly AstDeclNode[] | null = null;
