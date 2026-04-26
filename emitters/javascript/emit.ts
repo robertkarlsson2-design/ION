@@ -156,6 +156,7 @@ function buildExpr(node: IonIRNode, ctx: BuildCtx): JsNode {
     case 'Resume': return buildResume(node, ctx);
     case 'Effect': return buildExpr(node.body, ctx);
     case 'ListLit':
+    case 'TupleLit':
       return { kind: 'JsArray', elems: node.elements.map(e => buildExpr(e, ctx)) };
     case 'MapLit':
       return {
@@ -336,7 +337,7 @@ function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
 }
 
 function buildPatternCond(pat: CasePattern, scrutinee: JsNode): JsNode {
-  if (pat.kind === 'Wildcard' || pat.kind === 'Var') {
+  if (pat.kind === 'Wildcard' || pat.kind === 'Var' || pat.kind === 'Tuple') {
     return { kind: 'JsBool', value: true };
   }
   if (pat.kind === 'Constructor') {

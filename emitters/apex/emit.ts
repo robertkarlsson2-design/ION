@@ -191,7 +191,8 @@ export function emitApexExpr(node: IonIRNode): string {
       return emitApexExpr(cur);
     }
 
-    case 'ListLit': {
+    case 'ListLit':
+    case 'TupleLit': {
       const elements = node.elements.map(emitApexExpr).join(', ');
       return `new List<Object>{${elements}}`;
     }

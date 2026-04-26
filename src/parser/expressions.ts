@@ -28,6 +28,7 @@ import type {
   PropagateExprNode,
   GroupExprNode,
   ListLitExprNode,
+  TupleExprNode,
 } from './cst.js';
 
 // ---------------------------------------------------------------------------
@@ -471,13 +472,32 @@ class Parser {
     return this.nonTrivia[i]?.kind === TokenKind.ARROW;
   }
 
-  private parseGroup(trivia: readonly TriviaNode[]): GroupExprNode {
+  private parseGroup(trivia: readonly TriviaNode[]): GroupExprNode | TupleExprNode {
     const open = this.expect(TokenKind.LPAREN);
-    const inner = this.parseExpr();
+    const first = this.parseExpr();
+    if (this.peekKind() === TokenKind.COMMA) {
+      const elements: ExprNode[] = [first];
+      this.consume(); // comma
+      while (this.peekKind() !== TokenKind.RPAREN && this.peekKind() !== TokenKind.EOF) {
+        elements.push(this.parseExpr());
+        if (this.peekKind() === TokenKind.COMMA) {
+          this.consume();
+        } else {
+          break;
+        }
+      }
+      const close = this.expect(TokenKind.RPAREN);
+      return {
+        kind: 'TupleExpr',
+        elements,
+        span: spanMerge(open.span, close.span),
+        leadingTrivia: trivia,
+      };
+    }
     const close = this.expect(TokenKind.RPAREN);
     return {
       kind: 'GroupExpr',
-      inner,
+      inner: first,
       span: spanMerge(open.span, close.span),
       leadingTrivia: trivia,
     };

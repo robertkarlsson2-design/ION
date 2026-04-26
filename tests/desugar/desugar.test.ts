@@ -5,7 +5,7 @@ import { buildModule } from '../../src/ast/builder.js';
 import { bindModule } from '../../src/binder/index.js';
 import { checkModule } from '../../src/checker/index.js';
 import { desugarModule } from '../../src/desugar/index.js';
-import type { IonIRModule, LetNode, AbsNode, LiteralNode, VarNode, AppNode, CaseNode, ConstructorPattern, LiteralPattern } from '../../src/ir/nodes.js';
+import type { IonIRModule, LetNode, AbsNode, LiteralNode, VarNode, AppNode, CaseNode, ConstructorPattern, LiteralPattern, TupleLitIRNode, CaseArm, TuplePattern } from '../../src/ir/nodes.js';
 
 function desugar(src: string): IonIRModule {
   const tokens = lex(src, 'test.ion');
@@ -273,5 +273,43 @@ describe('desugarModule — UnaryExpr → AppNode with __neg__', () => {
     const callee = app.callee as VarNode;
     expect(callee.kind).toBe('Var');
     expect(callee.name).toBe('__neg__');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 16. TupleExpr → TupleLitIRNode
+// ---------------------------------------------------------------------------
+
+describe('desugarModule — TupleExpr → TupleLitIRNode', () => {
+  it('fn pair(a: Int, b: Str) -> (Int, Str) = (a, b) → body is TupleLitIRNode with 2 elements', () => {
+    const ir = desugar('fn pair(a: Int, b: Str) -> (Int, Str) = (a, b)');
+    const letDecl = ir.decls[0] as LetNode;
+    const abs = letDecl.value as AbsNode;
+    const tup = abs.body as TupleLitIRNode;
+    expect(tup.kind).toBe('TupleLit');
+    expect(tup.elements).toHaveLength(2);
+    expect((tup.elements[0] as VarNode).name).toBe('a');
+    expect((tup.elements[1] as VarNode).name).toBe('b');
+    expect(tup.type).toEqual({ kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'Str' }] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 17. TuplePat → TuplePattern (not Wildcard)
+// ---------------------------------------------------------------------------
+
+describe('desugarModule — TuplePat → TuplePattern in Case arm', () => {
+  it('match (a, b) | (x, y) -> x → arm pattern is TuplePattern with 2 VarPatterns', () => {
+    const ir = desugar('fn fst(p: (Int, Int)) -> Int = match p | (x, y) -> x');
+    const letDecl = ir.decls[0] as LetNode;
+    const abs = letDecl.value as AbsNode;
+    const caseNode = abs.body as CaseNode;
+    expect(caseNode.kind).toBe('Case');
+    const arm = caseNode.arms[0] as CaseArm;
+    const pat = arm.pattern as TuplePattern;
+    expect(pat.kind).toBe('Tuple');
+    expect(pat.elements).toHaveLength(2);
+    expect(pat.elements[0]!.kind).toBe('Var');
+    expect(pat.elements[1]!.kind).toBe('Var');
   });
 });

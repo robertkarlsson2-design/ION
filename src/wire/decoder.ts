@@ -450,6 +450,17 @@ function parseCasePattern(cur: Cursor, ctx: DecoderContext): CasePattern {
     return { kind: 'Wildcard', span: WIRE_SPAN };
   }
 
+  if (c === '[') {
+    cur.pos++;
+    const elements: CasePattern[] = [];
+    if (peek(cur) !== ']') {
+      elements.push(parseCasePattern(cur, ctx));
+      while (tryConsume(cur, ',')) elements.push(parseCasePattern(cur, ctx));
+    }
+    consume(cur, ']');
+    return { kind: 'Tuple', elements, span: WIRE_SPAN };
+  }
+
   if (c === '"' || (c !== undefined && /[0-9]/.test(c)) || c === '-') {
     return { kind: 'Literal', value: parseLiteral(cur), span: WIRE_SPAN };
   }
@@ -532,6 +543,18 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
     }
     consume(cur, ']');
     return { kind: 'ListLit', elements, span: WIRE_SPAN, type: { kind: 'Unit' } };
+  }
+
+  // ── Tuple literal tup(elem1,elem2,...) ──────────────────────────────────
+  if (cur.text.startsWith('tup(', cur.pos)) {
+    cur.pos += 4;
+    const elements: IonIRNode[] = [];
+    if (peek(cur) !== ')') {
+      elements.push(parseNode(cur, ctx, depth + 1));
+      while (tryConsume(cur, ',')) elements.push(parseNode(cur, ctx, depth + 1));
+    }
+    consume(cur, ')');
+    return { kind: 'TupleLit', elements, span: WIRE_SPAN, type: { kind: 'Unit' } };
   }
 
   // ── Numeric literal (int / float, possibly negative) ────────────────────

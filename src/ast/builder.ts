@@ -226,6 +226,13 @@ export function buildExpr(cst: ExprNode): AstExprNode {
         elements: cst.elements.map(buildExpr),
         span: cst.span,
       };
+
+    case 'TupleExpr':
+      return {
+        kind: 'TupleExpr',
+        elements: cst.elements.map(buildExpr),
+        span: cst.span,
+      };
   }
 }
 

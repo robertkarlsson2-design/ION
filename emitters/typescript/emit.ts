@@ -476,6 +476,8 @@ function emitTsExpr(node: IonIRNode): string {
 
     case 'ListLit': return `[${node.elements.map(emitTsExpr).join(', ')}]`;
 
+    case 'TupleLit': return `[${node.elements.map(emitTsExpr).join(', ')}]`;
+
     case 'MapLit':
       return `new Map([${node.entries.map(e => `[${emitTsExpr(e.key)}, ${emitTsExpr(e.value)}]`).join(', ')}])`;
 
@@ -584,7 +586,7 @@ function emitTsCase(node: CaseNode): string {
 }
 
 function emitTsPatCond(pat: import('../../src/ir/nodes.js').CasePattern, scrutinee: string): string {
-  if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'true';
+  if (pat.kind === 'Wildcard' || pat.kind === 'Var' || pat.kind === 'Tuple') return 'true';
   if (pat.kind === 'Constructor') return `${scrutinee}._tag === "${pat.ctorName}"`;
   const v = pat.value;
   if (v.kind === 'Bool') return `${scrutinee} === ${v.value}`;
@@ -621,6 +623,7 @@ export function emitTS(irModule: IonIRModule): string {
       case 'Case': collectPrelude(node.scrutinee); node.arms.forEach(a => collectPrelude(a.body)); break;
       case 'Accessor': collectPrelude(node.receiver); break;
       case 'ListLit': node.elements.forEach(collectPrelude); break;
+      case 'TupleLit': node.elements.forEach(collectPrelude); break;
       case 'MapLit': node.entries.forEach(e => { collectPrelude(e.key); collectPrelude(e.value); }); break;
       case 'OopClass': node.methods.forEach(m => { if (m.body !== undefined) collectPrelude(m.body); }); break;
       case 'Handle': collectPrelude(node.body); node.handlers.forEach(h => collectPrelude(h.body)); break;

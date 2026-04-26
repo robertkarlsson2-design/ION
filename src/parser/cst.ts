@@ -219,6 +219,13 @@ export interface ListLitExprNode {
   readonly span: Span;
 }
 
+export interface TupleExprNode {
+  readonly kind: 'TupleExpr';
+  readonly elements: readonly ExprNode[];
+  readonly span: Span;
+  readonly leadingTrivia: readonly TriviaNode[];
+}
+
 export type ExprNode =
   | LiteralIntNode
   | LiteralFloatNode
@@ -237,7 +244,8 @@ export type ExprNode =
   | AccessorExprNode
   | PropagateExprNode
   | GroupExprNode
-  | ListLitExprNode;
+  | ListLitExprNode
+  | TupleExprNode;
 
 // ---------------------------------------------------------------------------
 // Declaration nodes

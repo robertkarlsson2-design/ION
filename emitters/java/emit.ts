@@ -474,6 +474,11 @@ function emitExpr(node: IonIRNode, ctx: EmitCtx): string {
       return `java.util.<Object>List.of(${ll.elements.map(e => emitExpr(e, ctx)).join(', ')})`;
     }
 
+    case 'TupleLit': {
+      if (node.elements.length === 0) return 'java.util.List.<Object>of()';
+      return `java.util.<Object>List.of(${node.elements.map(e => emitExpr(e, ctx)).join(', ')})`;
+    }
+
     case 'MapLit': {
       const ml = node as MapLitIRNode;
       const entries = ml.entries.map(e => `${emitExpr(e.key, ctx)}, ${emitExpr(e.value, ctx)}`).join(', ');

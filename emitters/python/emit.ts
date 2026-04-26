@@ -174,6 +174,11 @@ function emitPyExpr(node: IonIRNode): string {
 
     case 'Accessor': return `${emitPyExpr(node.receiver)}.${node.member}`;
     case 'ListLit': return `[${node.elements.map(emitPyExpr).join(', ')}]`;
+    case 'TupleLit': {
+      if (node.elements.length === 0) return '()';
+      const elems = node.elements.map(emitPyExpr).join(', ');
+      return node.elements.length === 1 ? `(${elems},)` : `(${elems})`;
+    }
     case 'MapLit': return `{${node.entries.map(e => `${emitPyExpr(e.key)}: ${emitPyExpr(e.value)}`).join(', ')}}`;
     case 'Constructor': return `${node.ctorName}(${node.args.map(emitPyExpr).join(', ')})`;
     case 'AdtMatch': return emitPyAdtMatch(node as AdtMatchNode);
@@ -263,7 +268,7 @@ function emitPyCase(node: CaseNode): string {
 }
 
 function emitPyPatCond(pat: import('../../src/ir/nodes.js').CasePattern, scrutinee: string): string {
-  if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'True';
+  if (pat.kind === 'Wildcard' || pat.kind === 'Var' || pat.kind === 'Tuple') return 'True';
   if (pat.kind === 'Constructor') return `${scrutinee}["_tag"] == "${pat.ctorName}"`;
   const v = pat.value;
   if (v.kind === 'Bool') return `${scrutinee} == ${v.value ? 'True' : 'False'}`;

@@ -354,6 +354,7 @@ class Binder {
         break;
 
       case 'ListLit':
+      case 'TupleExpr':
         for (const el of expr.elements) this.resolveExpr(el, scope, idPrefix);
         break;
 

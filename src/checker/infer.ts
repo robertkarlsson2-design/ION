@@ -604,6 +604,11 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
       }
       return { kind: 'List', elem: elemType };
     }
+
+    case 'TupleExpr': {
+      const elements = expr.elements.map(el => inferExpr(el, ctx));
+      return { kind: 'Tuple', elements };
+    }
   }
 }
 

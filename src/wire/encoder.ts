@@ -146,6 +146,9 @@ function collectNamesFromPattern(p: CasePattern, c: NameCollector, depth = 0): v
       c.record(p.ctorName);
       for (const f of (p.fields ?? [])) collectNamesFromPattern(f, c, depth + 1);
       break;
+    case 'Tuple':
+      for (const e of p.elements) collectNamesFromPattern(e, c, depth + 1);
+      break;
     default:
       assertNever(p);
   }
@@ -310,6 +313,9 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector, depth = 0): voi
       collectNamesFromNode(node.value, c, depth + 1);
       break;
     case 'ListLit':
+      for (const el of node.elements) collectNamesFromNode(el, c, depth + 1);
+      break;
+    case 'TupleLit':
       for (const el of node.elements) collectNamesFromNode(el, c, depth + 1);
       break;
     case 'MapLit':
@@ -505,6 +511,9 @@ function collectTypesFromNode(node: IonIRNode, out: Map<string, number>, depth =
       break;
     case 'Resume': collectTypesFromNode(node.value, out, depth + 1); break;
     case 'ListLit':
+      for (const el of node.elements) collectTypesFromNode(el, out, depth + 1);
+      break;
+    case 'TupleLit':
       for (const el of node.elements) collectTypesFromNode(el, out, depth + 1);
       break;
     case 'MapLit':
@@ -721,6 +730,10 @@ function encodePattern(p: CasePattern, ctx: EncoderContext, depth = 0): string {
       return `${encodeName(p.ctorName, ctx.sym)}(${fields})`;
     }
     case 'Literal': return encodeLiteral(p.value);
+    case 'Tuple': {
+      const fields = p.elements.map(e => encodePattern(e, ctx, depth + 1)).join(',');
+      return `[${fields}]`;
+    }
     default: return assertNever(p);
   }
 }
@@ -929,6 +942,11 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
     case 'ListLit': {
       const elems = node.elements.map(el => encodeNode(el, ctx, depth + 1)).join(',');
       return `[${elems}]`;
+    }
+
+    case 'TupleLit': {
+      const elems = node.elements.map(el => encodeNode(el, ctx, depth + 1)).join(',');
+      return `tup(${elems})`;
     }
 
     case 'MapLit': {

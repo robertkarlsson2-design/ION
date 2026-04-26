@@ -122,7 +122,9 @@ function emitLwcExpr(node: IonIRNode): string {
       return `(${params}) => ${emitLwcExpr(abs.body)}`;
     }
     case 'Accessor': return `${emitLwcExpr(node.receiver)}.${node.member}`;
-    case 'ListLit': return `[${node.elements.map(emitLwcExpr).join(', ')}]`;
+    case 'ListLit':
+    case 'TupleLit':
+      return `[${node.elements.map(emitLwcExpr).join(', ')}]`;
     case 'MapLit': {
       const entries = node.entries.map(e => `[${emitLwcExpr(e.key)}, ${emitLwcExpr(e.value)}]`).join(', ');
       return `new Map([${entries}])`;
@@ -304,7 +306,8 @@ export function emitLwcNode(
       return emitLwcNode(caseNode.arms[0]!.body, indent, env);
     }
 
-    case 'ListLit': {
+    case 'ListLit':
+    case 'TupleLit': {
       const items = node.elements
         .map(e => emitLwcNode(e, indent + 1, env))
         .filter(s => s.trim())

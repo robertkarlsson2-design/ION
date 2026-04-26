@@ -508,6 +508,11 @@ function desugarExpr(expr: AstExprNode, ctx: DesugarCtx): IonIRNode {
       const elements = expr.elements.map(el => desugarExpr(el, ctx));
       return { kind: 'ListLit', elements, span: expr.span, type };
     }
+
+    case 'TupleExpr': {
+      const elements = expr.elements.map(el => desugarExpr(el, ctx));
+      return { kind: 'TupleLit', elements, span: expr.span, type };
+    }
   }
 }
 
@@ -721,9 +726,10 @@ function desugarPattern(pat: AstPatternNode, ctx: DesugarCtx): CasePattern {
       return { kind: 'Literal', value, span: pat.span };
     }
 
-    case 'TuplePat':
-      // TuplePat has no CasePattern variant; lower to wildcard pending IR extension.
-      return { kind: 'Wildcard', span: pat.span };
+    case 'TuplePat': {
+      const elements = pat.elements.map(f => desugarPattern(f, ctx));
+      return { kind: 'Tuple', elements, span: pat.span };
+    }
   }
 }
 

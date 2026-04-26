@@ -193,7 +193,8 @@ export function emitJsxNode(node: IonIRNode, indent = 0, env?: ReadonlyMap<strin
       return emitJsxNode(caseNode.arms[0]!.body, indent, env);
     }
 
-    case 'ListLit': {
+    case 'ListLit':
+    case 'TupleLit': {
       const items = node.elements.map(e => emitJsxNode(e, indent + 1, env)).filter(s => s.trim()).join('\n');
       return `${pad}<>\n${items}\n${pad}</>`;
     }
@@ -299,7 +300,9 @@ export function emitTsExprForReact(node: IonIRNode): string {
       return `(${params}) => ${emitTsExprForReact(abs.body)}`;
     }
     case 'Accessor': return `${emitTsExprForReact(node.receiver)}.${node.member}`;
-    case 'ListLit': return `[${node.elements.map(emitTsExprForReact).join(', ')}]`;
+    case 'ListLit':
+    case 'TupleLit':
+      return `[${node.elements.map(emitTsExprForReact).join(', ')}]`;
     case 'MapLit': {
       const entries = node.entries.map(e => `[${emitTsExprForReact(e.key)}, ${emitTsExprForReact(e.value)}]`).join(', ');
       return `new Map([${entries}])`;

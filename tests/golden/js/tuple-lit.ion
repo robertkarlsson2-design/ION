@@ -1,0 +1,1 @@
+fn tuplePair(a: Int, b: Str) -> (Int, Str) = (a, b)

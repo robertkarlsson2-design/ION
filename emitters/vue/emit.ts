@@ -72,6 +72,7 @@ export function emitTsExprForVue(node: IonIRNode): string {
     case 'Accessor':
       return `${emitTsExprForVue((node as AccessorNode).receiver)}.${(node as AccessorNode).member}`;
     case 'ListLit':
+    case 'TupleLit':
       return `[${node.elements.map(emitTsExprForVue).join(', ')}]`;
     case 'MapLit': {
       const entries = node.entries.map(e => `[${emitTsExprForVue(e.key)}, ${emitTsExprForVue(e.value)}]`).join(', ');

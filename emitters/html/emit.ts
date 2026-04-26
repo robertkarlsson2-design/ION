@@ -111,7 +111,9 @@ function emitJsExpr(node: IonIRNode): string {
       return `{ _tag: '${node.ctorName}'${args ? `, _args: [${args}]` : ''} }`;
     }
     case 'Accessor': return `${emitJsExpr(node.receiver)}.${node.member}`;
-    case 'ListLit': return `[${node.elements.map(emitJsExpr).join(', ')}]`;
+    case 'ListLit':
+    case 'TupleLit':
+      return `[${node.elements.map(emitJsExpr).join(', ')}]`;
     case 'MapLit': {
       const entries = node.entries.map(e => `[${emitJsExpr(e.key)}, ${emitJsExpr(e.value)}]`).join(', ');
       return `new Map([${entries}])`;
@@ -296,6 +298,9 @@ function emitScriptDecl(node: IonIRNode): string {
     case 'ListLit':
       return `const _list = ${emitJsExpr(node)};`;
 
+    case 'TupleLit':
+      return `const _tuple = ${emitJsExpr(node)};`;
+
     case 'MapLit':
       return `const _map = ${emitJsExpr(node)};`;
 
@@ -423,7 +428,8 @@ export function emitHtmlNode(node: IonIRNode, env?: ReadonlyMap<string, IonIRNod
       return '';
     }
 
-    case 'ListLit': {
+    case 'ListLit':
+    case 'TupleLit': {
       return node.elements.map(e => emitHtmlNode(e, env)).join('');
     }
 

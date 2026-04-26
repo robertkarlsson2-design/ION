@@ -57,6 +57,8 @@ function printPattern(p: CasePattern): string {
       return `${p.ctorName}(${p.fields.map(printPattern).join(', ')})`;
     }
     case 'Literal': return printLiteral(p.value);
+    case 'Tuple':
+      return `(${p.elements.map(printPattern).join(', ')})`;
     default: return assertNever(p);
   }
 }
@@ -289,6 +291,10 @@ export function prettyPrintNode(node: IonIRNode, depth = 0, opts?: PrettyOptions
     case 'ListLit': {
       const elems = node.elements.map(el => prettyPrintNode(el, depth, opts)).join(', ');
       return `[${elems}]`;
+    }
+    case 'TupleLit': {
+      const elems = node.elements.map(el => prettyPrintNode(el, depth, opts)).join(', ');
+      return `(${elems})`;
     }
     case 'MapLit': {
       const entries = node.entries.map(e =>

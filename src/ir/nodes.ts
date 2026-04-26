@@ -34,7 +34,8 @@ export type CasePattern =
   | WildcardPattern
   | VarPattern
   | ConstructorPattern
-  | LiteralPattern;
+  | LiteralPattern
+  | TuplePattern;
 
 export interface WildcardPattern {
   readonly kind: 'Wildcard';
@@ -59,6 +60,12 @@ export interface ConstructorPattern {
 export interface LiteralPattern {
   readonly kind: 'Literal';
   readonly value: LiteralValue;
+  readonly span: Span;
+}
+
+export interface TuplePattern {
+  readonly kind: 'Tuple';
+  readonly elements: readonly CasePattern[];
   readonly span: Span;
 }
 
@@ -161,6 +168,13 @@ export interface ListLitIRNode {
   readonly type: IonType;
 }
 
+export interface TupleLitIRNode {
+  readonly kind: 'TupleLit';
+  readonly elements: readonly IonIRNode[];
+  readonly span: Span;
+  readonly type: IonType;
+}
+
 export interface MapLitIRNode {
   readonly kind: 'MapLit';
   readonly entries: readonly { readonly key: IonIRNode; readonly value: IonIRNode }[];
@@ -204,6 +218,7 @@ export type CoreNode =
   | ConstructorNode
   | AccessorNode
   | ListLitIRNode
+  | TupleLitIRNode
   | MapLitIRNode
   | ModuleRefNode
   | ForeignRefNode
@@ -450,7 +465,7 @@ export type IonIRNode = CoreNode | OopNode | AsyncNode | AdtNode | EffectsNode |
 
 /** All valid `kind` strings for IonIR nodes, for runtime validation. */
 export const VALID_IR_KINDS: ReadonlySet<string> = new Set<string>([
-  'Var', 'Literal', 'App', 'Abs', 'Let', 'Case', 'Constructor', 'Accessor', 'ListLit', 'MapLit',
+  'Var', 'Literal', 'App', 'Abs', 'Let', 'Case', 'Constructor', 'Accessor', 'ListLit', 'TupleLit', 'MapLit',
   'ModuleRef', 'ForeignRef', 'Effect',
   'OopClass', 'OopInterface', 'OopNew', 'OopVirtualCall', 'OopThis',
   'AsyncBlock', 'Await',
