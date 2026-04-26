@@ -90,7 +90,7 @@ Same Ion source. Same logic. Idiomatic output per target.
 
 **LLMs already know your target language.** When an agent writes Ion, it draws on everything it knows about JavaScript, TypeScript, or Python — Ion is just a compressed grammar on top of that knowledge. The result is fewer tokens to write, fewer tokens to read, and cleaner output than asking an LLM to write the target directly.
 
-**~15–38% fewer output tokens than the target language.** Ion's surface syntax eliminates structural noise — braces, semicolons, boilerplate constructors, verbose type annotations. Measured with `cl100k_base` (the GPT-4 / Claude tokenizer) across five real benchmarks: Ion is **38% smaller than Java**, **27% smaller than TypeScript**, **21% smaller than Python**, and **15% smaller than untyped JavaScript**. The wire format compresses further by pooling repeated symbols and types, but the headline savings come from the surface grammar.
+**31–45% fewer LLM output tokens when writing real apps.** Measured by running the same app-building prompt through Claude (Sonnet 4) with Ion vs TypeScript output: Ion writes complete db + API + frontend apps in **31–45% fewer tokens at 38% lower cost**, consistent across three domains (todo app, blog, inventory system). Source files are also 15–38% smaller in static token count — Ion is **38% smaller than Java**, **27% smaller than TypeScript**, **21% smaller than Python**, and **15% smaller than untyped JavaScript**, measured with `cl100k_base` across five benchmarks. The wire format compresses further by pooling repeated symbols, but the headline savings come from the surface grammar.
 
 **Two modes — one language.** Ion has a human-readable surface syntax for developers and a machine-optimized wire format for LLMs and the compiler. Your IDE always shows you the pretty form. The compiler and agents work on the wire form. You never see the difference.
 
@@ -134,7 +134,27 @@ LLMs are billed on both input tokens (reading/reasoning about code) and output t
 
 The savings are concentrated in code that's algorithmic, statically typed, or pipeline-heavy. On small numeric snippets and string-heavy code, Ion is roughly tokens-neutral with untyped JavaScript — its type annotations cost what JS saves by skipping them.
 
-The tradeoff: the LLM must know Ion syntax. A one-time system-prompt cost of a few hundred tokens covers the grammar; pays back on the second generation against TypeScript.
+The tradeoff: the LLM must know Ion syntax. A one-time system-prompt cost of a few hundred tokens covers the grammar; pays back on the second generation against TypeScript. In steady-state pipelines the skill file is cached, so the overhead is zero after the first call.
+
+### Real-world LLM coding agent benchmark
+
+The table above uses static token counts. The results below use a live Claude coding agent: the same plain-English app description is sent to two arms — one writes Ion, one writes TypeScript — and we measure actual output tokens and API cost from the Claude CLI.
+
+| Task (db + API + frontend) | Ion tokens | TS tokens | Δ output | Δ cost |
+|---|---:|---:|---:|---:|
+| Todo app (users + todos + CRUD) | 23,839 | 38,300 | **−38%** | **−47%** |
+| Blog (posts + comments + tags) | 38,547 | 41,692 | **−8%** | **−12%** |
+| Inventory (products + orders + stock) | 30,298 | 54,819 | **−45%** | **−50%** |
+| **Total (3 tasks)** | **92,684** | **134,811** | **−31%** | **−38%** |
+
+Model: claude-sonnet-4 · Same prompt, same `--no-session-persistence` flag · Ion arm has `llm-skills/write-ion.md` in system prompt; TS arm has a minimal 56-token prompt · Each arm runs in 1 turn.
+
+**Why the savings are larger on real apps than on micro-benchmarks:**  
+Micro-benchmarks are single functions — the boilerplate ratio is low. Full apps have a DB layer (many `data` types + function signatures), an HTTP layer (routing + error handling), and a frontend (event handlers). Each layer compounds the savings from Ion's `data` types (no interface declarations), `match` patterns (no switch boilerplate), and effect annotations (no Promise wrappers).
+
+**The blog task saves less (−8%)** because its frontend is richer in HTML and JavaScript, which compresses less in Ion than typed backend code. The inventory task saves the most (−45%) because it has the deepest domain model with the most types and helper functions.
+
+> Reproduce: `python3 benchmark/run_benchmark.py --all` in the [Robster](https://github.com/robertkarlsson2-design/Robster) repo. Results logged in `benchmark/results-2026-04-25.md`.
 
 > **Note on the wire format.** `.ionw` compresses further by pooling repeated symbols and types into 1-letter aliases (see `src/wire/`). The headline savings reported above are for surface syntax only; wire-format gains depend on workload (multi-file projects with shared symbols benefit most) and are not yet benchmarked end-to-end.
 
