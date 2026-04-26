@@ -29,7 +29,7 @@ import type { SymbolId } from '../../src/types.js';
 // Shared test helpers
 // ---------------------------------------------------------------------------
 
-const S: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
+const S: Span = { file: '', startLine: 1, startCol: 0, endLine: 1, endCol: 0 };
 const sym = (s: string): SymbolId => s as SymbolId;
 
 const INT: IonType = { kind: 'Int' };
@@ -473,6 +473,9 @@ describe('emitJSWithSourceMap', () => {
     expect(parsed.version).toBe(3);
     expect(Array.isArray(parsed.sources)).toBe(true);
     expect(typeof parsed.mappings).toBe('string');
+    expect(parsed.sources).toContain('/src/users.ion');
+    expect(parsed.sources.length).toBeGreaterThan(0);
+    expect(parsed.mappings.length).toBeGreaterThan(0);
   });
 
   it('source output is identical to emitJS', () => {
@@ -495,5 +498,7 @@ describe('emitJSWithSourceMap', () => {
     expect(Array.isArray(parsed.sourcesContent)).toBe(true);
     expect(typeof parsed.mappings).toBe('string');
     expect(typeof parsed.file).toBe('string');
+    expect(parsed.sources).toContain('/src/greet.ion');
+    expect(parsed.mappings.length).toBeGreaterThan(0);
   });
 });

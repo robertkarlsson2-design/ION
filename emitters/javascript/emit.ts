@@ -130,13 +130,13 @@ function nodeToRawStr(node: JsNode): string {
 }
 
 function buildLetTopLevel(node: LetNode, ctx: BuildCtx): JsConst {
-  return { kind: 'JsConst', name: node.name, value: buildExpr(node.value, ctx) };
+  return { kind: 'JsConst', name: node.name, value: buildExpr(node.value, ctx), ionSpan: node.span };
 }
 
 function buildExpr(node: IonIRNode, ctx: BuildCtx): JsNode {
   switch (node.kind) {
     case 'Literal': return buildLiteral(node);
-    case 'Var': return { kind: 'JsIdent', name: node.name };
+    case 'Var': return { kind: 'JsIdent', name: node.name, ionSpan: node.span };
     case 'Abs': return buildAbs(node, ctx);
     case 'App': return buildApp(node, ctx);
     case 'Let': return buildLetExpr(node, ctx);
@@ -144,10 +144,10 @@ function buildExpr(node: IonIRNode, ctx: BuildCtx): JsNode {
     case 'ForeignRef': return buildForeignRef(node);
     case 'Accessor': return buildAccessor(node, ctx);
     case 'Constructor': return buildConstructor(node, ctx);
-    case 'ModuleRef': return { kind: 'JsRaw', code: node.modulePath.join('.') };
+    case 'ModuleRef': return { kind: 'JsRaw', code: node.modulePath.join('.'), ionSpan: node.span };
     case 'OopNew': return buildOopNew(node, ctx);
     case 'OopVirtualCall': return buildOopVirtualCall(node, ctx);
-    case 'OopThis': return { kind: 'JsIdent', name: 'this' };
+    case 'OopThis': return { kind: 'JsIdent', name: 'this', ionSpan: node.span };
     case 'AsyncBlock': return buildAsyncBlock(node, ctx);
     case 'Await': return buildAwait(node, ctx);
     case 'AdtMatch': return buildAdtMatch(node, ctx);
@@ -156,12 +156,13 @@ function buildExpr(node: IonIRNode, ctx: BuildCtx): JsNode {
     case 'Resume': return buildResume(node, ctx);
     case 'Effect': return buildExpr(node.body, ctx);
     case 'ListLit':
-      return { kind: 'JsArray', elems: node.elements.map(e => buildExpr(e, ctx)) };
+      return { kind: 'JsArray', elems: node.elements.map(e => buildExpr(e, ctx)), ionSpan: node.span };
     case 'MapLit':
       return {
         kind: 'JsNew',
         className: 'Map',
         args: [{ kind: 'JsArray', elems: node.entries.map(e => ({ kind: 'JsArray' as const, elems: [buildExpr(e.key, ctx), buildExpr(e.value, ctx)] })) }],
+        ionSpan: node.span,
       };
     case 'OopClass':
     case 'OopInterface':
@@ -170,18 +171,18 @@ function buildExpr(node: IonIRNode, ctx: BuildCtx): JsNode {
       // Declaration nodes appearing in expression position are no-ops at runtime.
       return { kind: 'JsIdent', name: 'undefined' };
     case 'RawInject':
-      return { kind: 'JsRaw', code: node.code };
+      return { kind: 'JsRaw', code: node.code, ionSpan: node.span };
   }
 }
 
 function buildLiteral(node: LiteralNode): JsNode {
   const v = node.value;
   switch (v.kind) {
-    case 'Int': return { kind: 'JsNumber', value: v.value };
-    case 'Float': return { kind: 'JsNumber', value: v.value };
-    case 'Bool': return { kind: 'JsBool', value: v.value };
-    case 'Null': return { kind: 'JsNull' };
-    case 'Str': return { kind: 'JsString', value: v.value };
+    case 'Int': return { kind: 'JsNumber', value: v.value, ionSpan: node.span };
+    case 'Float': return { kind: 'JsNumber', value: v.value, ionSpan: node.span };
+    case 'Bool': return { kind: 'JsBool', value: v.value, ionSpan: node.span };
+    case 'Null': return { kind: 'JsNull', ionSpan: node.span };
+    case 'Str': return { kind: 'JsString', value: v.value, ionSpan: node.span };
   }
 }
 
@@ -190,6 +191,7 @@ function buildAbs(node: AbsNode, ctx: BuildCtx): JsNode {
     kind: 'JsArrow',
     params: node.params.map(p => p.name),
     body: buildExpr(node.body, ctx),
+    ionSpan: node.span,
   };
 }
 
@@ -197,17 +199,18 @@ function buildApp(node: AppNode, ctx: BuildCtx): JsNode {
   if (node.callee.kind === 'Var') {
     const binaryOp = BUILTIN_BINARY_OPS[(node.callee as VarNode).name];
     if (binaryOp !== undefined && node.args.length === 2) {
-      return { kind: 'JsBinary', op: binaryOp, left: buildExpr(node.args[0], ctx), right: buildExpr(node.args[1], ctx) };
+      return { kind: 'JsBinary', op: binaryOp, left: buildExpr(node.args[0], ctx), right: buildExpr(node.args[1], ctx), ionSpan: node.span };
     }
     const unaryOp = BUILTIN_UNARY_OPS[(node.callee as VarNode).name];
     if (unaryOp !== undefined && node.args.length === 1) {
-      return { kind: 'JsRaw', code: `${unaryOp}${printJsExpr(buildExpr(node.args[0], ctx))}` };
+      return { kind: 'JsRaw', code: `${unaryOp}${printJsExpr(buildExpr(node.args[0], ctx))}`, ionSpan: node.span };
     }
   }
   return {
     kind: 'JsCall',
     callee: buildExpr(node.callee, ctx),
     args: node.args.map(a => buildExpr(a, ctx)),
+    ionSpan: node.span,
   };
 }
 
@@ -218,6 +221,7 @@ function buildLetExpr(node: LetNode, ctx: BuildCtx): JsNode {
       { kind: 'JsConst', name: node.name, value: buildExpr(node.value, ctx) },
       { kind: 'JsReturn', value: buildExpr(node.body, ctx) },
     ],
+    ionSpan: node.span,
   };
 }
 
@@ -258,6 +262,7 @@ function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
     return {
       kind: 'JsRaw',
       code: `${printJsExpr(buildExpr(node.scrutinee, ctx))} ? ${printJsExpr(buildExpr(node.arms[0].body, ctx))} : ${printJsExpr(buildExpr(node.arms[1].body, ctx))}`,
+      ionSpan: node.span,
     };
   }
 
@@ -301,7 +306,7 @@ function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
 
       stmts.push({ kind: 'JsIfElse', branches: [{ cond: patternCond, body: innerStmts }] });
     }
-    return { kind: 'JsIife', body: stmts };
+    return { kind: 'JsIife', body: stmts, ionSpan: node.span };
   }
 
   // No guards: existing if-else-if chain (preserves output for the common case).
@@ -332,6 +337,7 @@ function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
   return {
     kind: 'JsIife',
     body: [{ kind: 'JsIfElse', branches, ...(elseBranch !== undefined ? { elseBranch } : {}) }],
+    ionSpan: node.span,
   };
 }
 
@@ -357,7 +363,7 @@ function buildPatternCond(pat: CasePattern, scrutinee: JsNode): JsNode {
 function buildForeignRef(node: ForeignRefNode): JsNode {
   const arity = node.sig.params.length;
   if (arity === 0) {
-    return { kind: 'JsRaw', code: expandTemplate(node.sig.template, []) };
+    return { kind: 'JsRaw', code: expandTemplate(node.sig.template, []), ionSpan: node.span };
   }
   const paramNames = Array.from({ length: arity }, (_, i) => node.sig.paramNames?.[i] ?? `_p${i + 1}`);
   const emittedArgs = paramNames.map(p => wrapEmitted(p));
@@ -366,11 +372,12 @@ function buildForeignRef(node: ForeignRefNode): JsNode {
     kind: 'JsArrow',
     params: paramNames,
     body: { kind: 'JsRaw', code: callCode },
+    ionSpan: node.span,
   };
 }
 
 function buildAccessor(node: AccessorNode, ctx: BuildCtx): JsNode {
-  return { kind: 'JsMember', receiver: buildExpr(node.receiver, ctx), member: node.member };
+  return { kind: 'JsMember', receiver: buildExpr(node.receiver, ctx), member: node.member, ionSpan: node.span };
 }
 
 function buildConstructor(node: ConstructorNode, ctx: BuildCtx): JsNode {
@@ -378,6 +385,7 @@ function buildConstructor(node: ConstructorNode, ctx: BuildCtx): JsNode {
     kind: 'JsCall',
     callee: { kind: 'JsIdent', name: node.ctorName },
     args: node.args.map(a => buildExpr(a, ctx)),
+    ionSpan: node.span,
   };
 }
 
@@ -387,6 +395,7 @@ function buildOopNew(node: OopNewNode, ctx: BuildCtx): JsNode {
     kind: 'JsNew',
     className,
     args: node.args.map(a => buildExpr(a, ctx)),
+    ionSpan: node.span,
   };
 }
 
@@ -395,17 +404,18 @@ function buildOopVirtualCall(node: OopVirtualCallNode, ctx: BuildCtx): JsNode {
     kind: 'JsCall',
     callee: { kind: 'JsMember', receiver: buildExpr(node.receiver, ctx), member: node.method },
     args: node.args.map(a => buildExpr(a, ctx)),
+    ionSpan: node.span,
   };
 }
 
 function buildAsyncBlock(node: AsyncBlockNode, ctx: BuildCtx): JsNode {
   // async () => { return body; }  — emit as JsRaw to preserve async keyword
   const bodyNode = buildExpr(node.body, ctx);
-  return { kind: 'JsRaw', code: `async () => {\n  return ${printJsExpr(bodyNode)};\n}` };
+  return { kind: 'JsRaw', code: `async () => {\n  return ${printJsExpr(bodyNode)};\n}`, ionSpan: node.span };
 }
 
 function buildAwait(node: AwaitNode, ctx: BuildCtx): JsNode {
-  return { kind: 'JsRaw', code: `await ${printJsExpr(buildExpr(node.expr, ctx))}` };
+  return { kind: 'JsRaw', code: `await ${printJsExpr(buildExpr(node.expr, ctx))}`, ionSpan: node.span };
 }
 
 function buildAdtDecl(node: AdtDeclNode, _ctx: BuildCtx): JsNode[] {
@@ -460,6 +470,7 @@ function buildAdtMatch(node: AdtMatchNode, ctx: BuildCtx): JsNode {
         cases,
       },
     ],
+    ionSpan: node.span,
   };
 }
 
@@ -479,6 +490,7 @@ function buildPerform(node: PerformNode, ctx: BuildCtx): JsNode {
         },
       },
     ],
+    ionSpan: node.span,
   };
 }
 
@@ -536,6 +548,7 @@ function buildHandle(node: HandleNode, ctx: BuildCtx): JsNode {
         ],
       },
     ],
+    ionSpan: node.span,
   };
 }
 
@@ -629,6 +642,7 @@ function buildOopClass(node: OopClassNode, ctx: BuildCtx): JsNode {
       ...(node.superClass !== undefined ? { superClass: String(node.superClass) } : {}),
       ctor,
       methods,
+      ionSpan: node.span,
     };
   }
 
@@ -716,7 +730,7 @@ function buildOopClass(node: OopClassNode, ctx: BuildCtx): JsNode {
   }
 
   lines.push('}');
-  return { kind: 'JsRaw', code: lines.join('\n') };
+  return { kind: 'JsRaw', code: lines.join('\n'), ionSpan: node.span };
 }
 
 /**
