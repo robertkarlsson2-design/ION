@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { prettyPrintType, prettyPrintNode, prettyPrintModule } from '../../src/wire/pretty.js';
+import { prettyPrintType, prettyPrintNode, prettyPrintModule, PrettyPrintError, MAX_PRETTY_DEPTH } from '../../src/wire/pretty.js';
 import { makeSymbolId } from '../../src/types.js';
 import type { IonIRModule, IonIRNode, IonIRDialect } from '../../src/ir/nodes.js';
 import type { IonType, EffectSet } from '../../src/ir/types.js';
@@ -808,5 +808,33 @@ describe('determinism', () => {
     const wide4 = prettyPrintNode(node, 0, { indentSize: 4 });
     expect(wide4).toContain('    ');
     expect(default2).not.toContain('    ');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite G — depth guard
+// ---------------------------------------------------------------------------
+
+describe('prettyPrintNode — depth guard', () => {
+  const leaf: IonIRNode = { kind: 'Var', name: 'x', symbolId: sid, span, type: intType };
+
+  it('at-limit depth succeeds', () => {
+    expect(() => prettyPrintNode(leaf, MAX_PRETTY_DEPTH)).not.toThrow();
+    expect(prettyPrintNode(leaf, MAX_PRETTY_DEPTH)).toBe('x');
+  });
+
+  it('over-limit depth throws PrettyPrintError', () => {
+    expect(() => prettyPrintNode(leaf, MAX_PRETTY_DEPTH + 1)).toThrow(PrettyPrintError);
+  });
+
+  it('deeply nested structure trips guard via recursion', () => {
+    // Build a chain of AsyncBlock nodes, each wrapping the next.
+    // AsyncBlock increments depth (+1) when rendering its body, so nesting
+    // MAX_PRETTY_DEPTH+1 levels forces depth to reach MAX_PRETTY_DEPTH+1 internally.
+    let node: IonIRNode = leaf;
+    for (let i = 0; i <= MAX_PRETTY_DEPTH; i++) {
+      node = { kind: 'AsyncBlock', body: node, span, type: intType };
+    }
+    expect(() => prettyPrintNode(node, 0)).toThrow(PrettyPrintError);
   });
 });

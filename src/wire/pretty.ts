@@ -15,6 +15,12 @@ import type {
 } from '../ir/nodes.js';
 import type { IonType } from '../ir/types.js';
 
+export const MAX_PRETTY_DEPTH = 200;
+
+export class PrettyPrintError extends Error {
+  override readonly name = 'PrettyPrintError';
+}
+
 export interface PrettyOptions {
   readonly indentSize?: number;
 }
@@ -168,6 +174,8 @@ export function prettyPrintType(type: IonType): string {
 
 /** Render any single IonIRNode at a given indent depth. */
 export function prettyPrintNode(node: IonIRNode, depth = 0, opts?: PrettyOptions): string {
+  if (depth > MAX_PRETTY_DEPTH)
+    throw new PrettyPrintError(`prettyPrintNode exceeded maximum depth of ${MAX_PRETTY_DEPTH}`);
   const size = opts?.indentSize ?? 2;
 
   switch (node.kind) {
