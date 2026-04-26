@@ -13,6 +13,7 @@ import { desugarModule } from '../desugar/index.js';
 import { emitJS } from '../../emitters/javascript/emit.js';
 import { emitTS } from '../../emitters/typescript/emit.js';
 import { emitPython } from '../../emitters/python/emit.js';
+import { emitJava } from '../../emitters/java/emit.js';
 import { loadConfig } from './config.js';
 import type { IonConfig } from './config.js';
 import { generateSourceMap } from '../emit/sourcemap.js';
@@ -52,6 +53,7 @@ const TARGET_LABEL: Record<string, string> = {
   javascript: 'JS',
   typescript: 'TS',
   python: 'Py',
+  java: 'Java',
 };
 
 interface BuildDiagnostic {
@@ -93,6 +95,7 @@ const TARGET_EXT: Record<string, string> = {
   javascript: '.js',
   typescript: '.ts',
   python: '.py',
+  java: '.java',
 };
 
 type EmitFn = (module: IonIRModule) => string;
@@ -101,6 +104,7 @@ function getEmitter(target: string): EmitFn | null {
   if (target === 'javascript') return emitJS;
   if (target === 'typescript') return emitTS;
   if (target === 'python') return emitPython;
+  if (target === 'java') return emitJava;
   return null;
 }
 

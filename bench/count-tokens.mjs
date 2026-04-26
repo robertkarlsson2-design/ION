@@ -30,18 +30,19 @@ function read(f) {
 const stems = [...new Set(
   readdirSync(DIR)
     .filter(f => /^\d\d-/.test(f))
-    .map(f => f.replace(/\.(ion|js|ts|py|imperative\.js)$/, ''))
+    .map(f => f.replace(/\.(ion|js|ts|py|java|imperative\.js)$/, ''))
 )].sort();
 
 const rows = [];
 for (const stem of stems) {
-  const ion = read(stem + '.ion');
-  const js  = read(stem + '.js');
-  const ts  = read(stem + '.ts');
-  const py  = read(stem + '.py');
-  const imp = read(stem + '.imperative.js');
+  const ion  = read(stem + '.ion');
+  const js   = read(stem + '.js');
+  const ts   = read(stem + '.ts');
+  const py   = read(stem + '.py');
+  const java = read(stem + '.java');
+  const imp  = read(stem + '.imperative.js');
   if (!ion) continue;
-  rows.push({ stem, ion, js, ts, py, imp });
+  rows.push({ stem, ion, js, ts, py, java, imp });
 }
 
 // ── Print table ────────────────────────────────────────────────────────────
@@ -56,43 +57,47 @@ function section(title) {
   console.log('═'.repeat(W));
 }
 
-// ── Table: Ion vs JS vs TS vs Python (cl100k_base) ─────────────────────────
+// ── Table: Ion vs JS vs TS vs Python vs Java (cl100k_base) ─────────────────
 
-section('Ion  vs  JavaScript  vs  TypeScript  vs  Python   —   tokenizer: cl100k_base');
+section('Ion  vs  JavaScript  vs  TypeScript  vs  Python  vs  Java   —   tokenizer: cl100k_base');
 console.log(
   padL('  Benchmark', 22),
-  pad('Ion', 6), pad('JS', 6), pad('TS', 6), pad('Py', 6),
-  pad('JS/Ion', 8), pad('TS/Ion', 8), pad('Py/Ion', 8),
+  pad('Ion', 6), pad('JS', 6), pad('TS', 6), pad('Py', 6), pad('Java', 6),
+  pad('JS/Ion', 8), pad('TS/Ion', 8), pad('Py/Ion', 8), pad('Jv/Ion', 8),
 );
 console.log('─'.repeat(W));
 
-let sIon = 0, sJs = 0, sTs = 0, sPy = 0;
-for (const { stem, ion, js, ts, py } of rows) {
+let sIon = 0, sJs = 0, sTs = 0, sPy = 0, sJv = 0;
+for (const { stem, ion, js, ts, py, java } of rows) {
   const it = tokenize(ion);
   const jt = js ? tokenize(js) : null;
   const tt = ts ? tokenize(ts) : null;
   const pt = py ? tokenize(py) : null;
+  const vt = java ? tokenize(java) : null;
   sIon += it;
   if (jt) sJs += jt;
   if (tt) sTs += tt;
   if (pt) sPy += pt;
+  if (vt) sJv += vt;
   const jR = jt ? (jt / it).toFixed(2) + 'x' : '—';
   const tR = tt ? (tt / it).toFixed(2) + 'x' : '—';
   const pR = pt ? (pt / it).toFixed(2) + 'x' : '—';
+  const vR = vt ? (vt / it).toFixed(2) + 'x' : '—';
   console.log(
     padL('  ' + stem, 22),
-    pad(it, 6), pad(jt ?? '—', 6), pad(tt ?? '—', 6), pad(pt ?? '—', 6),
-    pad(jR, 8), pad(tR, 8), pad(pR, 8),
+    pad(it, 6), pad(jt ?? '—', 6), pad(tt ?? '—', 6), pad(pt ?? '—', 6), pad(vt ?? '—', 6),
+    pad(jR, 8), pad(tR, 8), pad(pR, 8), pad(vR, 8),
   );
 }
 console.log('─'.repeat(W));
 const jTotal = sJs ? (sJs / sIon).toFixed(2) + 'x' : '—';
 const tTotal = sTs ? (sTs / sIon).toFixed(2) + 'x' : '—';
 const pTotal = sPy ? (sPy / sIon).toFixed(2) + 'x' : '—';
+const vTotal = sJv ? (sJv / sIon).toFixed(2) + 'x' : '—';
 console.log(
   padL('  TOTAL', 22),
-  pad(sIon, 6), pad(sJs, 6), pad(sTs, 6), pad(sPy, 6),
-  pad(jTotal, 8), pad(tTotal, 8), pad(pTotal, 8),
+  pad(sIon, 6), pad(sJs, 6), pad(sTs, 6), pad(sPy, 6), pad(sJv, 6),
+  pad(jTotal, 8), pad(tTotal, 8), pad(pTotal, 8), pad(vTotal, 8),
 );
 
 // ── Optional: Ion vs imperative JS ────────────────────────────────────────
@@ -130,6 +135,7 @@ console.log(`
   vs JavaScript:  ${sJs ? pct(sJs) : 'n/a'} fewer tokens  (Ion ${sIon} → JS ${sJs})
   vs TypeScript:  ${sTs ? pct(sTs) : 'n/a'} fewer tokens  (Ion ${sIon} → TS ${sTs})
   vs Python:      ${sPy ? pct(sPy) : 'n/a'} fewer tokens  (Ion ${sIon} → Py ${sPy})
+  vs Java:        ${sJv ? pct(sJv) : 'n/a'} fewer tokens  (Ion ${sIon} → Java ${sJv})
 
   These numbers reflect surface-syntax compression only. The wire format
   (.ionw) compresses further by pooling repeated symbols and types — see
