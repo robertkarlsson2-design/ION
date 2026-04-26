@@ -378,7 +378,7 @@ function parseAnnotationPrefixes(cur: Cursor, ctx: DecoderContext): OopAnnotatio
     const args: string[] = [];
     if (cur.text[cur.pos] === '(') {
       cur.pos++; // consume '('
-      while (cur.text[cur.pos] !== ')') {
+      while (cur.pos < cur.text.length && cur.text[cur.pos] !== ')') {
         const start = cur.pos;
         while (cur.pos < cur.text.length && cur.text[cur.pos] !== ',' && cur.text[cur.pos] !== ')') cur.pos++;
         args.push(cur.text.slice(start, cur.pos));
