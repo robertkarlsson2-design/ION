@@ -12,6 +12,7 @@ import type { CheckError } from '../checker/index.js';
 import { desugarModule } from '../desugar/index.js';
 import { emitJS } from '../../emitters/javascript/emit.js';
 import { emitTS } from '../../emitters/typescript/emit.js';
+import { emitTsDts } from '../../emitters/typescript/emit-dts.js';
 import { emitPython } from '../../emitters/python/emit.js';
 import { emitJava } from '../../emitters/java/emit.js';
 import { loadConfig } from './config.js';
@@ -52,6 +53,7 @@ interface TokenStats {
 const TARGET_LABEL: Record<string, string> = {
   javascript: 'JS',
   typescript: 'TS',
+  'typescript-dts': 'DTS',
   python: 'Py',
   java: 'Java',
 };
@@ -94,6 +96,7 @@ interface JsonOutput {
 const TARGET_EXT: Record<string, string> = {
   javascript: '.js',
   typescript: '.ts',
+  'typescript-dts': '.d.ts',
   python: '.py',
   java: '.java',
 };
@@ -103,6 +106,7 @@ type EmitFn = (module: IonIRModule) => string;
 function getEmitter(target: string): EmitFn | null {
   if (target === 'javascript') return emitJS;
   if (target === 'typescript') return emitTS;
+  if (target === 'typescript-dts') return emitTsDts;
   if (target === 'python') return emitPython;
   if (target === 'java') return emitJava;
   return null;
@@ -575,7 +579,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
   const emitter = getEmitter(target);
   if (emitter === null) {
     process.stderr.write(`error: unsupported target: ${target}\n`);
-    process.stderr.write('supported targets: javascript, typescript, python\n');
+    process.stderr.write('supported targets: javascript, typescript, typescript-dts, python, java\n');
     return { exitCode: 2 };
   }
 

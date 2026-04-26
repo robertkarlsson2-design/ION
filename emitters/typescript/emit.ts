@@ -65,7 +65,7 @@ const BUILTIN_BINARY_OPS: Record<string, string> = {
 };
 const BUILTIN_UNARY_OPS: Record<string, string> = { __neg__: '-', __not__: '!' };
 
-const PRELUDE_NAMES = new Set([
+export const PRELUDE_NAMES = new Set([
   'map', 'filter', 'fold', 'length', 'range', 'concat', 'contains', 'isEmpty',
   'reverse', 'slice', 'joinWith', 'flatMap', 'any', 'all', 'abs', 'floor', 'ceil',
   'round', 'sqrt', 'min', 'max', 'pow', 'toString', 'split', 'trim', 'toUpper',
