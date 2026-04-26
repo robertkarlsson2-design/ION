@@ -25,6 +25,7 @@ import type {
   ListLitIRNode,
   VarNode,
   CasePattern,
+  AdtVariant,
 } from '../../src/ir/nodes.js';
 import { expandTemplate, wrapEmitted } from '../../src/emit/template.js';
 import { SourceMapBuilder } from '../../src/emit/sourcemap.js';
@@ -40,6 +41,8 @@ import { printJsModule, printJsExpr, printJsModuleWithMappings } from './printer
 
 interface BuildCtx {
   readonly helpers: Map<string, JsNode>;
+  /** Maps each ADT constructor tag to its ordered IonIR field names (e.g. "_0","_1" for tuples). */
+  readonly ctorFields: Map<string, string[]>;
 }
 
 const JS_IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -92,7 +95,13 @@ export function emitJSWithSourceMap(
 }
 
 function buildJsModule(module: IonIRModule): JsModule {
-  const ctx: BuildCtx = { helpers: new Map() };
+  const ctorFields = new Map<string, string[]>();
+  for (const d of module.data) {
+    for (const v of d.variants) {
+      ctorFields.set(v.tag, v.fields.map((f: AdtVariant['fields'][number]) => f.name));
+    }
+  }
+  const ctx: BuildCtx = { helpers: new Map(), ctorFields };
   const dataDecls = module.data.flatMap(d => buildAdtDecl(d, ctx));
   const bodyDecls = module.decls.flatMap(d => buildTopLevelDecl(d, ctx));
   const helpers = [...ctx.helpers.values()];
@@ -212,6 +221,23 @@ function buildLetExpr(node: LetNode, ctx: BuildCtx): JsNode {
   };
 }
 
+/** Build const bindings for constructor pattern fields using the correct IonIR field names. */
+function buildCtorBindings(pat: CasePattern, scrutineeNode: JsNode, ctx: BuildCtx): JsConst[] {
+  if (pat.kind !== 'Constructor') return [];
+  const fieldNames = ctx.ctorFields.get(pat.ctorName) ?? [];
+  const result: JsConst[] = [];
+  for (let fi = 0; fi < pat.fields.length; fi++) {
+    const f = pat.fields[fi];
+    if (f.kind !== 'Var') continue;
+    // Use the IonIR field name (e.g. "_0" for tuples) as the property key,
+    // not the user's VarPattern binding name, to match the emitted constructor object shape.
+    const member = fieldNames[fi] ?? `_${fi}`;
+    const memberExpr: JsNode = { kind: 'JsMember', receiver: scrutineeNode, member };
+    result.push({ kind: 'JsConst', name: f.name, value: memberExpr });
+  }
+  return result;
+}
+
 function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
   if (node.arms.length === 0) return { kind: 'JsIdent', name: 'undefined' };
 
@@ -236,6 +262,49 @@ function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
   }
 
   const scrutineeNode = buildExpr(node.scrutinee, ctx);
+  const hasGuards = node.arms.some(a => a.guard !== undefined);
+
+  if (hasGuards) {
+    // Flat-if approach: each arm is an independent `if` block so that a guard
+    // failure can fall through to subsequent arms rather than short-circuiting
+    // an if-else chain.  Guards are evaluated AFTER constructor bindings are
+    // declared to avoid TDZ ReferenceErrors.
+    const stmts: JsNode[] = [];
+    for (let i = 0; i < node.arms.length; i++) {
+      const arm = node.arms[i];
+      const isLast = i === node.arms.length - 1;
+      const bodyNode = buildExpr(arm.body, ctx);
+      const pat = arm.pattern;
+
+      if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
+        if (pat.kind === 'Var') stmts.push({ kind: 'JsConst', name: pat.name, value: scrutineeNode });
+        stmts.push({ kind: 'JsReturn', value: bodyNode });
+        break;
+      }
+
+      const varBinding: JsNode[] = pat.kind === 'Var'
+        ? [{ kind: 'JsConst', name: pat.name, value: scrutineeNode }]
+        : [];
+      const ctorBindings = buildCtorBindings(pat, scrutineeNode, ctx);
+      const patternCond = buildPatternCond(pat, scrutineeNode);
+      const innerStmts: JsNode[] = [...varBinding, ...ctorBindings];
+
+      if (arm.guard !== undefined) {
+        // Declare bindings first, then check guard — prevents TDZ.
+        innerStmts.push({
+          kind: 'JsIfElse',
+          branches: [{ cond: buildExpr(arm.guard, ctx), body: [{ kind: 'JsReturn', value: bodyNode }] }],
+        });
+      } else {
+        innerStmts.push({ kind: 'JsReturn', value: bodyNode });
+      }
+
+      stmts.push({ kind: 'JsIfElse', branches: [{ cond: patternCond, body: innerStmts }] });
+    }
+    return { kind: 'JsIife', body: stmts };
+  }
+
+  // No guards: existing if-else-if chain (preserves output for the common case).
   const branches: Array<{ readonly cond: JsNode; readonly body: readonly JsNode[] }> = [];
   let elseBranch: readonly JsNode[] | undefined;
 
@@ -248,31 +317,13 @@ function buildCase(node: CaseNode, ctx: BuildCtx): JsNode {
     const varBinding: JsNode[] = pat.kind === 'Var'
       ? [{ kind: 'JsConst', name: pat.name, value: scrutineeNode }]
       : [];
-
-    const ctorBindings: JsNode[] = pat.kind === 'Constructor'
-      ? pat.fields
-          .filter(f => f.kind === 'Var')
-          .map(f => {
-            if (f.kind !== 'Var') return null;
-            const c: JsConst = {
-              kind: 'JsConst',
-              name: f.name,
-              value: { kind: 'JsMember', receiver: scrutineeNode, member: f.name },
-            };
-            return c;
-          })
-          .filter((x): x is JsConst => x !== null)
-      : [];
+    const ctorBindings = buildCtorBindings(pat, scrutineeNode, ctx);
 
     if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
       elseBranch = [...varBinding, { kind: 'JsReturn', value: bodyNode }];
     } else {
-      let condNode = buildPatternCond(pat, scrutineeNode);
-      if (arm.guard !== undefined) {
-        condNode = { kind: 'JsBinary', op: '&&', left: condNode, right: buildExpr(arm.guard, ctx) };
-      }
       branches.push({
-        cond: condNode,
+        cond: buildPatternCond(pat, scrutineeNode),
         body: [...varBinding, ...ctorBindings, { kind: 'JsReturn', value: bodyNode }],
       });
     }
