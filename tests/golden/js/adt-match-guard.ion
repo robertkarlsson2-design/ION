@@ -1,0 +1,2 @@
+data Box = Box(Int)
+fn clamp(b: Box) -> Int = match b | Box(v) if v > 0 -> v | _ -> 0
