@@ -10,6 +10,8 @@ import type { BindError } from '../binder/index.js';
 import { checkModule } from '../checker/index.js';
 import type { CheckError } from '../checker/index.js';
 import { desugarModule } from '../desugar/index.js';
+import { decodeModule } from '../wire/decoder.js';
+import { deserializeModule, IonIRSerdeError } from '../ir/serde.js';
 import { emitJS } from '../../emitters/javascript/emit.js';
 import { emitTS } from '../../emitters/typescript/emit.js';
 import { emitTsDts } from '../../emitters/typescript/emit-dts.js';
@@ -266,6 +268,49 @@ function mapCheckError(e: CheckError): BuildDiagnostic {
 }
 
 // ---------------------------------------------------------------------------
+// Wire / JSON format detection
+// ---------------------------------------------------------------------------
+
+function detectInputFormat(src: string): 'source' | 'wire' | 'json' {
+  if (src.startsWith('I1\n') || src === 'I1') return 'wire';
+  if (src.trimStart().startsWith('{') && src.includes('"ionir":')) return 'json';
+  return 'source';
+}
+
+function loadIrFromPrecompiled(
+  src: string,
+  ionPath: string,
+): IonIRModule | BuildDiagnostic {
+  const fmt = detectInputFormat(src);
+  if (fmt === 'wire') {
+    const result = decodeModule(src);
+    if ('error' in result) {
+      return {
+        file: ionPath,
+        code: 'BD006',
+        message: `wire decode error: ${result.error}`,
+        span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: 'check that the file is a valid wire-format IonIR module',
+      };
+    }
+    return result;
+  }
+  // JSON serde path
+  try {
+    return deserializeModule(src);
+  } catch (err) {
+    const msg = err instanceof IonIRSerdeError || err instanceof Error ? err.message : String(err);
+    return {
+      file: ionPath,
+      code: 'BD006',
+      message: `IR deserialize error: ${msg}`,
+      span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+      suggestion: 'check that the file contains a valid IonIR JSON module',
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Per-file compilation
 // ---------------------------------------------------------------------------
 
@@ -315,6 +360,37 @@ async function compileFile(
         suggestion: null,
       }],
     };
+  }
+
+  const fmt = detectInputFormat(src);
+  if (fmt !== 'source') {
+    const irOrDiag = loadIrFromPrecompiled(src, ionPath);
+    if ('code' in irOrDiag) {
+      return { outputPath, diagnostics: [irOrDiag] };
+    }
+    let emitted: string;
+    try {
+      emitted = emitter(irOrDiag);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        outputPath,
+        diagnostics: [{
+          file: ionPath,
+          code: 'BD005',
+          message: `emit error: ${msg}`,
+          span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+          suggestion: null,
+        }],
+      };
+    }
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, emitted, 'utf-8');
+    const tokenStats: TokenStats = {
+      ion: countTokens(src, 'cl100k'),
+      out: countTokens(emitted, 'cl100k'),
+    };
+    return { outputPath, diagnostics: [], tokens: tokenStats };
   }
 
   const tokens = lex(src, ionPath);
@@ -553,7 +629,7 @@ async function runBuildOnce(
 // Main entry point
 // ---------------------------------------------------------------------------
 
-const USAGE = 'usage: ion build [--config <path>] [--target <lang>] [--watch] [--no-sourcemap] [--no-token-report] [--json]\n';
+const USAGE = 'usage: ion build [--config <path>] [--target <lang>] [--watch] [--no-sourcemap] [--no-token-report] [--json]\n  .ion files containing wire-format or JSON IonIR are detected automatically and skip frontend compilation.\n';
 
 /**
  * Runs the `ion build` command.
