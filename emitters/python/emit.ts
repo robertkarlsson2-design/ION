@@ -255,6 +255,9 @@ function emitPyCase(node: CaseNode): string {
     if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
       parts.push(emitPyExpr(arm.body));
     } else {
+      if (pat.kind === 'Tuple' && pat.fields.some(f => f.kind === 'Var')) {
+        throw new Error('TuplePattern variable binding not yet supported in Python emitter');
+      }
       const cond = emitPyPatCond(pat, scrutinee);
       parts.push(`(${emitPyExpr(arm.body)}) if (${cond}) else`);
     }

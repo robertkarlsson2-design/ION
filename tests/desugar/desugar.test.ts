@@ -5,7 +5,7 @@ import { buildModule } from '../../src/ast/builder.js';
 import { bindModule } from '../../src/binder/index.js';
 import { checkModule } from '../../src/checker/index.js';
 import { desugarModule } from '../../src/desugar/index.js';
-import type { IonIRModule, LetNode, AbsNode, LiteralNode, VarNode, AppNode, CaseNode, ConstructorPattern, LiteralPattern, TuplePattern } from '../../src/ir/nodes.js';
+import type { IonIRModule, LetNode, AbsNode, LiteralNode, VarNode, VarPattern, AppNode, CaseNode, ConstructorPattern, LiteralPattern, TuplePattern } from '../../src/ir/nodes.js';
 
 function desugar(src: string): IonIRModule {
   const tokens = lex(src, 'test.ion');
@@ -297,9 +297,9 @@ describe('desugarModule — TuplePat → TuplePattern', () => {
 
     const field0 = tuplePat.fields[0]!;
     expect(field0.kind).toBe('Var');
-    expect((field0 as VarNode).name).toBe('a');
-    expect(typeof (field0 as VarNode).symbolId).toBe('string');
-    expect((field0 as VarNode).symbolId.length).toBeGreaterThan(0);
+    expect((field0 as VarPattern).name).toBe('a');
+    expect(typeof (field0 as VarPattern).symbolId).toBe('string');
+    expect((field0 as VarPattern).symbolId.length).toBeGreaterThan(0);
 
     const field1 = tuplePat.fields[1]!;
     expect(field1.kind).toBe('Wildcard');
@@ -307,6 +307,6 @@ describe('desugarModule — TuplePat → TuplePattern', () => {
     const bodyVar = arm.body as VarNode;
     expect(bodyVar.kind).toBe('Var');
     expect(bodyVar.name).toBe('a');
-    expect(bodyVar.symbolId).toBe((field0 as VarNode).symbolId);
+    expect(bodyVar.symbolId).toBe((field0 as VarPattern).symbolId);
   });
 });

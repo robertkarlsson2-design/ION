@@ -223,6 +223,19 @@ function buildLetExpr(node: LetNode, ctx: BuildCtx): JsNode {
 
 /** Build const bindings for constructor pattern fields using the correct IonIR field names. */
 function buildCtorBindings(pat: CasePattern, scrutineeNode: JsNode, ctx: BuildCtx): JsConst[] {
+  if (pat.kind === 'Tuple') {
+    const result: JsConst[] = [];
+    for (let fi = 0; fi < pat.fields.length; fi++) {
+      const f = pat.fields[fi];
+      if (f.kind !== 'Var') continue;
+      result.push({
+        kind: 'JsConst',
+        name: f.name,
+        value: { kind: 'JsSubscript', receiver: scrutineeNode, index: { kind: 'JsNumber', value: fi } },
+      });
+    }
+    return result;
+  }
   if (pat.kind !== 'Constructor') return [];
   const fieldNames = ctx.ctorFields.get(pat.ctorName) ?? [];
   const result: JsConst[] = [];
