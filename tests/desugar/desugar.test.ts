@@ -5,7 +5,7 @@ import { buildModule } from '../../src/ast/builder.js';
 import { bindModule } from '../../src/binder/index.js';
 import { checkModule } from '../../src/checker/index.js';
 import { desugarModule } from '../../src/desugar/index.js';
-import type { IonIRModule, LetNode, AbsNode, LiteralNode, VarNode, AppNode, CaseNode, ConstructorPattern, LiteralPattern } from '../../src/ir/nodes.js';
+import type { IonIRModule, LetNode, AbsNode, LiteralNode, VarNode, VarPattern, AppNode, CaseNode, ConstructorPattern, LiteralPattern, TuplePattern } from '../../src/ir/nodes.js';
 
 function desugar(src: string): IonIRModule {
   const tokens = lex(src, 'test.ion');
@@ -273,5 +273,40 @@ describe('desugarModule — UnaryExpr → AppNode with __neg__', () => {
     const callee = app.callee as VarNode;
     expect(callee.kind).toBe('Var');
     expect(callee.name).toBe('__neg__');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 16. TuplePat → TuplePattern with preserved bindings
+// ---------------------------------------------------------------------------
+
+describe('desugarModule — TuplePat → TuplePattern', () => {
+  it('match arm (a, _) lowers to TuplePattern with Var+Wildcard fields, binding round-trips', () => {
+    const ir = desugar('fn fst(t: (Int, Int)) -> Int = match t | (a, _) -> a');
+    const letDecl = ir.decls[0] as LetNode;
+    const abs = letDecl.value as AbsNode;
+    const caseNode = abs.body as CaseNode;
+    expect(caseNode.kind).toBe('Case');
+    expect(caseNode.arms).toHaveLength(1);
+
+    const arm = caseNode.arms[0]!;
+    expect(arm.pattern.kind).toBe('Tuple');
+
+    const tuplePat = arm.pattern as TuplePattern;
+    expect(tuplePat.fields).toHaveLength(2);
+
+    const field0 = tuplePat.fields[0]!;
+    expect(field0.kind).toBe('Var');
+    expect((field0 as VarPattern).name).toBe('a');
+    expect(typeof (field0 as VarPattern).symbolId).toBe('string');
+    expect((field0 as VarPattern).symbolId.length).toBeGreaterThan(0);
+
+    const field1 = tuplePat.fields[1]!;
+    expect(field1.kind).toBe('Wildcard');
+
+    const bodyVar = arm.body as VarNode;
+    expect(bodyVar.kind).toBe('Var');
+    expect(bodyVar.name).toBe('a');
+    expect(bodyVar.symbolId).toBe((field0 as VarPattern).symbolId);
   });
 });

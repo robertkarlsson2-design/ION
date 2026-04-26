@@ -722,8 +722,7 @@ function desugarPattern(pat: AstPatternNode, ctx: DesugarCtx): CasePattern {
     }
 
     case 'TuplePat':
-      // TuplePat has no CasePattern variant; lower to wildcard pending IR extension.
-      return { kind: 'Wildcard', span: pat.span };
+      return { kind: 'Tuple', fields: pat.elements.map(e => desugarPattern(e, ctx)), span: pat.span };
   }
 }
 

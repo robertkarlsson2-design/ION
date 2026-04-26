@@ -255,6 +255,9 @@ function emitPyCase(node: CaseNode): string {
     if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
       parts.push(emitPyExpr(arm.body));
     } else {
+      if (pat.kind === 'Tuple' && pat.fields.some(f => f.kind === 'Var')) {
+        throw new Error('TuplePattern variable binding not yet supported in Python emitter');
+      }
       const cond = emitPyPatCond(pat, scrutinee);
       parts.push(`(${emitPyExpr(arm.body)}) if (${cond}) else`);
     }
@@ -265,6 +268,7 @@ function emitPyCase(node: CaseNode): string {
 function emitPyPatCond(pat: import('../../src/ir/nodes.js').CasePattern, scrutinee: string): string {
   if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'True';
   if (pat.kind === 'Constructor') return `${scrutinee}["_tag"] == "${pat.ctorName}"`;
+  if (pat.kind === 'Tuple') return `len(${scrutinee}) == ${pat.fields.length}`;
   const v = pat.value;
   if (v.kind === 'Bool') return `${scrutinee} == ${v.value ? 'True' : 'False'}`;
   if (v.kind === 'Null') return `${scrutinee} is None`;

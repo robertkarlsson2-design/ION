@@ -63,6 +63,7 @@ function printPattern(p: CasePattern): string {
       return `${p.ctorName}(${p.fields.map(printPattern).join(', ')})`;
     }
     case 'Literal': return printLiteral(p.value);
+    case 'Tuple': return `(${p.fields.map(printPattern).join(', ')})`;
     default: return assertNever(p);
   }
 }

@@ -270,6 +270,13 @@ function parseCasePattern(raw: unknown, path: string): CasePattern {
         value: parseLiteralValue(r['value'], `${path}.value`),
         span: parseSpan(r['span'], `${path}.span`),
       };
+    case 'Tuple':
+      return {
+        kind: 'Tuple',
+        fields: assertArray(r['fields'], `${path}.fields`).map((f, i) =>
+          parseCasePattern(f, `${path}.fields[${i}]`)),
+        span: parseSpan(r['span'], `${path}.span`),
+      };
     default:
       throw new IonIRSerdeError(`unknown pattern kind '${kind}'`, `${path}.kind`);
   }

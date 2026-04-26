@@ -582,3 +582,62 @@ describe('D10: list literal', () => {
     expect(encodeModule(decoded)).toBe(w1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// D13 — TuplePattern wire round-trip
+// ---------------------------------------------------------------------------
+
+describe('D13: TuplePattern wire round-trip', () => {
+  const varSid = makeSymbolId('test:a:0');
+
+  const tuplePatternModule: IonIRModule = {
+    ...makeMinimal(),
+    dialects: ['core'],
+    decls: [
+      {
+        kind: 'Case',
+        scrutinee: { kind: 'Var', name: 'x', symbolId: sid, span, type: { kind: 'Unit' } },
+        arms: [
+          {
+            pattern: {
+              kind: 'Tuple',
+              fields: [
+                { kind: 'Var', name: 'a', symbolId: varSid, span },
+                { kind: 'Wildcard', span },
+              ],
+              span,
+            },
+            body: { kind: 'Var', name: 'a', symbolId: varSid, span, type: { kind: 'Int' } },
+            span,
+          },
+        ],
+        span,
+        type: { kind: 'Int' },
+      },
+    ],
+  };
+
+  it('encodes and decodes a TuplePattern (Var + Wildcard)', () => {
+    const wire = encodeModule(tuplePatternModule);
+    const decoded = decodeModule(wire);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    const caseDecl = decoded.decls[0];
+    expect(caseDecl?.kind).toBe('Case');
+    if (caseDecl?.kind !== 'Case') return;
+    const arm = caseDecl.arms[0];
+    expect(arm?.pattern.kind).toBe('Tuple');
+    if (arm?.pattern.kind !== 'Tuple') return;
+    expect(arm.pattern.fields).toHaveLength(2);
+    expect(arm.pattern.fields[0]?.kind).toBe('Var');
+    expect(arm.pattern.fields[1]?.kind).toBe('Wildcard');
+  });
+
+  it('is byte-stable through a double roundtrip', () => {
+    const w1 = encodeModule(tuplePatternModule);
+    const decoded = decodeModule(w1);
+    expect('error' in decoded).toBe(false);
+    if ('error' in decoded) return;
+    expect(encodeModule(decoded)).toBe(w1);
+  });
+});
