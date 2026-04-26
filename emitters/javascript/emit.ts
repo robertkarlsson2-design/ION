@@ -347,6 +347,13 @@ function buildPatternCond(pat: CasePattern, scrutinee: JsNode): JsNode {
       right: { kind: 'JsString', value: pat.ctorName },
     };
   }
+  if (pat.kind === 'Tuple') {
+    return {
+      kind: 'JsBinary', op: '===',
+      left: { kind: 'JsMember', receiver: scrutinee, member: 'length' },
+      right: { kind: 'JsNumber', value: pat.fields.length },
+    };
+  }
   const v = pat.value;
   if (v.kind === 'Bool') return { kind: 'JsBinary', op: '===', left: scrutinee, right: { kind: 'JsBool', value: v.value } };
   if (v.kind === 'Null') return { kind: 'JsBinary', op: '===', left: scrutinee, right: { kind: 'JsNull' } };

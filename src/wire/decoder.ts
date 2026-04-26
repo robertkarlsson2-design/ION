@@ -464,6 +464,17 @@ function parseCasePattern(cur: Cursor, ctx: DecoderContext): CasePattern {
     return { kind: 'Literal', value: parseLiteral(cur), span: WIRE_SPAN };
   }
 
+  if (c === '(') {
+    cur.pos++;
+    const fields: CasePattern[] = [];
+    if (peek(cur) !== ')') {
+      fields.push(parseCasePattern(cur, ctx));
+      while (tryConsume(cur, ',')) fields.push(parseCasePattern(cur, ctx));
+    }
+    consume(cur, ')');
+    return { kind: 'Tuple', fields, span: WIRE_SPAN };
+  }
+
   const name = resolveName(readIdent(cur), ctx);
   if (peek(cur) === '(') {
     cur.pos++;

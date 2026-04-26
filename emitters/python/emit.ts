@@ -265,6 +265,7 @@ function emitPyCase(node: CaseNode): string {
 function emitPyPatCond(pat: import('../../src/ir/nodes.js').CasePattern, scrutinee: string): string {
   if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'True';
   if (pat.kind === 'Constructor') return `${scrutinee}["_tag"] == "${pat.ctorName}"`;
+  if (pat.kind === 'Tuple') return `len(${scrutinee}) == ${pat.fields.length}`;
   const v = pat.value;
   if (v.kind === 'Bool') return `${scrutinee} == ${v.value ? 'True' : 'False'}`;
   if (v.kind === 'Null') return `${scrutinee} is None`;

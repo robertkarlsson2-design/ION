@@ -146,6 +146,9 @@ function collectNamesFromPattern(p: CasePattern, c: NameCollector, depth = 0): v
       c.record(p.ctorName);
       for (const f of (p.fields ?? [])) collectNamesFromPattern(f, c, depth + 1);
       break;
+    case 'Tuple':
+      for (const f of p.fields) collectNamesFromPattern(f, c, depth + 1);
+      break;
     default:
       assertNever(p);
   }
@@ -721,6 +724,10 @@ function encodePattern(p: CasePattern, ctx: EncoderContext, depth = 0): string {
       return `${encodeName(p.ctorName, ctx.sym)}(${fields})`;
     }
     case 'Literal': return encodeLiteral(p.value);
+    case 'Tuple': {
+      const fields = p.fields.map(f => encodePattern(f, ctx, depth + 1)).join(',');
+      return `(${fields})`;
+    }
     default: return assertNever(p);
   }
 }

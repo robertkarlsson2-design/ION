@@ -34,7 +34,8 @@ export type CasePattern =
   | WildcardPattern
   | VarPattern
   | ConstructorPattern
-  | LiteralPattern;
+  | LiteralPattern
+  | TuplePattern;
 
 export interface WildcardPattern {
   readonly kind: 'Wildcard';
@@ -59,6 +60,12 @@ export interface ConstructorPattern {
 export interface LiteralPattern {
   readonly kind: 'Literal';
   readonly value: LiteralValue;
+  readonly span: Span;
+}
+
+export interface TuplePattern {
+  readonly kind: 'Tuple';
+  readonly fields: readonly CasePattern[];
   readonly span: Span;
 }
 
