@@ -670,6 +670,9 @@ export function emitTS(irModule: IonIRModule): string {
     } else if (d.kind === 'EffectDecl') {
       // Emit effect as a type alias comment + structural type
       parts.push(emitTsEffectDecl(d as EffectDeclNode));
+
+    } else if (d.kind === 'RawInject') {
+      parts.push(d.code);
     }
   }
 
