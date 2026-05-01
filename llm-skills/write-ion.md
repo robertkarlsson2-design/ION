@@ -208,7 +208,7 @@ const Greeting: React.FC = () => (
 );
 ```
 
-**Token count**: Ion: 53 tokens → TSX: 67 tokens (saved 14, 21% vs writing TSX directly, cl100k)
+**Token count**: Ion: 52 tokens → TSX: 67 tokens (saved 15, 22% vs writing TSX directly, cl100k)
 
 ---
 
@@ -242,7 +242,7 @@ const UserCard: React.FC = (name, role) => (
 );
 ```
 
-**Token count**: Ion: 53 tokens → TSX: 67 tokens (saved 14, 21% vs writing TSX directly, cl100k)
+**Token count**: Ion: 52 tokens → TSX: 67 tokens (saved 15, 22% vs writing TSX directly, cl100k)
 
 > For a fully typed props interface, use the `class` node (`oopClass` pattern) with fields — the emitter generates a `${Name}Props` interface and `extends React.Component<${Name}Props>`.
 
@@ -255,7 +255,7 @@ const UserCard: React.FC = (name, role) => (
 ```
 I1
 M ui.status_list v=1.0.0
-F let StatusBadge:never=(isActive:bool)->div("class=status-card",span("class=label","Status: "),match(isActive){true->span("class=badge-green","Active");_->span("class=badge-red","Inactive")});0 let ItemList:never=(items:str)->ul("class=list",raw("{items.map((item,i)=><li key={i}>{item}</li>)}"));0
+F let StatusBadge:never=(isActive:bool)->div("class=status-card",span("class=label","Status: "),match(isActive){true->span("class=badge-green","Active");_->span("class=badge-red","Inactive")});0 let ItemList:never=(items:[Str])->ul("class=list",raw("{items.map((item,i)=><li key={i}>{item}</li>)}"));0
 ```
 
 **Compiled React TSX**:
