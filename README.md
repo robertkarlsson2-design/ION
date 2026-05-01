@@ -85,6 +85,27 @@ ion build
 
 ---
 
+## Vite integration
+
+Add `vite-plugin-ion` to your Vite project and the plugin will compile any `.ion`
+file on demand — no separate `ion build --watch` process needed.
+
+```js
+// vite.config.ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import ion from 'vite-plugin-ion';
+
+export default defineConfig({
+  plugins: [ion(), react()]
+});
+```
+
+The plugin intercepts `.tsx` imports that have a sibling `.ion` file and direct `.ion` imports.
+Default target is `react` (emits TSX). Pass `{ target: 'typescript' }` for `.ts` output.
+
+---
+
 ## Language
 
 ### Data types

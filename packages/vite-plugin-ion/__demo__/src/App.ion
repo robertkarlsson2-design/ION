@@ -1,0 +1,3 @@
+I1
+M demo.App v=0.0.0
+F let App:never=div("class=demo","Hello from Ion!");0
