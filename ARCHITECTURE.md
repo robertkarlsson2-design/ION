@@ -40,8 +40,8 @@ emitters/                     # backends (one folder per target)
   python/emit.ts              # IonIR → Py         [WIRED IN CLI]
   java/emit.ts                # IonIR → Java       [WIRED IN CLI]
   react/emit.ts               # IonIR → React TSX  [WIRED IN CLI]
-  html/emit.ts                # IonIR → HTML       [code present, not wired]
-  vue/emit.ts                 # IonIR → Vue SFC    [code present, not wired]
+  html/emit.ts                # IonIR → HTML       [WIRED IN CLI]
+  vue/emit.ts                 # IonIR → Vue SFC    [WIRED IN CLI]
   apex/emit.ts                # IonIR → Apex       [code present, not wired]
   lwc/emit.ts                 # IonIR → LWC files  [code present, not wired]
 tests/
@@ -148,8 +148,8 @@ npx ion --version           # CLI binary works
 | python | ✅ | tests/emit/python.test.ts |
 | java | ✅ | tests/emit/java.test.ts |
 | react | ✅ | tests/emit/react.test.ts |
-| **html** | ❌ (code present) | tests/emit/html.test.ts |
-| **vue** | ❌ (code present) | tests/emit/vue.test.ts |
+| **html** | ✅ | tests/emit/html.test.ts |
+| **vue** | ✅ | tests/emit/vue.test.ts |
 | **apex** | ❌ (code present) | tests/emit/apex.test.ts (if present) |
 | **lwc** | ❌ (multi-file; emit signature differs) | tests/emit/lwc.test.ts (if present) |
 

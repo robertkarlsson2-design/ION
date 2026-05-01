@@ -18,6 +18,8 @@ import { emitTsDts } from '../../emitters/typescript/emit-dts.js';
 import { emitPython } from '../../emitters/python/emit.js';
 import { emitJava } from '../../emitters/java/emit.js';
 import { emitReact } from '../../emitters/react/emit.js';
+import { emitHTML } from '../../emitters/html/emit.js';
+import { emitVue } from '../../emitters/vue/emit.js';
 import { loadConfig } from './config.js';
 import type { IonConfig } from './config.js';
 import { generateSourceMap } from '../emit/sourcemap.js';
@@ -60,6 +62,8 @@ const TARGET_LABEL: Record<string, string> = {
   python: 'Py',
   java: 'Java',
   react: 'TSX',
+  html: 'HTML',
+  vue: 'Vue',
 };
 
 interface BuildDiagnostic {
@@ -104,6 +108,8 @@ const TARGET_EXT: Record<string, string> = {
   python: '.py',
   java: '.java',
   react: '.tsx',
+  html: '.html',
+  vue: '.vue',
 };
 
 type EmitFn = (module: IonIRModule) => string;
@@ -115,6 +121,8 @@ function getEmitter(target: string): EmitFn | null {
   if (target === 'python') return emitPython;
   if (target === 'java') return emitJava;
   if (target === 'react') return emitReact;
+  if (target === 'html') return emitHTML;
+  if (target === 'vue') return emitVue;
   return null;
 }
 
@@ -659,7 +667,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
   const emitter = getEmitter(target);
   if (emitter === null) {
     process.stderr.write(`error: unsupported target: ${target}\n`);
-    process.stderr.write('supported targets: javascript, typescript, typescript-dts, python, java, react\n');
+    process.stderr.write('supported targets: javascript, typescript, typescript-dts, python, java, react, html, vue\n');
     return { exitCode: 2 };
   }
 
