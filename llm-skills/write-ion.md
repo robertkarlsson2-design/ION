@@ -176,6 +176,154 @@ let processItems = (items: [Str], config: Config) ->
 
 ---
 
+## Writing UI components for React / HTML / Vue targets
+
+In ION wire format, HTML elements are ordinary function calls: the first argument is a space-separated `key=value` attribute string, and the remaining arguments are children (text literals or nested element calls). The React, HTML, and Vue emitters recognise these calls by tag name and convert them to JSX / HTML / SFC syntax automatically.
+
+### Pattern 1 — Simple stateless component
+
+**.ion source (wire format)**:
+
+```
+I1
+M ui.greeting v=1.0.0
+F let Greeting:never=()->div("class=card",h2("class=title","Hello, World!"),p("class=subtitle","Welcome to ION"));0
+```
+
+**Compiled React TSX** (verbatim `ion build --target react` output):
+
+```tsx
+"use strict";
+import React from 'react';
+
+const Greeting: React.FC = () => (
+  <div className="card">
+    <h2 className="title">
+{"Hello, World!"}
+    </h2>
+    <p className="subtitle">
+{"Welcome to ION"}
+    </p>
+  </div>
+);
+```
+
+**Token count**: Ion: 52 tokens → TSX: 67 tokens (saved 15, 22% vs writing TSX directly, cl100k)
+
+---
+
+### Pattern 2 — Component with typed props
+
+Parameters in the lambda map directly to the React component's argument list in the compiled TSX.
+
+**.ion source (wire format)**:
+
+```
+I1
+M ui.user_card v=1.0.0
+F let UserCard:never=(name:str,role:str)->div("class=user-card",h3("class=user-name",name),span("class=user-role",role));0
+```
+
+**Compiled React TSX**:
+
+```tsx
+"use strict";
+import React from 'react';
+
+const UserCard: React.FC = (name, role) => (
+  <div className="user-card">
+    <h3 className="user-name">
+{name}
+    </h3>
+    <span className="user-role">
+{role}
+    </span>
+  </div>
+);
+```
+
+**Token count**: Ion: 52 tokens → TSX: 67 tokens (saved 15, 22% vs writing TSX directly, cl100k)
+
+> For a fully typed props interface, use the `class` node (`oopClass` pattern) with fields — the emitter generates a `${Name}Props` interface and `extends React.Component<${Name}Props>`.
+
+---
+
+### Pattern 3 — Conditional render via `match` + list render via `raw`
+
+**.ion source (wire format)**:
+
+```
+I1
+M ui.status_list v=1.0.0
+F let StatusBadge:never=(isActive:bool)->div("class=status-card",span("class=label","Status: "),match(isActive){true->span("class=badge-green","Active");_->span("class=badge-red","Inactive")});0 let ItemList:never=(items:[Str])->ul("class=list",raw("{items.map((item,i)=><li key={i}>{item}</li>)}"));0
+```
+
+**Compiled React TSX**:
+
+```tsx
+"use strict";
+import React from 'react';
+
+const StatusBadge: React.FC = (isActive) => (
+  <div className="status-card">
+    <span className="label">
+{"Status: "}
+    </span>
+{isActive ? (
+    <span className="badge-green">
+{"Active"}
+    </span>
+) : (
+    <span className="badge-red">
+{"Inactive"}
+    </span>
+)}
+  </div>
+);
+const ItemList: React.FC = (items) => (
+  <ul className="list">
+{items.map((item,i)=><li key={i}>{item}</li>)}
+  </ul>
+);
+```
+
+**Token count**: Ion: 103 tokens → TSX: 129 tokens (saved 26, 20% vs writing TSX directly, cl100k)
+
+> `raw(...)` is needed for dynamic `array.map` in JSX because the React emitter only lifts calls into JSX when the callee is a known HTML tag. Arbitrary method-call callees (e.g. `items.map(...)`) fall through to the plain-expression path and lose JSX context for any nested tags. Include the `{...}` braces inside the raw string so the result is a valid JSX expression.
+
+---
+
+### HTML attribute → React prop mapping
+
+The emitter rewrites the following HTML attribute names to their React equivalents. Attributes not in this table are passed through unchanged.
+
+| HTML attribute | React prop    |
+|----------------|---------------|
+| `class`        | `className`   |
+| `for`          | `htmlFor`     |
+| `tabindex`     | `tabIndex`    |
+| `onclick`      | `onClick`     |
+| `onchange`     | `onChange`    |
+| `onsubmit`     | `onSubmit`    |
+| `oninput`      | `onInput`     |
+| `onfocus`      | `onFocus`     |
+| `onblur`       | `onBlur`      |
+| `readonly`     | `readOnly`    |
+| `maxlength`    | `maxLength`   |
+| `colspan`      | `colSpan`     |
+| `rowspan`      | `rowSpan`     |
+| `crossorigin`  | `crossOrigin` |
+
+**Event handler values**: when the attribute key starts with `on`, is in the table above, AND the value is a plain JS identifier (matches `[a-zA-Z_][a-zA-Z0-9_]*`), the emitter emits `{handler}` (curly braces). All other values are emitted as `"string"`. Event-like attributes that are NOT in the table (e.g. `onmouseover`) are always emitted as strings. For dynamic non-event attributes (e.g. `src={avatarUrl}`), include the `{}` inside the `raw(...)` string.
+
+---
+
+### Using HTML tags in surface syntax
+
+HTML tag functions (`div`, `span`, etc.) are not in the ION prelude. In surface syntax (`.ion` files) each tag must be declared as an `@foreign` extern before use. Wire format is the recommended approach for all UI component work — tags need no declaration there and the token savings are greatest.
+
+---
+
 ## Step 5 — Supported emitters and their coverage
 
 | Emitter | File | Full coverage |
