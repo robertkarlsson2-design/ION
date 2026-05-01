@@ -1,0 +1,11 @@
+{
+  "name": "vite-plugin-ion",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Vite plugin for transparent .ion file compilation",
+  "main": "../../dist/packages/vite-plugin-ion/src/index.js",
+  "types": "../../dist/packages/vite-plugin-ion/src/index.d.ts",
+  "exports": {
+    ".": "../../dist/packages/vite-plugin-ion/src/index.js"
+  }
+}

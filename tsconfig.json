@@ -15,12 +15,14 @@
   },
   "include": [
     "src/**/*",
-    "emitters/**/*"
+    "emitters/**/*",
+    "packages/vite-plugin-ion/src/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "src/ion-generated/**"
+    "src/ion-generated/**",
+    "packages/vite-plugin-ion/__demo__/**/*"
   ],
   "files": [
     "src/ion-generated/prelude/shake.ts"
