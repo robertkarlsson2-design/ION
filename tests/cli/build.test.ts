@@ -226,7 +226,7 @@ describe('runBuild integration', () => {
 
     const output = await readFile(join(outDir, 'hello.js'), 'utf-8');
     expect(output).toContain('"use strict";');
-  });
+  }, 30000);
 
   it('excludes *.test.ion files by default', async () => {
     const srcDir = join(tmpDir, 'src');

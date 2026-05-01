@@ -28,11 +28,11 @@ function appNode(tag: string, attrStr: string, ...children: IonIRNode[]): IonIRN
   return { kind: 'App', callee: varNode(tag), args: [strLit(attrStr), ...children], span: SPAN, type: UNIT };
 }
 
-function makeReactModule(): IonIRModule {
-  const divApp = appNode('div', 'class=app', strLit('Hello from Ion!'));
+function makeVueModule(): IonIRModule {
+  const divApp = appNode('div', 'class=app', appNode('h1', '', strLit('Hello from Ion!')));
   return {
     ionir: '1.0',
-    module: 'sample-react',
+    module: 'sample-vue',
     version: '0.0.0',
     dialects: [],
     imports: [],
@@ -56,14 +56,14 @@ function makeReactModule(): IonIRModule {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('runBuild — react target', () => {
+describe('runBuild — vue target', () => {
   let tmpDir: string;
   let srcDir: string;
   let outDir: string;
   let configPath: string;
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'ion-react-build-test-'));
+    tmpDir = await mkdtemp(join(tmpdir(), 'ion-vue-build-test-'));
     srcDir = join(tmpDir, 'src');
     outDir = join(tmpDir, 'out');
     configPath = join(tmpDir, 'ion.config.json');
@@ -74,12 +74,12 @@ describe('runBuild — react target', () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('compiles wire-format .ion to .tsx and output contains React import', async () => {
-    const wire = encodeModule(makeReactModule());
+  it('compiles wire-format .ion to .vue and output contains <template> and <script setup lang="ts">', async () => {
+    const wire = encodeModule(makeVueModule());
     await writeFile(join(srcDir, 'app.ion'), wire, 'utf-8');
     await writeFile(configPath, JSON.stringify({
       version: '1',
-      target: 'react',
+      target: 'vue',
       outDir: 'out',
       rootDir: 'src',
     }), 'utf-8');
@@ -87,17 +87,17 @@ describe('runBuild — react target', () => {
     const result = await runBuild(['--config', configPath, '--no-sourcemap']);
     expect(result.exitCode).toBe(0);
 
-    const output = await readFile(join(outDir, 'app.tsx'), 'utf-8');
-    expect(output).toContain("import React from 'react';");
-    expect(output).toContain('const App: React.FC');
+    const output = await readFile(join(outDir, 'app.vue'), 'utf-8');
+    expect(output).toContain('<template>');
+    expect(output).toContain('<script setup lang="ts">');
   }, 30000);
 
-  it('returns exitCode 0 for target react from config file', async () => {
-    const wire = encodeModule(makeReactModule());
+  it('returns exitCode 0 for target vue from config file', async () => {
+    const wire = encodeModule(makeVueModule());
     await writeFile(join(srcDir, 'app.ion'), wire, 'utf-8');
     await writeFile(configPath, JSON.stringify({
       version: '1',
-      target: 'react',
+      target: 'vue',
       outDir: 'out',
       rootDir: 'src',
     }), 'utf-8');
@@ -105,14 +105,14 @@ describe('runBuild — react target', () => {
     const result = await runBuild(['--config', configPath, '--no-sourcemap']);
     expect(result.exitCode).toBe(0);
 
-    const tsxExists = await readFile(join(outDir, 'app.tsx'), 'utf-8')
+    const vueExists = await readFile(join(outDir, 'app.vue'), 'utf-8')
       .then(() => true)
       .catch(() => false);
-    expect(tsxExists).toBe(true);
+    expect(vueExists).toBe(true);
   });
 
-  it('--target react overrides config target', async () => {
-    const wire = encodeModule(makeReactModule());
+  it('--target vue overrides config target', async () => {
+    const wire = encodeModule(makeVueModule());
     await writeFile(join(srcDir, 'app.ion'), wire, 'utf-8');
     await writeFile(configPath, JSON.stringify({
       version: '1',
@@ -121,13 +121,13 @@ describe('runBuild — react target', () => {
       rootDir: 'src',
     }), 'utf-8');
 
-    const result = await runBuild(['--config', configPath, '--target', 'react', '--no-sourcemap']);
+    const result = await runBuild(['--config', configPath, '--target', 'vue', '--no-sourcemap']);
     expect(result.exitCode).toBe(0);
 
-    const tsxExists = await readFile(join(outDir, 'app.tsx'), 'utf-8')
+    const vueExists = await readFile(join(outDir, 'app.vue'), 'utf-8')
       .then(() => true)
       .catch(() => false);
-    expect(tsxExists).toBe(true);
+    expect(vueExists).toBe(true);
 
     const jsExists = await readFile(join(outDir, 'app.js'), 'utf-8')
       .then(() => true)
