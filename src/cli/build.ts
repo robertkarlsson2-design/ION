@@ -17,6 +17,7 @@ import { emitTS } from '../../emitters/typescript/emit.js';
 import { emitTsDts } from '../../emitters/typescript/emit-dts.js';
 import { emitPython } from '../../emitters/python/emit.js';
 import { emitJava } from '../../emitters/java/emit.js';
+import { emitReact } from '../../emitters/react/emit.js';
 import { loadConfig } from './config.js';
 import type { IonConfig } from './config.js';
 import { generateSourceMap } from '../emit/sourcemap.js';
@@ -58,6 +59,7 @@ const TARGET_LABEL: Record<string, string> = {
   'typescript-dts': 'DTS',
   python: 'Py',
   java: 'Java',
+  react: 'TSX',
 };
 
 interface BuildDiagnostic {
@@ -101,6 +103,7 @@ const TARGET_EXT: Record<string, string> = {
   'typescript-dts': '.d.ts',
   python: '.py',
   java: '.java',
+  react: '.tsx',
 };
 
 type EmitFn = (module: IonIRModule) => string;
@@ -111,6 +114,7 @@ function getEmitter(target: string): EmitFn | null {
   if (target === 'typescript-dts') return emitTsDts;
   if (target === 'python') return emitPython;
   if (target === 'java') return emitJava;
+  if (target === 'react') return emitReact;
   return null;
 }
 
@@ -655,7 +659,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
   const emitter = getEmitter(target);
   if (emitter === null) {
     process.stderr.write(`error: unsupported target: ${target}\n`);
-    process.stderr.write('supported targets: javascript, typescript, typescript-dts, python, java\n');
+    process.stderr.write('supported targets: javascript, typescript, typescript-dts, python, java, react\n');
     return { exitCode: 2 };
   }
 

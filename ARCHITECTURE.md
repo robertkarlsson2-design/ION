@@ -39,7 +39,7 @@ emitters/                     # backends (one folder per target)
   typescript/emit.ts          # IonIR → TS         [WIRED IN CLI]
   python/emit.ts              # IonIR → Py         [WIRED IN CLI]
   java/emit.ts                # IonIR → Java       [WIRED IN CLI]
-  react/emit.ts               # IonIR → React TSX  [code present, not wired]
+  react/emit.ts               # IonIR → React TSX  [WIRED IN CLI]
   html/emit.ts                # IonIR → HTML       [code present, not wired]
   vue/emit.ts                 # IonIR → Vue SFC    [code present, not wired]
   apex/emit.ts                # IonIR → Apex       [code present, not wired]
@@ -147,7 +147,7 @@ npx ion --version           # CLI binary works
 | typescript-dts | ✅ | tests/emit/typescript-dts.test.ts |
 | python | ✅ | tests/emit/python.test.ts |
 | java | ✅ | tests/emit/java.test.ts |
-| **react** | ❌ (code present in `emitters/react/emit.ts`, 18/18 tests pass) | tests/emit/react.test.ts |
+| react | ✅ | tests/emit/react.test.ts |
 | **html** | ❌ (code present) | tests/emit/html.test.ts |
 | **vue** | ❌ (code present) | tests/emit/vue.test.ts |
 | **apex** | ❌ (code present) | tests/emit/apex.test.ts (if present) |
