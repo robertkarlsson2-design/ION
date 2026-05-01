@@ -150,3 +150,17 @@ let result = raw("someFrameworkCall(x, { deep: true })");
 | `a + b` (infix) | `add(a, b)` |
 | `[Str -> Bool]` in param | use `Str` as placeholder |
 | `(Str) -> Bool` as param type | use `Str` as placeholder |
+
+## UI tag functions (React / HTML / Vue targets)
+
+HTML elements are regular function calls in ION wire format — no declaration required. The first argument is a space-separated `key=value` attribute string; remaining arguments are children.
+
+```
+I1
+M ui.greeting v=1.0.0
+F let Greeting:never=()->div("class=card",h2("class=title","Hello, World!"));0
+```
+
+In surface syntax, HTML tag functions must be declared as `@foreign` externs before use — wire format is recommended for all UI component work.
+
+See **write-ion.md → Writing UI components for React / HTML / Vue targets** for the full attribute mapping table, compiled TSX output, and worked examples for stateless components, typed-props components, and conditional + list render.
