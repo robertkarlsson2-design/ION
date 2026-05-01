@@ -305,7 +305,7 @@ F a (id:i)->o { c(id) }
 | Python emitter | ✅ Complete |
 | Java emitter | ✅ Wired (experimental) |
 | HTML emitter | 🚧 Code present, not wired into CLI |
-| React (JSX/TSX) emitter | 🚧 Code present, not wired into CLI |
+| React (JSX/TSX) emitter | ✅ Wired (`--target react`) |
 | Vue SFC emitter | 🚧 Code present, not wired into CLI |
 | Lightning Web Component emitter | 🚧 Code present, not wired into CLI |
 | Salesforce Apex emitter | 🚧 Code present, not wired into CLI |
@@ -320,7 +320,7 @@ F a (id:i)->o { c(id) }
 ```bash
 # Compile
 ion build                          # compile per ion.config.json
-ion build --target typescript      # javascript | typescript | python | java
+ion build --target typescript      # javascript | typescript | python | java | react
 ion build --watch                  # incremental watch mode
 ion build --no-token-report        # suppress token-savings summary
 
