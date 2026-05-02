@@ -641,3 +641,43 @@ describe('D13: TuplePattern wire round-trip', () => {
     expect(encodeModule(decoded)).toBe(w1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Wire-form support for app(callee, ...args), async{...}, await(...)
+// ---------------------------------------------------------------------------
+
+describe('wire decoder — special forms for app/async/await', () => {
+  it('app(callee, ...args) treats first arg as the callee', () => {
+    const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn(int)->unit=(x:int)->app(ffi:js:console:log,x);0';
+    const mod = decodeModule(wire);
+    expect(mod.decls.length).toBeGreaterThan(0);
+    // The body of the lambda should be App(ForeignRef, [Var x])
+    // Walk: decls[0] is the let, value is Abs, body is App
+    type AnyNode = { kind: string; callee?: AnyNode; body?: AnyNode; value?: AnyNode };
+    const decl = mod.decls[0] as unknown as AnyNode;
+    const lambda = (decl as { value?: AnyNode }).value;
+    expect(lambda?.kind).toBe('Abs');
+    const appNode = lambda?.body;
+    expect(appNode?.kind).toBe('App');
+    expect(appNode?.callee?.kind).toBe('ForeignRef');
+  });
+
+  it('async{body} parses to AsyncBlock', () => {
+    const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn()->unit=()->async{0};0';
+    const mod = decodeModule(wire);
+    type AnyNode = { kind: string; body?: AnyNode; value?: AnyNode };
+    const decl = mod.decls[0] as unknown as AnyNode;
+    const lambda = (decl as { value?: AnyNode }).value;
+    expect(lambda?.body?.kind).toBe('AsyncBlock');
+  });
+
+  it('await(expr) parses to Await', () => {
+    const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn(any)->unit=(p:any)->await(p);0';
+    const mod = decodeModule(wire);
+    type AnyNode = { kind: string; body?: AnyNode; value?: AnyNode };
+    const decl = mod.decls[0] as unknown as AnyNode;
+    const lambda = (decl as { value?: AnyNode }).value;
+    expect(lambda?.body?.kind).toBe('Await');
+  });
+
+});

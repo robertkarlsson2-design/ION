@@ -201,3 +201,27 @@ describe('emitTS — raw() surface syntax passthrough', () => {
     expect(out).toContain('`json`');
   });
 });
+
+describe('TS emitter — FFI ref as callee (fix for empty `app(, args)` bug)', () => {
+  // Compile from wire form to exercise the FOREIGN_SIG_PLACEHOLDER path that
+  // the wire decoder uses for `ffi:js:<module>:<symbol>` refs.
+  it('global FFI ref (console.log) emits as member access', async () => {
+    const { decodeModule } = await import('../../src/wire/decoder.js');
+    const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn(int)->unit=(x:int)->app(ffi:js:console:log,x);0';
+    const ir = decodeModule(wire);
+    const ts = emitTS(ir);
+    expect(ts).toContain('console.log(x)');
+    expect(ts).not.toContain('app(, x)');
+    expect(ts).not.toMatch(/=>\s*\(\s*,/);
+  });
+
+  it('npm-package FFI ref emits as bare symbol (import-resolved name)', async () => {
+    const { decodeModule } = await import('../../src/wire/decoder.js');
+    const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn(int)->any=(x:int)->app(ffi:js:pg:Pool,x);0';
+    const ir = decodeModule(wire);
+    const ts = emitTS(ir);
+    expect(ts).toContain('Pool(x)');
+    expect(ts).not.toContain('pg.Pool');
+  });
+});
+

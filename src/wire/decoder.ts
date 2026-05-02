@@ -928,6 +928,22 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
     return { kind: 'RawInject', code: strLit.value, span: WIRE_SPAN, type: { kind: 'Unit' } };
   }
 
+  // ── async{body}  — AsyncBlock (paired with the encoder at src/wire/encoder.ts) ──
+  if (cur.text.startsWith('async{', cur.pos)) {
+    cur.pos += 6;
+    const body = parseNode(cur, ctx, depth + 1);
+    consume(cur, '}');
+    return { kind: 'AsyncBlock', body, span: WIRE_SPAN, type: { kind: 'Unit' } };
+  }
+
+  // ── await(expr) — Await (paired with the encoder) ──
+  if (cur.text.startsWith('await(', cur.pos)) {
+    cur.pos += 6;
+    const expr = parseNode(cur, ctx, depth + 1);
+    consume(cur, ')');
+    return { kind: 'Await', expr, span: WIRE_SPAN, type: { kind: 'Unit' } };
+  }
+
   // ── Boolean / Null literals (as nodes) ──────────────────────────────────
   if (cur.text.startsWith('true', cur.pos) && isIdentEnd(cur.text[cur.pos + 4])) {
     cur.pos += 4;
@@ -947,8 +963,21 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
   const next = peek(cur);
 
   // App: name(args)   — may be followed by ->method(args) or .field chains
+  // Special form: `app(callee, ...args)` — explicit application where the callee
+  // is itself an expression (e.g. an FFI ref) rather than a bare name. Documented
+  // in llm-skills/wire-format.md and ion-wire-format-by-example.
   if (next === '(') {
     cur.pos++;
+    if (rawId === 'app') {
+      const allArgs = parseNodeArgs(cur, ctx, depth + 1);
+      consume(cur, ')');
+      if (allArgs.length === 0) {
+        throw new WireDecodeError(`app() requires at least a callee expression as its first argument`);
+      }
+      const callee = allArgs[0]!;
+      const args = allArgs.slice(1);
+      return parseChain({ kind: 'App', callee, args, span: WIRE_SPAN, type: { kind: 'Unit' } }, cur, ctx, depth);
+    }
     const callee: IonIRNode = {
       kind: 'Var', name: resolveName(rawId, ctx), symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' },
     };

@@ -480,6 +480,26 @@ function emitTsExpr(node: IonIRNode): string {
 
     case 'ForeignRef': {
       const fr = node as ForeignRefNode;
+      // Wire-decoded FFI refs (`ffi:js:<module>:<symbol>`) carry no signature
+      // template — they're created with FOREIGN_SIG_PLACEHOLDER. In that case
+      // emit a direct identifier so the surrounding App emission produces a
+      // sensible call: `console.log(x)` not `(empty)(x)` aka `app(, x)`.
+      if (fr.sig.template === '' && fr.sig.params.length === 0) {
+        // Bare imports like `ffi:js:react:useState` are imported by ION-190's
+        // import emission and exposed as just `<symbol>`. Globals like
+        // `ffi:js:console:log` need the full `<module>.<symbol>` member path.
+        // Heuristic: well-known JS globals get member access; everything else
+        // is assumed to be imported by name.
+        const JS_GLOBAL_NAMESPACES = new Set([
+          'console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number',
+          'Boolean', 'Date', 'RegExp', 'Promise', 'Symbol', 'Error',
+          'window', 'document', 'globalThis', 'process',
+        ]);
+        if (fr.target === 'js' && JS_GLOBAL_NAMESPACES.has(fr.module)) {
+          return `${fr.module}.${fr.symbol}`;
+        }
+        return fr.symbol;
+      }
       const arity = fr.sig.params.length;
       if (arity === 0) return expandTemplate(fr.sig.template, []);
       const pnames = fr.sig.params.map((pt, i) => {

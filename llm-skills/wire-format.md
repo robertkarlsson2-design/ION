@@ -177,3 +177,24 @@ Card("class=card", key: item.id, item: item)
 ```
 
 **Other emitters**: emitters that do not yet handle `propDict` will ignore the field silently (since it is optional). File a ticket to add support if needed.
+
+## Special call forms inside expressions
+
+| Form | Meaning |
+|---|---|
+| `app(callee, ...args)` | Explicit application where the callee is itself an expression (typically an FFI ref). **Required** for calling FFI refs: `app(ffi:js:pg:Pool, conn)`. Without `app(...)`, `name(args)` parses as a call to a Var named `name`. |
+| `async{body}` | AsyncBlock — runs body in `(async () => body)()`. |
+| `await(expr)` | Emits `await expr`. Must be inside `async{...}` or an async surface function. |
+| `match(scrutinee){pat->body;...}` | Pattern match. For booleans, use `match(b){true->a;_->b}` — emits a ternary. |
+| `raw("...")` | Verbatim target-language escape hatch — line-level only, never whole-module. |
+
+Example — async DB query body in real Ion (no `raw()` for the function body):
+```
+F let getUser:fn(any,str)->any=(p:any,id:str)->async{await(app(ffi:js:pg:Pool,p,id))};0
+```
+emits:
+```ts
+const getUser = (p: any, id: string) => (async () => await Pool(p, id))();
+```
+
+FFI refs can also be used at the top of an `F` line as bare identifiers (no `app(...)` needed) when you only want to declare them, not call them — that's how cross-module FFI imports register the module name (see ION-190).
