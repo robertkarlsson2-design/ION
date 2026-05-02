@@ -98,4 +98,33 @@ describe('checkModule — match exhaustiveness', () => {
     expect(e403.length).toBeGreaterThanOrEqual(1);
     expect(e403[0]?.missing).toContain('Blue');
   });
+
+  it('fn nullish_coalesce(x: Option<Str>) -> Str = match x | Some(v) -> v | None -> "default" → zero errors', () => {
+    const result = check(
+      'fn nullish_coalesce(x: Option<Str>) -> Str = match x | Some(v) -> v | None -> "default"',
+    );
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('fn result_catch(x: Result<Str, Str>) -> Str = match x | Ok(v) -> v | Err(e) -> e → zero errors', () => {
+    const result = check(
+      'fn result_catch(x: Result<Str, Str>) -> Str = match x | Ok(v) -> v | Err(e) -> e',
+    );
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('fn option_int_fallback(x: Option<Int>) -> Int = match x | Some(n) -> n | None -> 0 → zero errors', () => {
+    const result = check(
+      'fn option_int_fallback(x: Option<Int>) -> Int = match x | Some(n) -> n | None -> 0',
+    );
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('data User record + match on Option<User>.name → zero errors', () => {
+    const result = check(`
+      data User = User { name: Str }
+      fn get_name(u: Option<User>) -> Str = match u | Some(usr) -> usr.name | None -> "unknown"
+    `);
+    expect(result.errors).toHaveLength(0);
+  });
 });

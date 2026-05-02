@@ -1,0 +1,28 @@
+// Optional-chain idioms in ION surface syntax
+//
+// TypeScript equivalent shown as comments above each declaration.
+// ION uses Option<T> + exhaustive match instead of ?. and ??.
+
+module examples.optional_chain  "1.0.0"
+
+// data User = User { name: Str }
+data User = User { name: Str }
+
+// const name = user?.name ?? "unknown"
+fn get_name(user: Option<User>) -> Str =
+  match user | Some(u) -> u.name | None -> "unknown"
+
+// const label = x ?? "anonymous"
+fn get_label(x: Option<Str>) -> Str =
+  match x | Some(v) -> v | None -> "anonymous"
+
+// const n = value ?? 0
+fn or_zero(value: Option<Int>) -> Int =
+  match value | Some(n) -> n | None -> 0
+
+// data AppErr = AppErr { message: Str }
+data AppErr = AppErr { message: Str }
+
+// const msg = err?.message ?? "error"
+fn get_msg(err: Option<AppErr>) -> Str =
+  match err | Some(e) -> e.message | None -> "error"

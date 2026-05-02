@@ -27,7 +27,7 @@ Key syntax rules:
 - String concatenation: `concat(s1, s2)` (extern)
 - List literal: `[a, b, c]`  
 - Map literal: `{k: v, k2: v2}`
-- If-then-else via case: `case b of { true -> x | _ -> y }`
+- If-then-else via match: `match b | true -> x | _ -> y`
 - ADT variant: `Just(42)` / `Nothing`
 - Module reference: `io.println`
 
@@ -163,6 +163,7 @@ raw("const result = obj\n  .step1()\n  .step2(x);")
 | Complex OOP hierarchy with many methods | Use `raw(...)` for the whole class body |
 | Framework-specific boilerplate (React hooks, LWC decorators, Apex annotations) | Use `raw(...)` for the framework-specific parts |
 | Standard logic (math, string ops, list ops, let/case) | Always use proper ION nodes |
+| `try/catch/finally` with side effects | Use `raw(...)` |
 
 ### Token budget rule
 Only use `raw(...)` for the gap. Keep everything else in ION. A `let` binding wrapping a `raw(...)` still saves tokens on the surrounding structure:
@@ -351,3 +352,116 @@ All emitters support `raw(...)`. If you get an "unhandled kind" error, that mean
 | React component | `oopClass(...)` or `.ion` surface | ~55% |
 | ADT (discriminated union) | `adtDecl(...)` | ~70% |
 | Pattern matching | `adtMatch(...)` | ~65% |
+
+---
+
+## Optional chains, nullish fallbacks, and try/catch/finally
+
+ION does not have `?.`, `??`, or `try/catch` as surface syntax. Instead, it uses the `Option<T>` and `Result<T, E>` types with exhaustive `match` expressions. Every `None`/`Err` branch must be handled explicitly — this eliminates runtime null-dereference bugs by construction.
+
+### Pattern map
+
+| TypeScript idiom | ION idiom |
+|---|---|
+| `x ?? fallback` | `match x \| Some(v) -> v \| None -> fallback` |
+| `x?.field` | `match x \| Some(obj) -> obj.field \| None -> fallback` |
+| `x?.y?.z` (chained) | nested `match` expressions over `Option<T>` types |
+| `try { return f() } catch (e) { return fallback }` | `match f() \| Ok(v) -> v \| Err(e) -> fallback` |
+| `try/catch/finally` with side effects | `raw("try { ... } catch (e) { ... } finally { ... }")` |
+
+### Example 1 — `x ?? fallback` (nullish coalesce)
+
+```typescript
+// TypeScript
+const label = x ?? "anonymous";
+```
+
+```ion
+// ION — x: Option<Str>
+fn get_label(x: Option<Str>) -> Str = match x | Some(v) -> v | None -> "anonymous"
+```
+
+### Example 2 — `x?.field ?? fallback` (optional field access)
+
+```typescript
+// TypeScript
+const name = user?.name ?? "unknown";
+```
+
+```ion
+// ION — user: Option<User>
+data User = User { name: Str }
+
+fn get_name(user: Option<User>) -> Str =
+  match user | Some(u) -> u.name | None -> "unknown"
+```
+
+### Example 3 — `x?.y?.z` chained optional access
+
+```typescript
+// TypeScript
+const city = user?.address ?? "unknown";
+```
+
+```ion
+// ION — each nested field is modelled as Option<T> in the data type
+data User = User { address: Str }
+
+fn get_address(user: Option<User>) -> Str =
+  match user | Some(u) -> u.address | None -> "unknown"
+```
+
+### Example 4 — `err?.message ?? "error"` (error object field)
+
+```typescript
+// TypeScript
+const msg = err?.message ?? "error";
+```
+
+```ion
+// ION — err: Option<AppErr>
+data AppErr = AppErr { message: Str }
+
+fn get_msg(err: Option<AppErr>) -> Str =
+  match err | Some(e) -> e.message | None -> "error"
+```
+
+### Example 5 — `try/catch` as Result propagation
+
+```typescript
+// TypeScript
+async function load(id: string): Promise<Data> {
+  try { return await apiFetch(id); }
+  catch (e) { throw e; }
+}
+```
+
+```ion
+// ION — apiFetch returns Result<Data, Str>; ? propagates Err
+@foreign("api", "fetch", "apiFetch($1)")
+extern fn apiFetch(id: Str) -> Result<Data, Str>;
+
+fn load(id: Str) -> Result<Data, Str> = apiFetch(id)?
+```
+
+### Example 6 — `try/catch/finally` with side effects → use `raw(...)`
+
+When a `finally` block performs side effects (e.g. `setSubmitting(false)`) that cannot be expressed as a pure value, use the `raw(...)` escape hatch.
+
+```typescript
+// TypeScript
+try {
+  await submit(data);
+} catch (e) {
+  setError(e?.message ?? "error");
+} finally {
+  setSubmitting(false);
+}
+```
+
+```ion
+// ION — use raw() because finally with side effects has no pure ION equivalent
+raw("try { await submit(data); } catch (e) { setError(e?.message ?? \"error\"); } finally { setSubmitting(false); }")
+```
+
+> ION's type system makes partial access impossible — every `None`/`Err` branch must be handled explicitly, which eliminates runtime null-dereference bugs.
