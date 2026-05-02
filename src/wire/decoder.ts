@@ -847,11 +847,14 @@ function parseChain(node: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: nu
 function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
   // Outer entry: parse a primary node, then apply postfix/infix operator sugar
   // (see applyInfix). Keeps the primary parser logic in parseNodeNoInfix.
-  // Handle prefix `!` (logical not) here since the primary parser doesn't.
+  // Handle prefix `!` (logical not) here since the primary parser doesn't —
+  // bind it tightly so `!x?a:b` parses as `(!x)?a:b`, not `!(x?a:b)`.
   let primary: IonIRNode;
   if (peek(cur) === '!' && cur.text[cur.pos + 1] !== '=') {
     cur.pos++;
-    const inner = parseNode(cur, ctx, depth + 1);
+    // Parse only the primary + postfix chain (no full infix), so `!` stays
+    // tight against the immediate operand.
+    const inner = applyInfix(parseNodeNoInfix(cur, ctx, depth + 1), cur, ctx, depth + 1, 100);
     primary = {
       kind: 'App',
       callee: { kind: 'Var', name: '__not__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },

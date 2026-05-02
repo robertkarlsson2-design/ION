@@ -559,7 +559,22 @@ export function emitTsExprForReact(node: IonIRNode): string {
       return `${receiver}.${node.method}(${args})`;
     }
     case 'OopThis': return 'this';
-    case 'AsyncBlock': return `(async () => ${emitTsExprForReact(node.body)})()`;
+    case 'AsyncBlock': {
+      const body = (node as { body: IonIRNode }).body;
+      // When body is a Let chain, inline the bindings inside the async arrow
+      // (mirrors TS emitter). Otherwise emit as single-expression body.
+      if (body.kind === 'Let') {
+        const stmts: string[] = [];
+        let cur: IonIRNode = body;
+        while (cur.kind === 'Let') {
+          const lt = cur as LetNode;
+          stmts.push(`const ${lt.name} = ${emitTsExprForReact(lt.value)};`);
+          cur = lt.body;
+        }
+        return `(async () => { ${stmts.join(' ')} return ${emitTsExprForReact(cur)}; })()`;
+      }
+      return `(async () => ${emitTsExprForReact(body)})()`;
+    }
     case 'Await': return `await ${emitTsExprForReact(node.expr)}`;
     case 'AdtMatch': {
       const adtMatch = node as AdtMatchNode;
