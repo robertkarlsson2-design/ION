@@ -434,7 +434,13 @@ function desugarExpr(expr: AstExprNode, ctx: DesugarCtx): IonIRNode {
 
     case 'CallExpr': {
       const callee = desugarExpr(expr.callee, ctx);
-      const args = expr.args.map(a => desugarExpr(a.value, ctx));
+      const positional = expr.args.filter(a => a.label === null);
+      const named = expr.args.filter(a => a.label !== null);
+      const args = positional.map(a => desugarExpr(a.value, ctx));
+      const propDict = named.map(a => ({ key: a.label!, value: desugarExpr(a.value, ctx) }));
+      if (propDict.length > 0) {
+        return { kind: 'App', callee, args, propDict, span: expr.span, type };
+      }
       return { kind: 'App', callee, args, span: expr.span, type };
     }
 

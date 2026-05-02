@@ -58,6 +58,7 @@ lit("hello")                               ← Str literal
 lit(true)                                  ← Bool literal
 lit(null)                                  ← Null
 app(callee, arg1, arg2, ...)               ← function application
+                                           ← optional: AppNode.propDict carries named expression props
 abs([param(n,t), ...], body)               ← lambda abstraction
 let(bodyType, name, bindType, value, body) ← let binding
 case(scrutinee, [arm(pat, body), ...])     ← pattern match
@@ -155,3 +156,24 @@ let(a,formatDate,a,
   abs([param(b,Str)],
     raw("d.toISOString().split('T')[0]")))
 ```
+
+## propDict — named expression props on App nodes
+
+`AppNode` carries an optional `propDict` field: `readonly { key: string; value: IonIRNode }[]`.
+
+This is an **additive, backward-compatible extension** — the field is absent on nodes produced by positional-only call expressions, and the deserializer treats a missing `propDict` as `undefined` (no version bump to `I1` required).
+
+**When it is populated**: the ION desugarer sets `propDict` for any call argument written with a label (`key: expr`). Positional (unlabeled) args remain in `args`; labeled args move into `propDict`. Both can coexist:
+
+```ion
+// Positional + labeled
+Card("class=card", key: item.id, item: item)
+// → AppNode { args: [Str("class=card")], propDict: [{key:"key", value:...}, {key:"item", value:...}] }
+```
+
+**React emitter**: the React emitter renders `propDict` entries as JSX expression attributes:
+```tsx
+<Card className="card" key={item.id} item={item} />
+```
+
+**Other emitters**: emitters that do not yet handle `propDict` will ignore the field silently (since it is optional). File a ticket to add support if needed.

@@ -276,17 +276,61 @@ let TodoList = ul("class=list", [
 
 ⚠️ Note: passing a `ListLit` as a child of an HTML element call is **untested in surface syntax** — the emitter recursively handles `ListLit` in JSX position correctly per the test. **Verify with `ion build`** before relying on this pattern.
 
-### 6. Dynamic list rendering with `map` — gap
+### 6. Dynamic list rendering with `map` and named props — propDict
 
-There is no clean surface-syntax way to express `items.map(item => <Card item={item} />)` in Ion today. The pattern relies on:
-- An expression-form lambda passed as a child (`Abs` of `App(Card, ...)`)
-- A pipeline `items |> map(...)`
+Named call arguments (labeled args) in Ion are desugared into `AppNode.propDict`. The React emitter renders them as JSX expression attributes. This enables the canonical `items.map(item => <Card key={item.id} item={item} />)` pattern without `raw()`.
 
-Both round-trip through the IR but **the React emitter calls `emitJsxNode` on `App(map, [...])`** and falls into the "non-HTML function call" branch (`emit.ts:152`), emitting `{map(items, ...)}` as a TS expression embedded in JSX. The lambda body inside the `map` argument goes through `emitTsExprForReact`, NOT `emitJsxNode`, so any JSX inside the lambda becomes a string of TS code, not real JSX.
+**IR shape for `<Card key={item.id} item={item} />`:**
 
-**Workaround today:** drop the entire list-rendering subtree to a `raw("...")` IR node containing pre-baked `{items.map(item => <Card item={item} />)}` JSX. **Untested in surface syntax — verify with `ion build`.**
+```
+App(
+  callee = Var("Card"),
+  args   = [],
+  propDict = [
+    { key: "key",  value: Accessor(Var("item"), "id") },
+    { key: "item", value: Var("item") }
+  ]
+)
+```
 
-This is a real gap; opening a TheTicketer ticket to handle `App(map, [items, lambda])` specially in JSX position would unlock the most-common React idiom.
+**Emits:**
+
+```tsx
+<Card key={item.id} item={item} />
+```
+
+**Full list-render pattern** — `items.map(item => <Card key={item.id} item={item} />)`:
+
+```
+App(
+  callee = Accessor(Var("items"), "map"),
+  args   = [ Abs([param("item")], App(Var("Card"), [], propDict=[key:..., item:...])) ]
+)
+```
+
+Emits:
+
+```tsx
+{items.map((item) => (<Card key={item.id} item={item} />))}
+```
+
+**Combining attr string + propDict** — `<div className="container" id={"root"}>`:
+
+```
+App(Var("div"), [Str("class=container")], propDict=[{key:"id", value:Str("root")}])
+```
+
+Emits: `<div className="container" id={"root"}></div>`
+
+**propDict-only component** (no attr string):
+
+```
+App(Var("Card"), [], propDict=[{key:"item", value:Var("selected")}])
+```
+
+Emits: `<Card item={selected} />`
+
+> **Surface syntax**: Ion already parses labeled call args (`key: expr`). Write `Card(key: item.id, item: item)` and the desugar populates `propDict` automatically. No `raw()` needed.
 
 
 ## State — useState, useEffect, useRef, useContext
@@ -522,7 +566,8 @@ F let SubmitForm:never=()->let _:unit=raw("const [error, setError] = useState(nu
 | `useState` returning a tuple | ❌ extern can't model tuple return | `raw("const [v, setV] = useState(...)")` |
 | `useEffect` cleanup function | ❌ extern can't model | `raw(...)` |
 | Inline event-handler lambda `onclick=(e) -> ...` | ❌ regex rejects | hoist handler to a `let`, pass identifier |
-| Dynamic list rendering `items |> map(item -> Card(item))` | ❌ JSX-inside-lambda flattens to TS | `raw("{items.map(...)}")` |
+| Dynamic list rendering `items |> map(item -> Card(item))` | ✅ works via propDict (see below) | — |
+| Per-item `key` and named props on component (`<Card key={id} />`) | ✅ works via propDict | — |
 | `<svg>`, `<path>`, etc. (non-HTML_TAGS) | ❌ becomes function call | extend `HTML_TAGS` or `raw(...)` |
 | Surface-syntax for HTML element calls | ⚠️ untested in this skill | wire format works |
 | Component props typing | ❌ params untyped | `OopClass` decl or `.d.ts` |

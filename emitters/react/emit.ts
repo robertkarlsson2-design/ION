@@ -122,6 +122,12 @@ function emitJsxAttrString(raw: string): string {
     .join(' ');
 }
 
+/** Emit propDict entries as space-prefixed JSX attribute fragments. */
+function emitPropDictAttrs(propDict: readonly { readonly key: string; readonly value: IonIRNode }[]): string {
+  if (propDict.length === 0) return '';
+  return ' ' + propDict.map(({ key, value }) => `${key}={${emitTsExprForReact(value)}}`).join(' ');
+}
+
 // ---------------------------------------------------------------------------
 // emitJsxNode
 // ---------------------------------------------------------------------------
@@ -159,33 +165,37 @@ export function emitJsxNode(node: IonIRNode, indent = 0, env?: ReadonlyMap<strin
           const attrRaw = app.args.length > 0 ? getAttrRaw(app.args[0]!) : '';
           const attrs = emitJsxAttrString(attrRaw);
           const attrStr = attrs ? ` ${attrs}` : '';
+          const propDictStr = app.propDict ? emitPropDictAttrs(app.propDict) : '';
+          const allAttrs = `${attrStr}${propDictStr}`;
 
           if (VOID_ELEMENTS.has(tagName)) {
-            return `${pad}<${tagName}${attrStr} />`;
+            return `${pad}<${tagName}${allAttrs} />`;
           }
 
           const children = app.args.slice(1).map(c => emitJsxNode(c, indent + 1, env)).filter(s => s.trim()).join('\n');
           if (!children) {
-            return `${pad}<${tagName}${attrStr}></${tagName}>`;
+            return `${pad}<${tagName}${allAttrs}></${tagName}>`;
           }
-          return `${pad}<${tagName}${attrStr}>\n${children}\n${pad}</${tagName}>`;
+          return `${pad}<${tagName}${allAttrs}>\n${children}\n${pad}</${tagName}>`;
         }
 
         // Non-HTML function call in JSX context — capitalised name = component
         // (e.g. <Card item={x} />), lowercase = plain function call expression.
         const isComponent = /^[A-Z]/.test(tagName);
         if (isComponent) {
-          // Emit as a self-closing JSX component reference; first arg is treated
-          // as attr-string when it's a string literal, else passed via {...spread}.
           const first = app.args[0];
-          if (first && first.kind === 'Literal' && first.value.kind === 'Str') {
-            const attrs = emitJsxAttrString(first.value.value);
+          const hasAttrString = first !== undefined && first.kind === 'Literal' && first.value.kind === 'Str';
+          const propDictStr = app.propDict && app.propDict.length > 0 ? emitPropDictAttrs(app.propDict) : '';
+          if (hasAttrString || propDictStr) {
+            const attrs = hasAttrString ? emitJsxAttrString(first.value.value) : '';
             const attrStr = attrs ? ` ${attrs}` : '';
-            const children = app.args.slice(1).map(c => emitJsxNode(c, indent + 1, env)).filter(s => s.trim()).join('\n');
-            if (!children) return `${pad}<${tagName}${attrStr} />`;
-            return `${pad}<${tagName}${attrStr}>\n${children}\n${pad}</${tagName}>`;
+            const allAttrs = `${attrStr}${propDictStr}`;
+            const childrenArgs = hasAttrString ? app.args.slice(1) : app.args;
+            const children = childrenArgs.map(c => emitJsxNode(c, indent + 1, env)).filter(s => s.trim()).join('\n');
+            if (!children) return `${pad}<${tagName}${allAttrs} />`;
+            return `${pad}<${tagName}${allAttrs}>\n${children}\n${pad}</${tagName}>`;
           }
-          // No string-literal attr block — fall through to expression emission.
+          // No string-literal attr block or propDict — fall through to expression emission.
         }
         const argStrs = app.args.map(a => emitTsExprForReact(a)).join(', ');
         return `{${tagName}(${argStrs})}`;
@@ -352,6 +362,11 @@ export function emitTsExprForReact(node: IonIRNode): string {
         const jsx = emitJsxNode(app);
         return jsx.trim();
       }
+      // Fix D: component App in expression position (capitalised callee Var)
+      // — route through emitJsxNode so propDict attrs are rendered as JSX.
+      if (app.callee.kind === 'Var' && /^[A-Z]/.test((app.callee as VarNode).name)) {
+        return emitJsxNode(app).trim();
+      }
       const callee = emitTsExprForReact(app.callee);
       const args = app.args.map(emitTsExprForReact).join(', ');
       return `${callee}(${args})`;
@@ -364,6 +379,10 @@ export function emitTsExprForReact(node: IonIRNode): string {
       }
       const innerBody = abs.body;
       if (isHtmlElement(innerBody)) {
+        return `(${params}) => (${emitJsxNode(innerBody).trim()})`;
+      }
+      // Fix E: component body — route through JSX so propDict attrs are rendered.
+      if (innerBody.kind === 'App' && innerBody.callee.kind === 'Var' && /^[A-Z]/.test((innerBody.callee as VarNode).name)) {
         return `(${params}) => (${emitJsxNode(innerBody).trim()})`;
       }
       return `(${params}) => ${emitTsExprForReact(abs.body)}`;

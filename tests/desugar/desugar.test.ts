@@ -325,3 +325,33 @@ describe('desugarModule — TuplePat → TuplePattern', () => {
     expect(bodyVar.symbolId).toBe((field0 as VarPattern).symbolId);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 17. Labeled call args → AppNode.propDict
+// ---------------------------------------------------------------------------
+
+describe('desugar — labeled call args → AppNode.propDict', () => {
+  it('f(key: 1) → args empty, propDict[0].key === "key"', () => {
+    const ir = desugar('fn f(x: Int) -> Int = x\nfn test() -> Int = f(key: 1)');
+    const testDecl = ir.decls[1] as LetNode;
+    const abs = testDecl.value as AbsNode;
+    const app = abs.body as AppNode;
+    expect(app.kind).toBe('App');
+    expect(app.args).toHaveLength(0);
+    expect(app.propDict).toBeDefined();
+    expect(app.propDict!).toHaveLength(1);
+    expect(app.propDict![0]!.key).toBe('key');
+  });
+
+  it('f("hello", key: n) → args has one element, propDict[0].key === "key"', () => {
+    const ir = desugar('fn f(x: Str, y: Int) -> Int = 0\nfn test(n: Int) -> Int = f("hello", key: n)');
+    const testDecl = ir.decls[1] as LetNode;
+    const abs = testDecl.value as AbsNode;
+    const app = abs.body as AppNode;
+    expect(app.kind).toBe('App');
+    expect(app.args).toHaveLength(1);
+    expect(app.propDict).toBeDefined();
+    expect(app.propDict!).toHaveLength(1);
+    expect(app.propDict![0]!.key).toBe('key');
+  });
+});

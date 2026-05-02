@@ -111,6 +111,7 @@ export interface AppNode {
   readonly kind: 'App';
   readonly callee: IonIRNode;
   readonly args: readonly IonIRNode[];
+  readonly propDict?: readonly { readonly key: string; readonly value: IonIRNode }[];
   readonly span: Span;
   readonly type: IonType;
 }
