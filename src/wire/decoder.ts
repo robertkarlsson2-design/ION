@@ -155,12 +155,15 @@ function parseLines(text: string): ParsedLines | { error: string } {
         X = rest;
         break;
       case 'D':
-        if (D !== undefined) return { error: 'duplicate D line' };
-        D = rest;
+        // Multiple D lines are allowed: subsequent ones append to the first
+        // (space-separated). This lets a file declare each data type on its
+        // own line without packing them all onto one giant line.
+        D = D === undefined ? rest : `${D} ${rest}`;
         break;
       case 'F':
-        if (F !== undefined) return { error: 'duplicate F line' };
-        F = rest;
+        // Multiple F lines are allowed for the same reason: a single file
+        // can declare each top-level definition on its own line.
+        F = F === undefined ? rest : `${F} ${rest}`;
         break;
       default:
         return { error: `unknown section letter: ${JSON.stringify(letter)}` };
@@ -240,6 +243,23 @@ function parseType(cur: Cursor, ctx: DecoderContext, typeDepth = 0): IonType {
     cur.pos++;
     const id = readIdent(cur);
     return { kind: 'TypeVar', id };
+  }
+
+  // Inline object type literal `{field:T, field:T}` — parsed as opaque "any"
+  // since IR doesn't have a structural object type. Lets you write parameter
+  // shapes like `fn({children:any})->any` without a named data type.
+  if (peek(cur) === '{') {
+    cur.pos++;
+    skipSpaces(cur);
+    while (peek(cur) !== '}' && cur.pos < cur.text.length) {
+      // skip field declarations: name : type, ...
+      while (cur.pos < cur.text.length && cur.text[cur.pos] !== ',' && cur.text[cur.pos] !== '}') cur.pos++;
+      if (peek(cur) === ',') cur.pos++;
+      skipSpaces(cur);
+    }
+    consume(cur, '}');
+    // Map to User type "any" so subsequent emitter passes treat it as opaque.
+    return { kind: 'User', name: 'any', symbolId: makeSymbolId(''), args: [] };
   }
 
   const word = readIdent(cur);
@@ -354,8 +374,11 @@ function parseParam(cur: Cursor, ctx: DecoderContext): Param {
     else if (ch === '!') { isReadonly = true; cur.pos++; }
     else break;
   }
+  skipSpaces(cur);
   const name = resolveName(readIdent(cur), ctx);
+  skipSpaces(cur);
   consume(cur, ':');
+  skipSpaces(cur);
   const type = parseType(cur, ctx);
   const base: Param = { name, symbolId: makeSymbolId(''), type, span: WIRE_SPAN };
   if (isStatic || visibility !== undefined || isReadonly) {
@@ -563,6 +586,9 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
   }
 
   // ── let name:type=value;body ─────────────────────────────────────────────
+  // Body is optional: `let X:T=V` (with no `;body`) is sugar for `let X:T=V;X`,
+  // i.e. the let evaluates to its own bound value. This is the natural form
+  // for top-level let declarations where there's no "rest" expression.
   if (cur.text.startsWith('let ', cur.pos)) {
     cur.pos += 4;
     const name = resolveName(readIdent(cur), ctx);
@@ -570,8 +596,16 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
     const bindingType = parseType(cur, ctx);
     consume(cur, '=');
     const value = parseNode(cur, ctx, depth + 1);
-    consume(cur, ';');
-    const body = parseNode(cur, ctx, depth + 1);
+    let body: IonIRNode;
+    if (peek(cur) === ';') {
+      cur.pos++;
+      body = parseNode(cur, ctx, depth + 1);
+    } else {
+      // Auto-bound body: refer to the bound name itself.
+      body = {
+        kind: 'Var', name, symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' },
+      };
+    }
     return {
       kind: 'Let', name, symbolId: makeSymbolId(''), bindingType, value, body,
       span: WIRE_SPAN, type: { kind: 'Unit' },
@@ -1069,6 +1103,30 @@ function parseSectionD(content: string, ctx: DecoderContext): AdtDeclNode[] {
 
     const name = resolveName(readIdent(cur), ctx);
     const variants: AdtVariant[] = [];
+
+    // Sugar: `D Foo {fields}` (no constructor name) is shorthand for the
+    // single-record form `D Foo Foo{fields}`. Common in surface-style code.
+    if (peek(cur) === ' ' && cur.text[cur.pos + 1] === '{') {
+      cur.pos += 2;
+      skipSpaces(cur);
+      const fields: Param[] = [];
+      if (peek(cur) !== '}') {
+        fields.push(parseParam(cur, ctx));
+        skipSpaces(cur);
+        while (tryConsume(cur, ',')) {
+          skipSpaces(cur);
+          fields.push(parseParam(cur, ctx));
+          skipSpaces(cur);
+        }
+      }
+      consume(cur, '}');
+      variants.push({ tag: name, symbolId: makeSymbolId(''), fields, span: WIRE_SPAN });
+      result.push({
+        kind: 'AdtDecl', name, symbolId: makeSymbolId(''), variants,
+        span: WIRE_SPAN, type: { kind: 'Unit' },
+      });
+      continue;
+    }
 
     // Variants in D section: "tag{fields}" (curly braces, not parens)
     while (cur.pos < cur.text.length) {
