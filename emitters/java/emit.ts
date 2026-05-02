@@ -318,6 +318,8 @@ interface EmitCtx {
   fnNames: Set<string>;
   /** Param/Var names whose static type is Object/TypeVar. */
   objectTypedNames: Set<string>;
+  /** Param/Var names whose static type is Str (String in Java). */
+  strTypedNames: Set<string>;
 }
 
 /** Heuristic: does this expression evaluate to Object (vs primitive)? */
@@ -399,6 +401,16 @@ function emitExpr(node: IonIRNode, ctx: EmitCtx): string {
             l = castNumeric(l, a0, ctx);
             r = castNumeric(r, a1, ctx);
           }
+          if (name === '__eq__' || name === '__ne__') {
+            const lIsStr = (a0.kind === 'Literal' && a0.value.kind === 'Str') ||
+                           (a0.kind === 'Var' && ctx.strTypedNames.has(a0.name));
+            const rIsStr = (a1.kind === 'Literal' && a1.value.kind === 'Str') ||
+                           (a1.kind === 'Var' && ctx.strTypedNames.has(a1.name));
+            if (lIsStr && rIsStr) {
+              const eq = `${l}.equals(${r})`;
+              return name === '__ne__' ? `!${eq}` : eq;
+            }
+          }
           return `${l} ${bop} ${r}`;
         }
         const uop = BUILTIN_UNARY_OPS[name];
@@ -432,9 +444,11 @@ function emitExpr(node: IonIRNode, ctx: EmitCtx): string {
       const inner: EmitCtx = {
         ...ctx,
         objectTypedNames: new Set(ctx.objectTypedNames),
+        strTypedNames: new Set(),
       };
       for (const p of abs.params) {
         if (isUnknown(p.type)) inner.objectTypedNames.add(p.name);
+        if (p.type.kind === 'Str') inner.strTypedNames.add(p.name);
       }
       const params = abs.params.map(p => p.name).join(', ');
       const wrap = abs.params.length === 1 ? params : `(${params})`;
@@ -673,12 +687,16 @@ function emitDecl(d: IonIRNode, ctx: EmitCtx): string | null {
     const inner: EmitCtx = {
       ...ctx,
       objectTypedNames: new Set(ctx.objectTypedNames),
+      strTypedNames: new Set(),
     };
     const params = abs.params.map((p: Param, i: number) => {
       const declared = fnType ? fnType.params[i] : p.type;
       const t = javaTypePrim(declared);
       if (t === 'Object' || t === 'List<Object>') {
         inner.objectTypedNames.add(p.name);
+      }
+      if (declared?.kind === 'Str') {
+        inner.strTypedNames.add(p.name);
       }
       return `${t} ${p.name}`;
     }).join(', ');
@@ -705,6 +723,7 @@ export function emitJava(irModule: IonIRModule): string {
     className,
     fnNames,
     objectTypedNames: new Set(),
+    strTypedNames: new Set(),
   };
 
   const decls: string[] = [];

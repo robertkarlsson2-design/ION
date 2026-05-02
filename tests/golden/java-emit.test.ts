@@ -107,6 +107,26 @@ describe('emitJava — strings', () => {
     const out = compile('pub fn upper(s) = toUpper(s)');
     expect(out).toContain('Prelude.toUpper(s)');
   });
+
+  it('compiles Str == Str to .equals() not ==', () => {
+    const out = compile('pub fn eq(a: Str, b: Str) -> Bool = a == b');
+    expect(out).toContain('public static boolean eq(String a, String b)');
+    expect(out).toContain('return a.equals(b);');
+    expect(out).not.toContain('a == b');
+  });
+
+  it('compiles Str != Str to !.equals() not !=', () => {
+    const out = compile('pub fn ne(a: Str, b: Str) -> Bool = a != b');
+    expect(out).toContain('public static boolean ne(String a, String b)');
+    expect(out).toContain('return !a.equals(b);');
+    expect(out).not.toContain('a != b');
+  });
+
+  it('keeps == for Int comparison (not .equals)', () => {
+    const out = compile('pub fn intEq(a: Int, b: Int) -> Bool = a == b');
+    expect(out).toContain('return a == b;');
+    expect(out).not.toContain('.equals(');
+  });
 });
 
 describe('emitJava — list literals', () => {
