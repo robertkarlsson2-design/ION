@@ -491,6 +491,17 @@ function emitTsExpr(node: IonIRNode): string {
         if (calleeName === '__throw__' && app.args.length === 1) {
           return `(() => { throw new Error(${emitTsExpr(app.args[0])}); })()`;
         }
+        // __try__(tryExpr, catchExpr) → (() => { try { return tryExpr; } catch (e) { return catchExpr; } })()
+        // Note: catchExpr should reference `e` if it needs the caught error.
+        // For async, wrap the whole __try__ inside async{...}.
+        if (calleeName === '__try__' && app.args.length === 2) {
+          return `(() => { try { return ${emitTsExpr(app.args[0])}; } catch (e) { return ${emitTsExpr(app.args[1])}; } })()`;
+        }
+        // __seq__(a, b, c, ...) → (a, b, c, ...) — comma-sequenced expressions
+        // Useful for side-effect chains. Result is the last expression.
+        if (calleeName === '__seq__' && app.args.length >= 1) {
+          return `(${app.args.map(emitTsExpr).join(', ')})`;
+        }
         // __spread__(obj) → ...obj  (spread operator, only valid inside obj/array literals)
         // Use carefully: emits `...obj` directly; only meaningful when used as
         // an argument to __obj__ in a position where the surrounding context
