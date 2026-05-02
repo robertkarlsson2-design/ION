@@ -384,7 +384,28 @@ function parseParam(cur: Cursor, ctx: DecoderContext): Param {
     else break;
   }
   skipSpaces(cur);
-  const name = resolveName(readIdent(cur), ctx);
+  // Destructuring param pattern: `{a, b, ...rest}` or `[a, b]` parsed as a
+  // single param whose "name" is the literal source pattern. Emitters
+  // output the pattern verbatim (TS/React both accept the same syntax).
+  let name: string;
+  if (peek(cur) === '{' || peek(cur) === '[') {
+    const open = cur.text[cur.pos]!;
+    const close = open === '{' ? '}' : ']';
+    const startP = cur.pos;
+    let depthBrace = 0;
+    while (cur.pos < cur.text.length) {
+      const ch = cur.text[cur.pos]!;
+      if (ch === open) depthBrace++;
+      else if (ch === close) {
+        depthBrace--;
+        if (depthBrace === 0) { cur.pos++; break; }
+      }
+      cur.pos++;
+    }
+    name = cur.text.slice(startP, cur.pos);
+  } else {
+    name = resolveName(readIdent(cur), ctx);
+  }
   skipSpaces(cur);
   // Type annotation is optional — missing means the param is `any`.
   // This is the wire-form sugar for `name:any`.

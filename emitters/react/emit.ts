@@ -16,6 +16,7 @@ import type {
   AdtMatchNode,
   EffectDeclNode,
   RawInjectNode,
+  ForeignRefNode,
 } from '../../src/ir/nodes.js';
 import type { IonType } from '../../src/ir/types.js';
 import {
@@ -380,6 +381,85 @@ export function emitTsExprForReact(node: IonIRNode): string {
     case 'Var': return (node as VarNode).name;
     case 'App': {
       const app = node as AppNode;
+      // Operator builtin special-cases (mirror TS emitter): __obj__, __index__,
+      // __nullish__, __optchain__, __throw__, __env__, __set__, __regex__,
+      // __try__, __tryfin__, __finally__, __do__, __seq__, __spread__, __add__,
+      // __sub__, __mul__, __div__, __mod__, __eq__, __ne__, __lt__, __gt__,
+      // __le__, __ge__, __and__, __or__, __not__, __neg__.
+      if (app.callee.kind === 'Var') {
+        const name = (app.callee as VarNode).name;
+        const binOps: Record<string, string> = {
+          __add__: '+', __sub__: '-', __mul__: '*', __div__: '/', __mod__: '%',
+          __eq__: '===', __ne__: '!==', __lt__: '<', __gt__: '>', __le__: '<=', __ge__: '>=',
+          __and__: '&&', __or__: '||',
+        };
+        if (binOps[name] !== undefined && app.args.length === 2) {
+          return `(${emitTsExprForReact(app.args[0]!)} ${binOps[name]} ${emitTsExprForReact(app.args[1]!)})`;
+        }
+        if (name === '__neg__' && app.args.length === 1) return `-${emitTsExprForReact(app.args[0]!)}`;
+        if (name === '__not__' && app.args.length === 1) return `!${emitTsExprForReact(app.args[0]!)}`;
+        if (name === '__obj__' && app.args.length % 2 === 0) {
+          const parts: string[] = [];
+          for (let i = 0; i < app.args.length; i += 2) {
+            const k = app.args[i]!;
+            const v = app.args[i + 1]!;
+            const ks = k.kind === 'Literal' && (k as { value: { kind: string; value?: string } }).value.kind === 'Str'
+              ? (k as { value: { value: string } }).value.value : emitTsExprForReact(k);
+            if (ks === '...') { parts.push(`...${emitTsExprForReact(v)}`); continue; }
+            const ko = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(ks) ? ks : JSON.stringify(ks);
+            parts.push(`${ko}: ${emitTsExprForReact(v)}`);
+          }
+          return `{ ${parts.join(', ')} }`;
+        }
+        if (name === '__index__' && app.args.length === 2) return `${emitTsExprForReact(app.args[0]!)}[${emitTsExprForReact(app.args[1]!)}]`;
+        if (name === '__nullish__' && app.args.length === 2) return `(${emitTsExprForReact(app.args[0]!)} ?? ${emitTsExprForReact(app.args[1]!)})`;
+        if (name === '__optchain__' && app.args.length === 2) {
+          const m = app.args[1]!;
+          if (m.kind === 'Literal' && (m as { value: { kind: string; value?: string } }).value.kind === 'Str') {
+            return `${emitTsExprForReact(app.args[0]!)}?.${(m as { value: { value: string } }).value.value}`;
+          }
+        }
+        if (name === '__throw__' && app.args.length === 1) return `(() => { throw new Error(${emitTsExprForReact(app.args[0]!)}); })()`;
+        if (name === '__env__' && app.args.length === 1) return `process.env[${emitTsExprForReact(app.args[0]!)}]`;
+        if (name === '__set__' && app.args.length === 3) {
+          const f = app.args[1]!;
+          if (f.kind === 'Literal' && (f as { value: { kind: string; value?: string } }).value.kind === 'Str') {
+            return `((${emitTsExprForReact(app.args[0]!)}).${(f as { value: { value: string } }).value.value} = ${emitTsExprForReact(app.args[2]!)})`;
+          }
+          return `((${emitTsExprForReact(app.args[0]!)})[${emitTsExprForReact(f)}] = ${emitTsExprForReact(app.args[2]!)})`;
+        }
+        if (name === '__regex__' && (app.args.length === 1 || app.args.length === 2)) {
+          return app.args.length === 1
+            ? `new RegExp(${emitTsExprForReact(app.args[0]!)})`
+            : `new RegExp(${emitTsExprForReact(app.args[0]!)}, ${emitTsExprForReact(app.args[1]!)})`;
+        }
+        if (name === '__try__' && app.args.length === 2) {
+          return `(async () => { try { return ${emitTsExprForReact(app.args[0]!)}; } catch (e) { return ${emitTsExprForReact(app.args[1]!)}; } })()`;
+        }
+        if (name === '__tryfin__' && app.args.length === 3) {
+          return `(async () => { try { return ${emitTsExprForReact(app.args[0]!)}; } catch (e) { return ${emitTsExprForReact(app.args[1]!)}; } finally { ${emitTsExprForReact(app.args[2]!)}; } })()`;
+        }
+        if (name === '__finally__' && app.args.length === 2) {
+          return `(async () => { try { return ${emitTsExprForReact(app.args[0]!)}; } finally { ${emitTsExprForReact(app.args[1]!)}; } })()`;
+        }
+        if (name === '__do__' && app.args.length >= 1) {
+          const last = app.args[app.args.length - 1]!;
+          const stmts = app.args.slice(0, -1).map(a => `${emitTsExprForReact(a)};`);
+          if (stmts.length === 0) return emitTsExprForReact(last);
+          return `(() => { ${stmts.join(' ')} return ${emitTsExprForReact(last)}; })()`;
+        }
+        if (name === '__seq__' && app.args.length >= 1) return `(${app.args.map(emitTsExprForReact).join(', ')})`;
+        if (name === '__spread__' && app.args.length === 1) return `...${emitTsExprForReact(app.args[0]!)}`;
+      }
+      // ForeignRef as callee: emit as direct identifier (mirrors TS emitter).
+      if (app.callee.kind === 'ForeignRef') {
+        const fr = app.callee as ForeignRefNode;
+        if (fr.sig.template === '' && fr.sig.params.length === 0) {
+          const JS_GLOBALS = new Set(['console','Math','JSON','Object','Array','String','Number','Boolean','Date','RegExp','Promise','Symbol','Error','window','document','globalThis','process']);
+          const calleeStr = (fr.target === 'js' && JS_GLOBALS.has(fr.module)) ? `${fr.module}.${fr.symbol}` : fr.symbol;
+          return `${calleeStr}(${app.args.map(emitTsExprForReact).join(', ')})`;
+        }
+      }
       // HTML-element call appearing in expression position (e.g. inside a
       // lambda passed to .map): re-route through emitJsxNode so the result
       // is real JSX. emitJsxNode wraps non-tag children in {} braces, so
