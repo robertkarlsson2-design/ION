@@ -1,11 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { emitTS } from '../../emitters/typescript/emit.js';
-import type { IonIRModule, RawInjectNode, ForeignRefNode } from '../../src/ir/nodes.js';
+import type { IonIRModule, RawInjectNode, ForeignRefNode, LetNode, VarNode } from '../../src/ir/nodes.js';
 import type { IonType } from '../../src/ir/types.js';
-import type { Span } from '../../src/types.js';
+import type { Span, SymbolId } from '../../src/types.js';
 
 const S: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
 const UNIT: IonType = { kind: 'Unit' };
+const sym = (s: string): SymbolId => s as SymbolId;
+
+function makeVar(name: string, type: IonType = UNIT): VarNode {
+  return { kind: 'Var', name, symbolId: sym(name), span: S, type };
+}
+
+function makeLet(name: string, value: import('../../src/ir/nodes.js').IonIRNode): LetNode {
+  return {
+    kind: 'Let',
+    name,
+    symbolId: sym(name),
+    bindingType: value.type,
+    value,
+    body: makeVar(name, value.type),
+    span: S,
+    type: value.type,
+  };
+}
 
 function makeModule(decls: IonIRModule['decls']): IonIRModule {
   return {
@@ -62,7 +80,7 @@ describe('emitTS — cross-module ForeignRef imports', () => {
       span: S,
       type: { kind: 'Fn', params: [], ret: UNIT, effects: new Set() },
     };
-    const out = emitTS(makeModule([ref]));
+    const out = emitTS(makeModule([makeLet('router', ref)]));
     expect(out).toContain("import { Router } from 'express'");
   });
 
@@ -72,11 +90,11 @@ describe('emitTS — cross-module ForeignRef imports', () => {
       target: 'ts',
       module: '',
       symbol: 'map',
-      sig: { params: [], ret: UNIT, template: '$1.map($2)', paramNames: [] },
+      sig: { params: [], ret: UNIT, template: 'map()', paramNames: [] },
       span: S,
       type: { kind: 'Fn', params: [], ret: UNIT, effects: new Set() },
     };
-    const out = emitTS(makeModule([ref]));
+    const out = emitTS(makeModule([makeLet('mapFn', ref)]));
     expect(out).not.toContain('import');
   });
 
@@ -86,11 +104,11 @@ describe('emitTS — cross-module ForeignRef imports', () => {
       target: 'ts',
       module: 'Math',
       symbol: 'abs',
-      sig: { params: [], ret: UNIT, template: 'Math.abs($1)', paramNames: [] },
+      sig: { params: [], ret: UNIT, template: 'Math.abs()', paramNames: [] },
       span: S,
       type: { kind: 'Fn', params: [], ret: UNIT, effects: new Set() },
     };
-    const out = emitTS(makeModule([ref]));
+    const out = emitTS(makeModule([makeLet('absFn', ref)]));
     expect(out).not.toContain('import');
   });
 
@@ -113,7 +131,7 @@ describe('emitTS — cross-module ForeignRef imports', () => {
       span: S,
       type: { kind: 'Fn', params: [], ret: UNIT, effects: new Set() },
     };
-    const out = emitTS(makeModule([ref1, ref2]));
+    const out = emitTS(makeModule([makeLet('pool', ref1), makeLet('client', ref2)]));
     const importLines = out.split('\n').filter(l => l.startsWith('import'));
     expect(importLines).toHaveLength(1);
     expect(importLines[0]).toContain('Client');

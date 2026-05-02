@@ -639,6 +639,13 @@ export function emitTS(irModule: IonIRModule): string {
       case 'ListLit': node.elements.forEach(collectPrelude); break;
       case 'MapLit': node.entries.forEach(e => { collectPrelude(e.key); collectPrelude(e.value); }); break;
       case 'OopClass': node.methods.forEach(m => { if (m.body !== undefined) collectPrelude(m.body); }); break;
+      case 'OopNew': node.args.forEach(collectPrelude); break;
+      case 'OopVirtualCall': collectPrelude(node.receiver); node.args.forEach(collectPrelude); break;
+      case 'AsyncBlock': collectPrelude(node.body); break;
+      case 'Await': collectPrelude(node.expr); break;
+      case 'Perform': node.args.forEach(collectPrelude); break;
+      case 'Resume': collectPrelude(node.value); break;
+      case 'Effect': collectPrelude(node.body); break;
       case 'Handle': collectPrelude(node.body); node.handlers.forEach(h => collectPrelude(h.body)); break;
       case 'AdtMatch': collectPrelude(node.scrutinee); node.arms.forEach(a => collectPrelude(a.body)); break;
       default: break;
