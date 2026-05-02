@@ -548,7 +548,7 @@ function parseNodeArgs(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNo
  * Caller has already parsed the primary (left-hand) expression.
  */
 function applyInfix(left: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: number, minPrec = 0): IonIRNode {
-  // Postfix operators (highest binding): `[i]` and `?.field`
+  // Postfix operators (highest binding): `[i]`, `?.field`, `.field`
   while (true) {
     if (peek(cur) === '[') {
       cur.pos++;
@@ -571,6 +571,23 @@ function applyInfix(left: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: nu
           { kind: 'Literal', value: { kind: 'Str', value: f }, span: WIRE_SPAN, type: { kind: 'Str' } }],
         span: WIRE_SPAN, type: { kind: 'Unit' },
       };
+      continue;
+    }
+    // `.field` accessor — chains after `[i]` and other postfix ops.
+    if (peek(cur) === '.' && cur.text[cur.pos + 1] !== undefined && !IDENT_STOP.has(cur.text[cur.pos + 1]!)) {
+      cur.pos++;
+      const member = resolveName(readIdent(cur), ctx);
+      left = { kind: 'Accessor', receiver: left, member, span: WIRE_SPAN, type: { kind: 'Unit' } };
+      continue;
+    }
+    // `->method(args)` chained method call after another postfix op.
+    if (cur.text.startsWith('->', cur.pos)) {
+      cur.pos += 2;
+      const method = resolveName(readIdent(cur), ctx);
+      consume(cur, '(');
+      const args = parseNodeArgs(cur, ctx, depth + 1);
+      consume(cur, ')');
+      left = { kind: 'OopVirtualCall', receiver: left, method, args, span: WIRE_SPAN, type: { kind: 'Unit' } };
       continue;
     }
     break;
@@ -832,33 +849,32 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
   }
 
   // ── Abs: (params)->body  OR  parenthesized expression (...) ──────────────
-  // Disambiguate: try the lambda path first; if the closing `)` isn't
-  // followed by `->`, rewind and parse as a grouped expression. The
-  // lambda body itself isn't parsed yet, so the cost of the speculative
-  // parse is only the param list.
+  // Disambiguate by speculatively trying to parse a param list followed by
+  // `)->`. If that PREFIX matches, commit to lambda (body parse errors
+  // propagate). Otherwise rewind and parse as a parenthesised expression.
   if (c === '(') {
     const startPos = cur.pos;
     cur.pos++;
     let isLambda = false;
+    let params: Param[] = [];
     try {
-      const params = parseParamList(cur, ctx);
-      if (peek(cur) === ')') {
-        cur.pos++;
-        if (cur.text.startsWith('->', cur.pos)) {
-          cur.pos += 2;
-          const body = parseNode(cur, ctx, depth + 1);
-          return { kind: 'Abs', params, body, captures: [], span: WIRE_SPAN, type: { kind: 'Unit' } };
-        }
+      params = parseParamList(cur, ctx);
+      if (peek(cur) === ')' && cur.text.startsWith('->', cur.pos + 1)) {
+        isLambda = true;
       }
     } catch {
-      // Param-list parse failed — rewind and try as parenthesized expression.
+      // param list parse failed — fall through to paren-expr
     }
-    if (!isLambda) {
-      cur.pos = startPos + 1;
-      const inner = parseNode(cur, ctx, depth + 1);
-      consume(cur, ')');
-      return inner;
+    if (isLambda) {
+      cur.pos++; // consume `)`
+      cur.pos += 2; // consume `->`
+      const body = parseNode(cur, ctx, depth + 1);
+      return { kind: 'Abs', params, body, captures: [], span: WIRE_SPAN, type: { kind: 'Unit' } };
     }
+    cur.pos = startPos + 1;
+    const inner = parseNode(cur, ctx, depth + 1);
+    consume(cur, ')');
+    return inner;
   }
 
   // ── let name:type=value;body ─────────────────────────────────────────────
@@ -943,7 +959,17 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
 
   // ── [@Anno ]* (class | iface) ... ───────────────────────────────────────
   // Annotation prefixes (e.g. "@Deprecated ") may appear before either keyword.
-  if (cur.text.startsWith('@', cur.pos) || cur.text.startsWith('class ', cur.pos) || cur.text.startsWith('iface ', cur.pos)) {
+  // Only enter this branch when `@` is followed by an uppercase-starting
+  // annotation name AND a `class`/`iface` is reachable; otherwise `@expr`
+  // is the await sugar handled below.
+  const isClassIfaceAnno = (() => {
+    if (cur.text.startsWith('class ', cur.pos) || cur.text.startsWith('iface ', cur.pos)) return true;
+    if (!cur.text.startsWith('@', cur.pos)) return false;
+    const win = cur.text.slice(cur.pos, cur.pos + 200);
+    return /^@[A-Z]\w*(\([^)]*\))?\.\s*(class |iface )/.test(win) ||
+      /^(@[A-Z]\w*(\([^)]*\))?\.\s*)+(class |iface )/.test(win);
+  })();
+  if (isClassIfaceAnno) {
     // Speculatively consume any leading @Anno. prefixes.
     const nodeAnnotations = parseAnnotationPrefixes(cur, ctx);
 
@@ -1258,6 +1284,25 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
     const expr = parseNode(cur, ctx, depth + 1);
     consume(cur, ')');
     return { kind: 'Await', expr, span: WIRE_SPAN, type: { kind: 'Unit' } };
+  }
+  // `@expr` await sugar. Disambiguated from `@Anno class/iface ...`:
+  // an annotation is `@<ident>[(args).]` followed by `class ` or `iface `
+  // somewhere after. If we lookahead and find a `class ` or `iface ` keyword
+  // before any of `;`, `,`, `)`, `}`, ` `+(expr-end), it's an annotation —
+  // fall through to the existing parser. Otherwise it's an await.
+  if (cur.text.startsWith('@', cur.pos)) {
+    // Lookahead: find first `class ` or `iface ` within a small window.
+    // Annotations are always direct prefixes of class/iface declarations,
+    // so they must match within ~200 chars.
+    const window = cur.text.slice(cur.pos, cur.pos + 200);
+    const isAnnotation = /^@[A-Z]\w*(\([^)]*\))?\.\s*(class |iface )/.test(window) ||
+      /^(@[A-Z]\w*(\([^)]*\))?\.\s*)+(class |iface )/.test(window);
+    if (!isAnnotation) {
+      cur.pos++;
+      const expr = parseNode(cur, ctx, depth + 1);
+      return { kind: 'Await', expr, span: WIRE_SPAN, type: { kind: 'Unit' } };
+    }
+    // Fall through to the class/iface annotation parser below.
   }
 
   // ── Boolean / Null literals (as nodes) ──────────────────────────────────

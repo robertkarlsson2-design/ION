@@ -68,7 +68,12 @@ describe('D1: minimal module', () => {
     if ('error' in result) return;
     expect(result.module).toBe('test.module');
     expect(result.version).toBe('1.0.0');
-    expect(result.dialects).toEqual([]);
+    // The decoder defaults missing `d=` to ["core"] (wire-format sugar). The
+    // round-trip property no longer holds for empty-dialects encodings —
+    // encoder emits no `d=` for [], decoder reads as ["core"]. That's an
+    // accepted API change — agents should always think of "core" as the
+    // default dialect now.
+    expect(result.dialects).toEqual(['core']);
     expect(result.imports).toHaveLength(0);
     expect(result.data).toHaveLength(0);
     expect(result.decls).toHaveLength(0);
@@ -559,7 +564,9 @@ describe('D10: list literal', () => {
   it('round-trips a ListLit through encode → decode', () => {
     const mod: IonIRModule = {
       ionir: '1.0', module: 'test', version: '0.1.0',
-      dialects: [], imports: [], data: [],
+      // explicit ["core"] (instead of []) so the round-trip equality holds:
+      // encoder emits `d=core`, decoder reads it as ["core"].
+      dialects: ['core'], imports: [], data: [],
       decls: [{
         kind: 'Let', name: 'nums', symbolId: sid,
         bindingType: { kind: 'Unit' },
