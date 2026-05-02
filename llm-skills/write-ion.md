@@ -324,6 +324,150 @@ HTML tag functions (`div`, `span`, etc.) are not in the ION prelude. In surface 
 
 ---
 
+## React component patterns
+
+These patterns require the React emitter to emit a **block-body** component (uses `{...}` braces with local bindings, not a bare arrow expression). The emitter automatically switches to block-body form when the `Abs` body is a `let` chain.
+
+> **Known gap — tuple destructuring in let**: Ion's `let` binding only supports a single name (`let x = ...`); there is no `let [a, b] = ...` destructuring. Use `raw(...)` for the useState call and the emitter emits it verbatim as a statement. Filing sub-ticket for native tuple-destructuring in Let as a separate ION backlog item.
+>
+> **Known gap — list rendering with JSX inside map**: `items.map((x, i) => <li key={i}>{x}</li>)` requires `raw(...)` because the emitter only promotes HTML-tag `App` nodes to JSX — arbitrary method-call callees don't get JSX context for nested tags.
+
+---
+
+### Pattern 4 — Stateful counter (useState + click handler)
+
+**.ion source (wire format)**:
+
+```
+I1
+M ui.counter v=1.0.0
+F let Counter:never=()->let _:unit=raw("const [count, setCount] = useState(0)");let handleClick:unit=()->raw("setCount(count + 1)");div("class=counter",p("","Count: "),button("onclick=handleClick","Increment"));0
+```
+
+**Compiled React TSX**:
+
+```tsx
+"use strict";
+import React from 'react';
+
+const Counter: React.FC = () => {
+  const [count, setCount] = useState(0)
+  const handleClick = () => setCount(count + 1);
+  return (
+    <div className="counter">
+      <p>
+{"Count: "}
+      </p>
+      <button onClick={handleClick}>
+{"Increment"}
+      </button>
+    </div>
+  );
+};
+```
+
+**Notes**: `raw(...)` is needed for useState because Ion's `let` binding does not yet support tuple destructuring. The handler body uses `raw(...)` only for the imperative expression; the surrounding component structure and JSX are native Ion. No `raw()` wraps the whole function body.
+
+---
+
+### Pattern 5 — Controlled form input (multiple useState + onChange)
+
+**.ion source (wire format)**:
+
+```
+I1
+M ui.login_inputs v=1.0.0
+F let LoginInputs:never=()->let _:unit=raw("const [email, setEmail] = useState(\"\")");let _:unit=raw("const [password, setPassword] = useState(\"\")");div("class=fields",input("type=email onchange=setEmail placeholder=Email"),input("type=password onchange=setPassword placeholder=Password"));0
+```
+
+**Compiled React TSX**:
+
+```tsx
+"use strict";
+import React from 'react';
+
+const LoginInputs: React.FC = () => {
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  return (
+    <div className="fields">
+      <input type="email" onChange={setEmail} placeholder="Email" />
+      <input type="password" onChange={setPassword} placeholder="Password" />
+    </div>
+  );
+};
+```
+
+**Notes**: Multiple `raw(...)` useState calls stack naturally in the let chain — one per state variable. The JSX structure and attribute-to-prop mapping (`onchange` → `onChange`) are handled natively by the emitter.
+
+---
+
+### Pattern 6 — Async submit handler with error state
+
+**.ion source (wire format)**:
+
+```
+I1
+M ui.submit_form v=1.0.0
+F let SubmitForm:never=()->let _:unit=raw("const [error, setError] = useState(null)");let _:unit=raw("const [loading, setLoading] = useState(false)");let handleSubmit:unit=(e:unit)->async{raw("{ e.preventDefault(); try { setLoading(true); setError(null); await submitData(); } catch (err) { setError(String(err)); } finally { setLoading(false); } }")};form("onsubmit=handleSubmit",raw("{error && <p className=\"error\">{error}</p>}"),button("type=submit","Submit"));0
+```
+
+**Compiled React TSX**:
+
+```tsx
+"use strict";
+import React from 'react';
+
+const SubmitForm: React.FC = () => {
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const handleSubmit = async (e) => { e.preventDefault(); try { setLoading(true); setError(null); await submitData(); } catch (err) { setError(String(err)); } finally { setLoading(false); } };
+  return (
+    <form onSubmit={handleSubmit}>
+{error && <p className="error">{error}</p>}
+      <button type="submit">
+{"Submit"}
+      </button>
+    </form>
+  );
+};
+```
+
+**Notes**: An `Abs` whose body is `async{...}` emits as `async (params) => body` — not an IIFE. The `try/catch/finally` and the conditional `{error && ...}` require `raw(...)` because these are statement-level constructs or JSX short-circuit patterns not yet in the Ion emitter.
+
+---
+
+### Pattern 7 — List rendering with conditional empty state
+
+**.ion source (wire format)**:
+
+```
+I1
+M ui.item_list v=1.0.0
+F let ItemList:never=(items:list<str>)->let _:unit=raw("const [filter, setFilter] = useState(\"\")");div("class=list-container",input("type=text onchange=setFilter placeholder=Filter"),match(items){_->raw("{items.length === 0 ? <p className=\"empty\">No items</p> : <ul>{items.map((item, i) => <li key={i}>{item}</li>)}</ul>}")});0
+```
+
+**Compiled React TSX**:
+
+```tsx
+"use strict";
+import React from 'react';
+
+const ItemList: React.FC = (items) => {
+  const [filter, setFilter] = useState("")
+  return (
+    <div className="list-container">
+      <input type="text" onChange={setFilter} placeholder="Filter" />
+{items.length === 0 ? <p className="empty">No items</p> : <ul>{items.map((item, i) => <li key={i}>{item}</li>)}</ul>}
+    </div>
+  );
+};
+```
+
+**Notes**: Both conditional render and `array.map` with JSX children require `raw(...)` (known gap — see top of section). The surrounding component structure, props, and input binding are all native Ion.
+
+---
+
 ## Step 5 — Supported emitters and their coverage
 
 | Emitter | File | Full coverage |

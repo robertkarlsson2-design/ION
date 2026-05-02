@@ -3,6 +3,7 @@ import type {
   IonIRNode,
   AppNode,
   AbsNode,
+  AsyncBlockNode,
   LetNode,
   CaseNode,
   VarNode,
@@ -296,6 +297,9 @@ export function emitTsExprForReact(node: IonIRNode): string {
     case 'Abs': {
       const abs = node as AbsNode;
       const params = abs.params.map(p => p.name).join(', ');
+      if (abs.body.kind === 'AsyncBlock') {
+        return `async (${params}) => ${emitTsExprForReact((abs.body as AsyncBlockNode).body)}`;
+      }
       return `(${params}) => ${emitTsExprForReact(abs.body)}`;
     }
     case 'Accessor': return `${emitTsExprForReact(node.receiver)}.${node.member}`;
@@ -526,6 +530,28 @@ function emitTopLevelDecl(node: IonIRNode): string {
 }
 
 // ---------------------------------------------------------------------------
+// emitComponentBodyStmts — walk a Let chain, collecting each binding as a
+// statement and returning the terminal (non-Let) node.
+// RawInject values are emitted as bare statements; all others become
+// `const name = expr;` because the raw string is already a full statement.
+// ---------------------------------------------------------------------------
+
+function emitComponentBodyStmts(letChain: LetNode): { stmts: string[]; terminal: IonIRNode } {
+  const stmts: string[] = [];
+  let cur: IonIRNode = letChain;
+  while (cur.kind === 'Let') {
+    const lt = cur as LetNode;
+    if (lt.value.kind === 'RawInject') {
+      stmts.push(`  ${(lt.value as RawInjectNode).code}`);
+    } else {
+      stmts.push(`  const ${lt.name} = ${emitTsExprForReact(lt.value)};`);
+    }
+    cur = lt.body;
+  }
+  return { stmts, terminal: cur };
+}
+
+// ---------------------------------------------------------------------------
 // emitReact
 // ---------------------------------------------------------------------------
 
@@ -560,6 +586,19 @@ export function emitReact(irModule: IonIRModule): string {
         if (value.kind === 'Abs') {
           const abs = value as AbsNode;
           const params = abs.params.map(p => p.name).join(', ');
+
+          if (abs.body.kind === 'Let') {
+            const { stmts, terminal } = emitComponentBodyStmts(abs.body as LetNode);
+            const jsx = emitJsxNode(terminal, 2, env);
+            parts.push(`const ${name}: React.FC = (${params}) => {`);
+            for (const stmt of stmts) parts.push(stmt);
+            parts.push('  return (');
+            parts.push(`    ${jsx.trim()}`);
+            parts.push('  );');
+            parts.push('};');
+            break;
+          }
+
           const body = emitJsxNode(abs.body, 1, env);
           const isJsx = body.trim().startsWith('<');
 

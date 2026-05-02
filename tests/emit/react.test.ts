@@ -62,6 +62,38 @@ function makeModule(decls: IonIRNode[]): IonIRModule {
   };
 }
 
+function rawNode(code: string): IonIRNode {
+  return { kind: 'RawInject', code, span: SPAN, type: UNIT };
+}
+
+function absNode(paramNames: string[], body: IonIRNode): IonIRNode {
+  return {
+    kind: 'Abs',
+    params: paramNames.map(name => ({ name, symbolId: SYM, type: UNIT, span: SPAN })),
+    body,
+    captures: [],
+    span: SPAN,
+    type: UNIT,
+  };
+}
+
+function asyncBlockNode(body: IonIRNode): IonIRNode {
+  return { kind: 'AsyncBlock', body, span: SPAN, type: UNIT };
+}
+
+function chainLet(name: string, value: IonIRNode, body: IonIRNode): IonIRNode {
+  return {
+    kind: 'Let',
+    name,
+    symbolId: SYM,
+    bindingType: UNIT,
+    value,
+    body,
+    span: SPAN,
+    type: UNIT,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -202,6 +234,53 @@ describe('emitReact', () => {
     expect(out).toContain('maxLength="100"');
     expect(out).toContain('className="field"');
   });
+
+  it('emits block-body component when Abs body is a Let chain with raw useState', () => {
+    const chain = chainLet('_', rawNode('const [count, setCount] = useState(0)'), appNode('div', '', varNode('count')));
+    const abs = absNode([], chain);
+    const decl = letNode('Counter', abs);
+    const out = emitReact(makeModule([decl]));
+    expect(out).toContain('const Counter: React.FC = () => {');
+    expect(out).toContain('const [count, setCount] = useState(0)');
+    expect(out).toContain('return (');
+    expect(out).toContain('<div>');
+    expect(out).not.toContain('const _ =');
+  });
+
+  it('emits event handler from Abs in Let chain', () => {
+    const chain = chainLet('_', rawNode('const [count, setCount] = useState(0)'),
+      chainLet('handleClick', absNode([], rawNode('setCount(count + 1)')),
+        appNode('button', 'onclick=handleClick', strLit('Click'))));
+    const abs = absNode([], chain);
+    const decl = letNode('Btn', abs);
+    const out = emitReact(makeModule([decl]));
+    expect(out).toContain('const Btn: React.FC = () => {');
+    expect(out).toContain('const handleClick = () => setCount(count + 1);');
+    expect(out).toContain('onClick={handleClick}');
+    expect(out).toContain('return (');
+  });
+
+  it('emits block-body component with conditional render', () => {
+    const caseNode: IonIRNode = {
+      kind: 'Case',
+      scrutinee: varNode('error'),
+      arms: [
+        { pattern: { kind: 'Literal', value: { kind: 'Bool', value: true }, span: SPAN }, body: appNode('p', 'class=err', varNode('error')), span: SPAN },
+        { pattern: { kind: 'Wildcard', span: SPAN }, body: { kind: 'Literal', value: { kind: 'Null' }, span: SPAN, type: UNIT }, span: SPAN },
+      ],
+      span: SPAN,
+      type: UNIT,
+    };
+    const chain = chainLet('_', rawNode('const [error, setError] = useState(null)'), caseNode);
+    const abs = absNode([], chain);
+    const decl = letNode('Form', abs);
+    const out = emitReact(makeModule([decl]));
+    expect(out).toContain('const Form: React.FC = () => {');
+    expect(out).toContain('const [error, setError] = useState(null)');
+    expect(out).toContain('return (');
+    expect(out).toContain('error');
+    expect(out).toContain('?');
+  });
 });
 
 describe('emitTsExprForReact', () => {
@@ -220,5 +299,10 @@ describe('emitTsExprForReact', () => {
 
   it('handles var reference', () => {
     expect(emitTsExprForReact(varNode('myVar'))).toBe('myVar');
+  });
+
+  it('emits async arrow function for Abs with AsyncBlock body', () => {
+    const node = absNode(['e'], asyncBlockNode(rawNode('{ e.preventDefault(); }')));
+    expect(emitTsExprForReact(node)).toBe('async (e) => { e.preventDefault(); }');
   });
 });

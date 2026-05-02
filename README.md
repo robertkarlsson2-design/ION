@@ -332,7 +332,7 @@ F a (id:i)->o { c(id) }
 | Salesforce Apex emitter | 🚧 Code present, not wired into CLI |
 | VS Code extension | ✅ Syntax highlighting + formatter |
 | LSP server | 🚧 Code present, no `ion lsp` launcher yet |
-| LLM skill guides (`llm-skills/`) | ✅ Complete |
+| LLM skill guides (`llm-skills/`) | ✅ Complete — includes React component patterns (useState, async handlers, conditional render) |
 
 ---
 
