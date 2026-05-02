@@ -3,6 +3,7 @@ import type {
   IonIRNode,
   AppNode,
   AbsNode,
+  AsyncBlockNode,
   LetNode,
   CaseNode,
   VarNode,
@@ -358,7 +359,9 @@ export function emitTsExprForReact(node: IonIRNode): string {
     case 'Abs': {
       const abs = node as AbsNode;
       const params = abs.params.map(p => p.name).join(', ');
-      // If the lambda body is HTML or a Let-chain ending in HTML, prefer JSX.
+      if (abs.body.kind === 'AsyncBlock') {
+        return `async (${params}) => ${emitTsExprForReact((abs.body as AsyncBlockNode).body)}`;
+      }
       const innerBody = abs.body;
       if (isHtmlElement(innerBody)) {
         return `(${params}) => (${emitJsxNode(innerBody).trim()})`;
@@ -596,27 +599,6 @@ function emitTopLevelDecl(node: IonIRNode): string {
 // Component body helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Walks a `Let` chain inside a component body, peeling off each binding as
- * a `const ... = ...;` line, and stops at the first non-`Let` node. Returns
- * the collected statement lines and the inner expression (the future return
- * value). Used to compile component bodies that look like:
- *
- *   () =>
- *     let useStateRaw = raw("const [count, setCount] = useState(0)");
- *     <div>{count}</div>
- *
- * into:
- *
- *   () => {
- *     const [count, setCount] = useState(0);
- *     return <div>{count}</div>;
- *   }
- *
- * Recognised binding shapes:
- *   - RawInject value      → emit the raw code verbatim (terminating `;` added if missing)
- *   - Anything else        → `const ${name} = ${emitTsExprForReact(value)};`
- */
 function collectBodyStatements(
   body: IonIRNode
 ): { statements: string[]; tail: IonIRNode } {
@@ -626,8 +608,6 @@ function collectBodyStatements(
     const lt = cur as LetNode;
     const v = lt.value;
     if (v.kind === 'RawInject') {
-      // Treat raw block as a free-standing statement; the binding name
-      // is conventional and ignored (e.g. "_useStateRaw").
       const code = v.code.trim();
       statements.push(code.endsWith(';') || code.endsWith('}') ? code : `${code};`);
     } else {
@@ -636,6 +616,7 @@ function collectBodyStatements(
     cur = lt.body;
   }
   return { statements, tail: cur };
+
 }
 
 // ---------------------------------------------------------------------------
@@ -686,9 +667,6 @@ export function emitReact(irModule: IonIRModule): string {
           const abs = value as AbsNode;
           const params = abs.params.map(p => p.name).join(', ');
 
-          // If the body is a Let chain, peel off bindings into `const` statements
-          // and emit a block-form arrow function. This is how hooks survive:
-          //   () => { const [c, setC] = useState(0); return <div>{c}</div>; }
           if (abs.body.kind === 'Let') {
             const { statements, tail } = collectBodyStatements(abs.body);
             const tailJsx = emitJsxNode(tail, 2, env);
