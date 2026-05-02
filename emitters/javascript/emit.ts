@@ -33,6 +33,7 @@ import { shakePreludeDecls } from '../../src/prelude/dce.js';
 import type {
   JsNode,
   JsModule,
+  JsImport,
   JsConst,
   JsClass,
   JsMethod,
@@ -55,9 +56,44 @@ const BUILTIN_BINARY_OPS: Record<string, string> = {
 };
 const BUILTIN_UNARY_OPS: Record<string, string> = { __neg__: '-', __not__: '!' };
 
+const JS_GLOBAL_NAMESPACES = new Set([
+  'Math', 'Array', 'String', 'Number', 'Boolean', 'Object',
+  'JSON', 'console', 'Set', 'Map', 'Promise', 'process', 'Buffer',
+  'Symbol', 'RegExp', 'Error', 'Date',
+]);
+
 function assertSafeJsIdentifier(name: string, context: string): void {
   if (!JS_IDENTIFIER_RE.test(name)) {
     throw new Error(`EmitError: "${name}" is not a valid JavaScript identifier (${context})`);
+  }
+}
+
+function collectForeignRefs(node: IonIRNode, into: Map<string, Set<string>>): void {
+  if (node.kind === 'ForeignRef' && node.module !== '' && !JS_GLOBAL_NAMESPACES.has(node.module)) {
+    let syms = into.get(node.module);
+    if (!syms) { syms = new Set(); into.set(node.module, syms); }
+    syms.add(node.symbol);
+    return;
+  }
+  switch (node.kind) {
+    case 'App': collectForeignRefs(node.callee, into); node.args.forEach(a => collectForeignRefs(a, into)); break;
+    case 'Abs': collectForeignRefs(node.body, into); break;
+    case 'Let': collectForeignRefs(node.value, into); collectForeignRefs(node.body, into); break;
+    case 'Case': collectForeignRefs(node.scrutinee, into); node.arms.forEach(a => collectForeignRefs(a.body, into)); break;
+    case 'Accessor': collectForeignRefs(node.receiver, into); break;
+    case 'ListLit': node.elements.forEach(e => collectForeignRefs(e, into)); break;
+    case 'MapLit': node.entries.forEach(e => { collectForeignRefs(e.key, into); collectForeignRefs(e.value, into); }); break;
+    case 'OopClass': node.methods.forEach(m => { if (m.body !== undefined) collectForeignRefs(m.body, into); }); break;
+    case 'OopNew': node.args.forEach(a => collectForeignRefs(a, into)); break;
+    case 'OopVirtualCall': collectForeignRefs(node.receiver, into); node.args.forEach(a => collectForeignRefs(a, into)); break;
+    case 'AsyncBlock': collectForeignRefs(node.body, into); break;
+    case 'Await': collectForeignRefs(node.expr, into); break;
+    case 'Handle': collectForeignRefs(node.body, into); node.handlers.forEach(h => collectForeignRefs(h.body, into)); break;
+    case 'AdtMatch': collectForeignRefs(node.scrutinee, into); node.arms.forEach(a => collectForeignRefs(a.body, into)); break;
+    case 'Perform': node.args.forEach(a => collectForeignRefs(a, into)); break;
+    case 'Resume': collectForeignRefs(node.value, into); break;
+    case 'Effect': collectForeignRefs(node.body, into); break;
+    default: break;
   }
 }
 
@@ -102,10 +138,16 @@ function buildJsModule(module: IonIRModule): JsModule {
     }
   }
   const ctx: BuildCtx = { helpers: new Map(), ctorFields };
+  const foreignRefMap = new Map<string, Set<string>>();
+  for (const d of module.decls) collectForeignRefs(d, foreignRefMap);
+  const imports: JsImport[] = [];
+  for (const [mod, syms] of foreignRefMap) {
+    imports.push({ kind: 'JsImport', symbols: [...syms].sort(), from: mod });
+  }
   const dataDecls = module.data.flatMap(d => buildAdtDecl(d, ctx));
   const bodyDecls = module.decls.flatMap(d => buildTopLevelDecl(d, ctx));
   const helpers = [...ctx.helpers.values()];
-  return { kind: 'JsModule', helpers, dataDecls, bodyDecls };
+  return { kind: 'JsModule', imports, helpers, dataDecls, bodyDecls };
 }
 
 function buildTopLevelDecl(node: IonIRNode, ctx: BuildCtx): JsNode[] {

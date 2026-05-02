@@ -62,7 +62,11 @@ export function printJsExpr(node: JsNode): string {
 
 export function printJsModule(mod: JsModule): string {
   const ctx: PrintCtx = { indent: 0 };
-  const parts: string[] = ['"use strict";'];
+  const parts: string[] = [];
+  for (const imp of mod.imports ?? []) {
+    parts.push(`import { ${imp.symbols.join(', ')} } from '${imp.from}';`);
+  }
+  parts.push('"use strict";');
 
   const helpersStr = mod.helpers.map(h => printNode(h, ctx)).join('\n');
   if (helpersStr) parts.push(helpersStr);
@@ -919,6 +923,9 @@ export function printJsModuleWithMappings(
   const w = new WriterImpl();
   const ctx: TrackCtx = { indent: 0, sourceFile: ionSourceFile, w };
 
+  for (const imp of mod.imports ?? []) {
+    w.write(`import { ${imp.symbols.join(', ')} } from '${imp.from}';\n`);
+  }
   w.write('"use strict";');
 
   if (mod.helpers.length > 0) {

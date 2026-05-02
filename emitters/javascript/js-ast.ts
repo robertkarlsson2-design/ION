@@ -1,7 +1,14 @@
 import type { Span } from '../../src/types.js';
 
+export interface JsImport {
+  readonly kind: 'JsImport';
+  readonly symbols: readonly string[];
+  readonly from: string;
+}
+
 export interface JsModule {
   readonly kind: 'JsModule';
+  readonly imports?: readonly JsImport[];
   readonly helpers: readonly JsNode[];
   readonly dataDecls: readonly JsNode[];
   readonly bodyDecls: readonly JsNode[];

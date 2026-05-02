@@ -463,6 +463,85 @@ describe('emitJS', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// cross-module ForeignRef imports
+// ---------------------------------------------------------------------------
+
+describe('emitJS — cross-module ForeignRef imports', () => {
+  it("emits import { Router } from 'express' for ForeignRef with module=express", () => {
+    const ref: ForeignRefNode = {
+      kind: 'ForeignRef',
+      target: 'js',
+      module: 'express',
+      symbol: 'Router',
+      sig: { params: [], ret: { kind: 'Unit' }, template: 'Router()', paramNames: [] },
+      span: S,
+      type: { kind: 'Fn', params: [], ret: { kind: 'Unit' }, effects: new Set() },
+    };
+    const mod = makeModule([makeLet('router', ref)]);
+    const out = emitJS(mod);
+    expect(out).toContain("import { Router } from 'express'");
+  });
+
+  it('does not emit import for ForeignRef with empty module', () => {
+    const ref: ForeignRefNode = {
+      kind: 'ForeignRef',
+      target: 'js',
+      module: '',
+      symbol: 'map',
+      sig: { params: [], ret: { kind: 'Unit' }, template: 'map()', paramNames: [] },
+      span: S,
+      type: { kind: 'Fn', params: [], ret: { kind: 'Unit' }, effects: new Set() },
+    };
+    const mod = makeModule([makeLet('mapFn', ref)]);
+    const out = emitJS(mod);
+    expect(out).not.toContain('import');
+  });
+
+  it('does not emit import for console (JS built-in global)', () => {
+    const ref: ForeignRefNode = {
+      kind: 'ForeignRef',
+      target: 'js',
+      module: 'console',
+      symbol: 'log',
+      sig: { params: [STR], ret: { kind: 'Unit' }, template: 'console.log($1)', paramNames: [] },
+      span: S,
+      type: { kind: 'Fn', params: [STR], ret: { kind: 'Unit' }, effects: new Set() },
+    };
+    const mod = makeModule([makeLet('log', ref)]);
+    const out = emitJS(mod);
+    expect(out).not.toContain('import');
+  });
+
+  it('groups multiple symbols from same module into one import statement', () => {
+    const ref1: ForeignRefNode = {
+      kind: 'ForeignRef',
+      target: 'js',
+      module: 'pg',
+      symbol: 'Pool',
+      sig: { params: [], ret: { kind: 'Unit' }, template: 'Pool()', paramNames: [] },
+      span: S,
+      type: { kind: 'Fn', params: [], ret: { kind: 'Unit' }, effects: new Set() },
+    };
+    const ref2: ForeignRefNode = {
+      kind: 'ForeignRef',
+      target: 'js',
+      module: 'pg',
+      symbol: 'Client',
+      sig: { params: [], ret: { kind: 'Unit' }, template: 'Client()', paramNames: [] },
+      span: S,
+      type: { kind: 'Fn', params: [], ret: { kind: 'Unit' }, effects: new Set() },
+    };
+    const mod = makeModule([makeLet('pool', ref1), makeLet('client', ref2)]);
+    const out = emitJS(mod);
+    const importLines = out.split('\n').filter(l => l.startsWith('import'));
+    expect(importLines).toHaveLength(1);
+    expect(importLines[0]).toContain('Client');
+    expect(importLines[0]).toContain('Pool');
+    expect(importLines[0]).toContain("from 'pg'");
+  });
+});
+
 describe('emitJSWithSourceMap', () => {
   it('produces a non-empty map string that is valid ECMA v3 JSON', () => {
     const mod = makeModule([makeLet('x', makeLiteralInt(42))]);
