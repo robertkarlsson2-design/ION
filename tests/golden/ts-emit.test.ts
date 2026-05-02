@@ -21,6 +21,16 @@ function compile(src: string, moduleName = 'TestModule'): string {
   return emitTS(ir);
 }
 
+function compileSurface(src: string): string {
+  const tokens = lex(src, 'test.ion');
+  const cst = parseModule(tokens);
+  const ast = buildModule(cst);
+  const bindResult = bindModule(ast, 'test');
+  const checkResult = checkModule(ast, bindResult, 'test');
+  const ir = desugarModule(ast, bindResult, checkResult, 'test', '0.0.0');
+  return emitTS(ir);
+}
+
 const S: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
 const UNIT: IonType = { kind: 'Unit' };
 
@@ -85,5 +95,16 @@ describe('emitTS — data declarations', () => {
   it('emits data declaration before function declarations', () => {
     const out = compile('data User = User { id: Int }\npub fn show(u: User) -> Str = "user"');
     expect(out.indexOf('interface User')).toBeLessThan(out.indexOf('const show'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// raw() surface-syntax → RawInject verbatim emit
+// ---------------------------------------------------------------------------
+
+describe('emitTS — raw() surface syntax passthrough', () => {
+  it('let x: Str = raw("`json`") → output contains `json` verbatim', () => {
+    const out = compileSurface('let x: Str = raw("`json`")');
+    expect(out).toContain('`json`');
   });
 });

@@ -191,6 +191,15 @@ describe('DataDecl variant name clash — DuplicateBinding (ION-68)', () => {
   });
 });
 
+describe('bindModule — raw() expression', () => {
+  it('fn foo() -> Str = raw("JSON.stringify(x)") → zero UndefinedName errors', () => {
+    const ast = parse('fn foo() -> Str = raw("JSON.stringify(x)")');
+    const result = bindModule(ast, 'test');
+    const undef = result.errors.filter(e => e.kind === 'UndefinedName');
+    expect(undef).toHaveLength(0);
+  });
+});
+
 describe('self-named constructor — ION-77 regression', () => {
   it('data Foo = Foo(Int) — zero errors', () => {
     const ast = parse('data Foo = Foo(Int)');

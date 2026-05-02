@@ -226,6 +226,9 @@ export function buildExpr(cst: ExprNode): AstExprNode {
         elements: cst.elements.map(buildExpr),
         span: cst.span,
       };
+
+    case 'RawExpr':
+      return { kind: 'RawExpr', code: cst.code, span: cst.span };
   }
 }
 

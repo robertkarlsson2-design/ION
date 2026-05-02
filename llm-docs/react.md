@@ -329,11 +329,15 @@ extern fn useRef(initial: Str) -> Str
 extern fn useContext(ctx: Str) -> Str
 ```
 
-**Honest assessment:** React hook ergonomics in Ion surface syntax are **not yet good enough for production component code**. The emitter does the right thing if you hand it correctly-shaped IR, but the surface-syntax sugar to express tuple destructuring, dependency arrays, and effect-cleanup functions is not designed yet. For real React code today, the workflow is:
+**Honest assessment:** React hook ergonomics in Ion surface syntax are **not yet good enough for production component code** — the surface-syntax sugar to express tuple destructuring, dependency arrays, and effect-cleanup functions is not designed yet. However, **wire-format `raw()` + Let chain patterns are tested and working** — see the "Tested hook patterns" section below. For real React code today, the workflow is:
 
 1. Write the structural skeleton in Ion (component shape, JSX, conditional rendering).
-2. Drop hook bodies into `raw("...")` until the emitter grows native hook support.
-3. File TheTicketer tickets describing the gaps.
+2. Use `raw("...")` in a Let chain for hook calls (useState, useEffect, etc.) — the emitter recognises the Let chain and emits a block-body component.
+3. File TheTicketer tickets describing remaining gaps.
+
+### Async arrow functions
+
+An `Abs` node whose body is `AsyncBlock` emits as `async (params) => body` — not as an IIFE. This applies in both expression position (`emitTsExprForReact`) and when the handler is a `Let` binding inside a block-body component. Use this for async event handlers (e.g. form submit handlers with `await`).
 
 
 ## Worked example 1 — Stateful counter
@@ -454,6 +458,54 @@ function makeErr(_0: string): Err { return { _tag: 'Err', _0 }; }
 ```
 
 This is the cleanest piece of the React emitter — full discriminated union typing. Use `data` declarations whenever your component's state is a sum type.
+
+
+## Tested hook patterns (wire format + raw())
+
+These patterns use the block-body component form: when the `Abs` body is a `Let` chain, the emitter switches from `() => (JSX)` to `() => { statements; return (JSX); }`. Each `RawInject` value is emitted as a bare statement; all others become `const name = expr;`.
+
+> **Known gap — tuple destructuring in let**: Ion's `let` binding only supports a single name; use `raw(...)` for useState calls. The emitter emits it verbatim as a statement.
+
+### useState + click handler (tested)
+
+```
+I1
+M ui.counter v=1.0.0
+F let Counter:never=()->let _:unit=raw("const [count, setCount] = useState(0)");let handleClick:unit=()->raw("setCount(count + 1)");div("class=counter",p("","Count: "),button("onclick=handleClick","Increment"));0
+```
+
+Emits:
+
+```tsx
+const Counter: React.FC = () => {
+  const [count, setCount] = useState(0);
+  const handleClick = () => setCount(count + 1);
+  return (
+    <div className="counter">
+      <p>{"Count: "}</p>
+      <button onClick={handleClick}>{"Increment"}</button>
+    </div>
+  );
+};
+```
+
+### Multiple useState + onChange (tested)
+
+```
+I1
+M ui.login_inputs v=1.0.0
+F let LoginInputs:never=()->let _:unit=raw("const [email, setEmail] = useState(\"\")");let _:unit=raw("const [password, setPassword] = useState(\"\")");div("class=fields",input("type=email onchange=setEmail placeholder=Email"),input("type=password onchange=setPassword placeholder=Password"));0
+```
+
+### Async submit handler (tested)
+
+An `Abs` whose body is `async{...}` emits as `async (params) => body`:
+
+```
+I1
+M ui.submit_form v=1.0.0
+F let SubmitForm:never=()->let _:unit=raw("const [error, setError] = useState(null)");let handleSubmit:unit=(e:unit)->async{raw("{ e.preventDefault(); try { await submitData(); } catch (err) { setError(String(err)); } }")};form("onsubmit=handleSubmit",button("type=submit","Submit"));0
+```
 
 
 ## Gap summary — React target

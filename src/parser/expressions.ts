@@ -28,6 +28,7 @@ import type {
   PropagateExprNode,
   GroupExprNode,
   ListLitExprNode,
+  RawExprNode,
 } from './cst.js';
 
 // ---------------------------------------------------------------------------
@@ -200,6 +201,9 @@ class Parser {
       case TokenKind.NULL_LIT: return this.parseLiteralNull(trivia);
       case TokenKind.STRING_START: return this.parseStringInterp(trivia);
       case TokenKind.IDENT:
+        if (tok.text === 'raw' && this.peekAhead(1).kind === TokenKind.LPAREN) {
+          return this.parseRawExpr(trivia);
+        }
         // Single-param lambda: `x -> body`
         if (this.peekAhead(1).kind === TokenKind.ARROW) {
           return this.parseLambda(trivia);
@@ -810,6 +814,18 @@ class Parser {
       span: spanMerge(kwTok.span, body.span),
       leadingTrivia: trivia,
     };
+  }
+
+  private parseRawExpr(trivia: readonly TriviaNode[]): RawExprNode {
+    const startTok = this.consume(); // 'raw' ident
+    this.expect(TokenKind.LPAREN);
+    const strNode = this.parseStringInterp([]);
+    const closeTok = this.expect(TokenKind.RPAREN);
+    const code = strNode.parts
+      .filter((p): p is { kind: 'TextPart'; text: string; span: Span } => p.kind === 'TextPart')
+      .map(p => p.text)
+      .join('');
+    return { kind: 'RawExpr', code, span: spanMerge(startTok.span, closeTok.span), leadingTrivia: trivia };
   }
 }
 

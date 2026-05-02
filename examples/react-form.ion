@@ -1,0 +1,3 @@
+I1
+M examples.react_form v=1.0.0
+F let LoginForm:never=()->let _:unit=raw("const [username, setUsername] = useState(\"\")");let _:unit=raw("const [password, setPassword] = useState(\"\")");let _:unit=raw("const [error, setError] = useState(null)");let handleSubmit:unit=(e:unit)->async{raw("{ e.preventDefault(); try { await login(username, password); } catch (err) { setError(String(err)); } }")};form("onsubmit=handleSubmit class=login-form",h2("","Login"),div("class=field",input("type=email onchange=setUsername placeholder=Email")),div("class=field",input("type=password onchange=setPassword placeholder=Password")),raw("{error && <p className=\"error\">{error}</p>}"),button("type=submit","Sign In"));0
