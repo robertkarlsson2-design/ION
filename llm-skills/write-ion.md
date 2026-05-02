@@ -337,6 +337,71 @@ HTML tag functions (`div`, `span`, etc.) are not in the ION prelude. In surface 
 | LWC | `emitters/lwc/emit.ts` | ✅ All node kinds |
 | Apex | `emitters/apex/emit.ts` | ✅ All node kinds |
 
+---
+
+## FFI prelude usage
+
+The `prelude/` directory at the repo root contains ready-made `@foreign` binding libraries for common Node.js packages. These are **reference files** — import their declarations into your `.ion` file or copy the relevant `extern fn` lines.
+
+| File | Coverage |
+|---|---|
+| `prelude/express.ion` | Router, Request, Response, NextFunction — route handlers, middleware |
+| `prelude/pg.ion` | Pool, PoolClient, QueryResult — connection pool, parameterised queries |
+| `prelude/node.ion` | Date, Buffer, fs/promises, crypto, bcryptjs, jsonwebtoken |
+
+### How uppercase FFI types work
+
+Unknown uppercase type names (e.g. `Request`, `Pool`, `Buffer`) are **passed through as opaque `User` types** by the checker. The TypeScript emitter renders them as their bare name, so `Pool` in ION becomes `Pool` in TypeScript — no type declaration needed.
+
+Lowercase names (e.g. `row`, `t`) remain implicit type variables (`unknown` in TypeScript).
+
+### Express middleware example
+
+```ion
+module api.users  "1.0.0"
+
+// Declare the FFI types you need
+@foreign("express", "Router", "express.Router()")
+pub extern fn router() -> Router
+
+@foreign("", "get", "$1.get($2,$3)")
+pub extern fn routerGet(r: Router, path: Str, handler: fn(Request, Response) -> Unit) -> Unit
+
+// Handler — Request and Response are opaque FFI types
+let getUser = (req: Request, res: Response) ->
+  raw("res.json({ id: req.params.id })");
+
+let usersRouter = router();
+let _ = routerGet(usersRouter, "/users/:id", getUser);
+```
+
+Compiled TypeScript output:
+```ts
+"use strict";
+const getUser = (req: Request, res: Response): void => res.json({ id: req.params.id });
+const usersRouter = express.Router();
+const _ = usersRouter.get("/users/:id", getUser);
+```
+
+### pg query example
+
+```ion
+module db.queries  "1.0.0"
+
+@foreign("pg", "Pool", "new Pool($1)")
+pub extern fn newPool(config: PoolConfig) -> Pool
+
+@foreign("", "query", "$1.query($2,$3)")
+pub extern fn poolQuery(pool: Pool, sql: Str, params: List<Str>) -> QueryResult
+
+let pool = newPool(raw("{ connectionString: process.env.DATABASE_URL }"));
+let rows = poolQuery(pool, "SELECT * FROM users WHERE id = $1", ["42"]);
+```
+
+### Token budget
+
+Using FFI prelude declarations saves significant tokens vs. writing TypeScript directly. The ION `extern fn` declaration is ~10-15 tokens; the equivalent TypeScript function type signature is typically 25-40 tokens.
+
 All emitters support `raw(...)`. If you get an "unhandled kind" error, that means the emitter has a new gap introduced since this was written — use `raw(...)` and file an issue.
 
 ---

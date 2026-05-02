@@ -92,17 +92,11 @@ describe('resolveAnnotation', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('Named Unknown without nameIndex entry → TypeMismatch error + TypeVar fallback', () => {
+  it('Named Unknown uppercase without nameIndex entry → User passthrough (no error)', () => {
     const errors: CheckError[] = [];
     const result = resolveAnnotation(named('Unknown'), new Map(), new Map(), errors);
-    expect(result).toEqual({ kind: 'TypeVar', id: 'Unknown' });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]?.kind).toBe('TypeMismatch');
-    expect(errors[0]?.code).toBe('E0401');
-    const err = errors[0];
-    if (err?.kind === 'TypeMismatch') {
-      expect(err.message).toContain('Unknown');
-    }
+    expect(result).toEqual({ kind: 'User', name: 'Unknown', symbolId: makeSymbolId(''), args: [] });
+    expect(errors).toHaveLength(0);
   });
 
   it('Generic List[Int] → ListType { elem: Int }', () => {
@@ -172,11 +166,31 @@ describe('resolveAnnotation', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('Tuple with unknown element type → error pushed, element is TypeVar fallback', () => {
+  it('Tuple with unknown uppercase element type → User passthrough (no error)', () => {
     const errors: CheckError[] = [];
     const result = resolveAnnotation(tupleAnn([named('Int'), named('Unknown')]), new Map(), new Map(), errors);
-    expect(result).toEqual({ kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'TypeVar', id: 'Unknown' }] });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]?.kind).toBe('TypeMismatch');
+    expect(result).toEqual({ kind: 'Tuple', elements: [{ kind: 'Int' }, { kind: 'User', name: 'Unknown', symbolId: makeSymbolId(''), args: [] }] });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('Named Request (FFI) → User passthrough', () => {
+    const errors: CheckError[] = [];
+    const result = resolveAnnotation(named('Request'), new Map(), new Map(), errors);
+    expect(result).toEqual({ kind: 'User', name: 'Request', symbolId: makeSymbolId(''), args: [] });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('Generic Promise[Int] (FFI) → User with resolved args', () => {
+    const errors: CheckError[] = [];
+    const result = resolveAnnotation(generic('Promise', [named('Int')]), new Map(), new Map(), errors);
+    expect(result).toEqual({ kind: 'User', name: 'Promise', symbolId: makeSymbolId(''), args: [{ kind: 'Int' }] });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('Generic QueryResult[b] (FFI) → User with TypeVar arg', () => {
+    const errors: CheckError[] = [];
+    const result = resolveAnnotation(generic('QueryResult', [named('b')]), new Map(), new Map(), errors);
+    expect(result).toEqual({ kind: 'User', name: 'QueryResult', symbolId: makeSymbolId(''), args: [{ kind: 'TypeVar', id: 'b' }] });
+    expect(errors).toHaveLength(0);
   });
 });

@@ -1,6 +1,6 @@
 import type { TypeAnnotation } from '../ast/types.js';
-import type { IonType, TypeVar } from '../ir/types.js';
-import type { SymbolId } from '../types.js';
+import type { IonType } from '../ir/types.js';
+import { makeSymbolId, type SymbolId } from '../types.js';
 import type { CheckError } from './types.js';
 
 /**
@@ -29,18 +29,9 @@ export function resolveAnnotation(
       }
       const sid = nameIndex.get(ann.name);
       if (sid === undefined) {
-        errors.push({
-          kind: 'TypeMismatch',
-          code: 'E0401',
-          expected: { kind: 'Never' },
-          found: { kind: 'Never' },
-          span: ann.span,
-          message: `Unknown type '${ann.name}'`,
-          suggestion: `Define '${ann.name}' as a data type or type alias, or check for a typo`,
-        });
-        // Return a TypeVar as fallback so inference can continue.
-        const fallback: TypeVar = { kind: 'TypeVar', id: ann.name };
-        return fallback;
+        // Unknown uppercase names are FFI / foreign types — pass through as User so
+        // emitters render the original name (e.g. Request, Pool, Buffer).
+        return { kind: 'User', name: ann.name, symbolId: makeSymbolId(''), args: [] };
       }
       return { kind: 'User', name: ann.name, symbolId: sid, args: [] };
     }
@@ -69,16 +60,8 @@ export function resolveAnnotation(
         default: {
           const sid = nameIndex.get(ann.name);
           if (sid === undefined) {
-            errors.push({
-              kind: 'TypeMismatch',
-              code: 'E0401',
-              expected: { kind: 'Never' },
-              found: { kind: 'Never' },
-              span: ann.span,
-              message: `Unknown generic type '${ann.name}'`,
-              suggestion: `Define '${ann.name}' as a data type or type alias, or check for a typo`,
-            });
-            return { kind: 'TypeVar', id: ann.name };
+            // Unknown generic uppercase names are FFI types — pass through as User.
+            return { kind: 'User', name: ann.name, symbolId: makeSymbolId(''), args: resolvedArgs };
           }
           return { kind: 'User', name: ann.name, symbolId: sid, args: resolvedArgs };
         }

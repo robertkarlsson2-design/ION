@@ -1,0 +1,59 @@
+// Node.js built-ins + common utility FFI bindings for ION
+// Import into your module with: X import node:* ...
+// Requires the checker FFI passthrough fix (uppercase names → User type).
+
+module prelude.node  "1.0.0"
+
+// --- Date ---
+
+@foreign("", "now", "Date.now()")
+pub extern fn dateNow() -> Int
+
+@foreign("", "toISOString", "new Date($1).toISOString()")
+pub extern fn toISOString(timestamp: Int) -> Str
+
+// --- Buffer ---
+
+@foreign("Buffer", "from", "Buffer.from($1)")
+pub extern fn bufferFromStr(s: Str) -> Buffer
+
+@foreign("Buffer", "from", "Buffer.from($1,$2)")
+pub extern fn bufferFromEncoded(s: Str, enc: Str) -> Buffer
+
+@foreign("", "toString", "$1.toString($2)")
+pub extern fn bufferToString(buf: Buffer, enc: Str) -> Str
+
+// --- fs (async) ---
+
+@foreign("fs/promises", "readFile", "fs.readFile($1,$2)")
+pub extern fn readFile(path: Str, enc: Str) -> Str
+
+@foreign("fs/promises", "writeFile", "fs.writeFile($1,$2)")
+pub extern fn writeFile(path: Str, data: Str) -> Unit
+
+@foreign("fs/promises", "unlink", "fs.unlink($1)")
+pub extern fn unlink(path: Str) -> Unit
+
+// --- crypto ---
+
+@foreign("crypto", "randomUUID", "crypto.randomUUID()")
+pub extern fn randomUUID() -> Str
+
+@foreign("crypto", "createHash", "crypto.createHash($1).update($2).digest($3)")
+pub extern fn hashDigest(algo: Str, data: Str, enc: Str) -> Str
+
+// --- bcryptjs ---
+
+@foreign("bcryptjs", "hash", "bcrypt.hash($1,$2)")
+pub extern fn bcryptHash(plain: Str, rounds: Int) -> Str
+
+@foreign("bcryptjs", "compare", "bcrypt.compare($1,$2)")
+pub extern fn bcryptCompare(plain: Str, hash: Str) -> Bool
+
+// --- jsonwebtoken ---
+
+@foreign("jsonwebtoken", "sign", "jwt.sign($1,$2,$3)")
+pub extern fn jwtSign(payload: JwtPayload, secret: Str, options: JwtOptions) -> Str
+
+@foreign("jsonwebtoken", "verify", "jwt.verify($1,$2)")
+pub extern fn jwtVerify(token: Str, secret: Str) -> JwtPayload

@@ -1,0 +1,32 @@
+// node-postgres (pg) FFI bindings for ION
+// Import into your module with: X import pg:* ...
+// Requires the checker FFI passthrough fix (uppercase names → User type).
+
+module prelude.pg  "1.0.0"
+
+@foreign("pg", "Pool", "new Pool($1)")
+pub extern fn newPool(config: PoolConfig) -> Pool
+
+@foreign("", "query", "$1.query($2,$3)")
+pub extern fn poolQuery(pool: Pool, sql: Str, params: List<Str>) -> QueryResult
+
+@foreign("", "query", "$1.query($2)")
+pub extern fn poolQueryNoParams(pool: Pool, sql: Str) -> QueryResult
+
+@foreign("", "rows", "$1.rows")
+pub extern fn queryRows(result: QueryResult) -> List<Response>
+
+@foreign("", "rowCount", "$1.rowCount")
+pub extern fn queryRowCount(result: QueryResult) -> Int
+
+@foreign("", "end", "$1.end()")
+pub extern fn poolEnd(pool: Pool) -> Unit
+
+@foreign("", "connect", "$1.connect()")
+pub extern fn poolConnect(pool: Pool) -> PoolClient
+
+@foreign("", "query", "$1.query($2,$3)")
+pub extern fn clientQuery(client: PoolClient, sql: Str, params: List<Str>) -> QueryResult
+
+@foreign("", "release", "$1.release()")
+pub extern fn clientRelease(client: PoolClient) -> Unit

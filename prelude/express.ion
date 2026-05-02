@@ -1,0 +1,41 @@
+// Express.js FFI bindings for ION
+// Import into your module with: X import express:* ...
+// Requires the checker FFI passthrough fix (uppercase names → User type).
+
+module prelude.express  "1.0.0"
+
+@foreign("express", "Router", "express.Router()")
+pub extern fn router() -> Router
+
+@foreign("", "use", "$1.use($2)")
+pub extern fn routerUse(r: Router, handler: fn(Request, Response, NextFunction) -> Unit) -> Unit
+
+@foreign("", "get", "$1.get($2,$3)")
+pub extern fn routerGet(r: Router, path: Str, handler: fn(Request, Response) -> Unit) -> Unit
+
+@foreign("", "post", "$1.post($2,$3)")
+pub extern fn routerPost(r: Router, path: Str, handler: fn(Request, Response) -> Unit) -> Unit
+
+@foreign("", "put", "$1.put($2,$3)")
+pub extern fn routerPut(r: Router, path: Str, handler: fn(Request, Response) -> Unit) -> Unit
+
+@foreign("", "delete", "$1.delete($2,$3)")
+pub extern fn routerDelete(r: Router, path: Str, handler: fn(Request, Response) -> Unit) -> Unit
+
+@foreign("", "params", "$1.params")
+pub extern fn reqParams(req: Request) -> Response
+
+@foreign("", "body", "$1.body")
+pub extern fn reqBody(req: Request) -> Response
+
+@foreign("", "query", "$1.query")
+pub extern fn reqQuery(req: Request) -> Response
+
+@foreign("", "json", "$1.json($2)")
+pub extern fn resJson(res: Response, data: Response) -> Unit
+
+@foreign("", "status", "$1.status($2)")
+pub extern fn resStatus(res: Response, code: Int) -> Response
+
+@foreign("", "send", "$1.send($2)")
+pub extern fn resSend(res: Response, body: Str) -> Unit
