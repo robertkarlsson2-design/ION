@@ -497,6 +497,26 @@ function emitTsExpr(node: IonIRNode): string {
         if (calleeName === '__try__' && app.args.length === 2) {
           return `(() => { try { return ${emitTsExpr(app.args[0])}; } catch (e) { return ${emitTsExpr(app.args[1])}; } })()`;
         }
+        // __tryfin__(tryExpr, catchExpr, finallyExpr) — try/catch/finally as expression.
+        if (calleeName === '__tryfin__' && app.args.length === 3) {
+          return `(() => { try { return ${emitTsExpr(app.args[0])}; } catch (e) { return ${emitTsExpr(app.args[1])}; } finally { ${emitTsExpr(app.args[2])}; } })()`;
+        }
+        // __finally__(tryExpr, finallyExpr) — try/finally with no catch.
+        if (calleeName === '__finally__' && app.args.length === 2) {
+          return `(() => { try { return ${emitTsExpr(app.args[0])}; } finally { ${emitTsExpr(app.args[1])}; } })()`;
+        }
+        // __do__(s1, s2, ..., resultExpr) — multi-statement IIFE block where each
+        // arg before the last is evaluated as a side-effect statement and the
+        // last arg is returned. Useful for imperative-style handlers without
+        // a let-chain (e.g. `do { router.get(...); router.post(...); router }`).
+        if (calleeName === '__do__' && app.args.length >= 1) {
+          const last = app.args[app.args.length - 1]!;
+          const stmts = app.args.slice(0, -1).map(a => `${emitTsExpr(a)};`);
+          if (stmts.length === 0) {
+            return emitTsExpr(last);
+          }
+          return `(() => { ${stmts.join(' ')} return ${emitTsExpr(last)}; })()`;
+        }
         // __seq__(a, b, c, ...) → (a, b, c, ...) — comma-sequenced expressions
         // Useful for side-effect chains. Result is the last expression.
         if (calleeName === '__seq__' && app.args.length >= 1) {
