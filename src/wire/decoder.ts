@@ -77,6 +77,8 @@ function skipSpaces(cur: Cursor): void {
 // Characters that terminate an identifier token.
 const IDENT_STOP = new Set([
   ' ', '(', ')', '{', '}', '[', ']', ',', ';', ':', '<', '>', '!', '|', '=', '-', '.', '\n', '\r',
+  // Infix-operator delimiters added when wire-form sugar was introduced.
+  '?', '+', '*', '/', '%', '&',
 ]);
 
 function readIdent(cur: Cursor): string {
@@ -377,9 +379,16 @@ function parseParam(cur: Cursor, ctx: DecoderContext): Param {
   skipSpaces(cur);
   const name = resolveName(readIdent(cur), ctx);
   skipSpaces(cur);
-  consume(cur, ':');
-  skipSpaces(cur);
-  const type = parseType(cur, ctx);
+  // Type annotation is optional — missing means the param is `any`.
+  // This is the wire-form sugar for `name:any`.
+  let type: IonType;
+  if (peek(cur) === ':') {
+    cur.pos++;
+    skipSpaces(cur);
+    type = parseType(cur, ctx);
+  } else {
+    type = { kind: 'User', name: 'any', symbolId: makeSymbolId(''), args: [] };
+  }
   const base: Param = { name, symbolId: makeSymbolId(''), type, span: WIRE_SPAN };
   if (isStatic || visibility !== undefined || isReadonly) {
     return {
@@ -521,6 +530,125 @@ function parseNodeArgs(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNo
   return args;
 }
 
+/**
+ * Wrap a parsed primary expression with optional infix-operator chains so
+ * humans can write `a??b`, `r[i]`, `o?.f`, `a+b`, `a===b`, `!a`, etc. Each
+ * sugar lowers to the existing operator-builtin App nodes.
+ *
+ * Precedence (highest first): postfix `[i]` `?.f`, then * / %, + -, < > <= >=,
+ * === !==, &&, ||, ??.
+ *
+ * Caller has already parsed the primary (left-hand) expression.
+ */
+function applyInfix(left: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: number, minPrec = 0): IonIRNode {
+  // Postfix operators (highest binding): `[i]` and `?.field`
+  while (true) {
+    if (peek(cur) === '[') {
+      cur.pos++;
+      const idx = parseNode(cur, ctx, depth + 1);
+      consume(cur, ']');
+      left = {
+        kind: 'App',
+        callee: { kind: 'Var', name: '__index__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+        args: [left, idx], span: WIRE_SPAN, type: { kind: 'Unit' },
+      };
+      continue;
+    }
+    if (cur.text.startsWith('?.', cur.pos)) {
+      cur.pos += 2;
+      const f = readIdent(cur);
+      left = {
+        kind: 'App',
+        callee: { kind: 'Var', name: '__optchain__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+        args: [left,
+          { kind: 'Literal', value: { kind: 'Str', value: f }, span: WIRE_SPAN, type: { kind: 'Str' } }],
+        span: WIRE_SPAN, type: { kind: 'Unit' },
+      };
+      continue;
+    }
+    break;
+  }
+
+  // Binary infix operators with precedence climbing.
+  // Map: token (longest-first) → [precedence, builtin name]
+  const binOps: Array<[string, number, string]> = [
+    ['??', 1, '__nullish__'],
+    ['||', 2, '__or__'],
+    ['&&', 3, '__and__'],
+    ['===', 4, '__eq__'],
+    ['!==', 4, '__ne__'],
+    ['<=', 5, '__le__'],
+    ['>=', 5, '__ge__'],
+    ['<', 5, '__lt__'],
+    ['>', 5, '__gt__'],
+    ['+', 6, '__add__'],
+    ['-', 6, '__sub__'],
+    ['*', 7, '__mul__'],
+    ['/', 7, '__div__'],
+    ['%', 7, '__mod__'],
+  ];
+
+  while (true) {
+    let matched: [string, number, string] | null = null;
+    for (const op of binOps) {
+      if (cur.text.startsWith(op[0], cur.pos)) {
+        // Skip `?.` (optional chain — already handled as postfix above).
+        // Skip `??` ternary collision: matched is `??` not `?` so fine.
+        // The longest-first ordering already covers `===` vs `==`.
+        matched = op;
+        break;
+      }
+    }
+    if (matched === null || matched[1] < minPrec) break;
+    const [tok, prec, name] = matched;
+    cur.pos += tok.length;
+    // Right-associate would need higher minPrec; we use left-associate (minPrec+1).
+    const right = parseInfixPrimary(cur, ctx, depth + 1);
+    const rightFolded = applyInfix(right, cur, ctx, depth + 1, prec + 1);
+    left = {
+      kind: 'App',
+      callee: { kind: 'Var', name, symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+      args: [left, rightFolded], span: WIRE_SPAN, type: { kind: 'Unit' },
+    };
+  }
+
+  // Ternary `cond?a:b` — lowest precedence, only at outer level (minPrec=0).
+  // Lowers to `match(cond){true->a;_->b}` which the TS emitter renders as
+  // `cond ? a : b` ternary.
+  if (minPrec <= 0 && peek(cur) === '?' && cur.text[cur.pos + 1] !== '.' && cur.text[cur.pos + 1] !== '?') {
+    cur.pos++;
+    const thenBranch = parseNode(cur, ctx, depth + 1);
+    consume(cur, ':');
+    const elseBranch = parseNode(cur, ctx, depth + 1);
+    return {
+      kind: 'Case',
+      scrutinee: left,
+      arms: [
+        { pattern: { kind: 'Literal', value: { kind: 'Bool', value: true }, span: WIRE_SPAN }, body: thenBranch, span: WIRE_SPAN },
+        { pattern: { kind: 'Wildcard', span: WIRE_SPAN }, body: elseBranch, span: WIRE_SPAN },
+      ],
+      span: WIRE_SPAN, type: { kind: 'Unit' },
+    };
+  }
+
+  return left;
+}
+
+/** Parse a primary expression for the infix operator parser. */
+function parseInfixPrimary(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
+  // Prefix `!` — logical not
+  if (peek(cur) === '!' && cur.text[cur.pos + 1] !== '=') {
+    cur.pos++;
+    const inner = parseInfixPrimary(cur, ctx, depth + 1);
+    return {
+      kind: 'App',
+      callee: { kind: 'Var', name: '__not__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+      args: [inner], span: WIRE_SPAN, type: { kind: 'Unit' },
+    };
+  }
+  return parseNodeNoInfix(cur, ctx, depth);
+}
+
 /** Consume a chain of ->method(args) and .field suffixes on an already-parsed node. */
 function parseChain(node: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
   let result = node;
@@ -544,6 +672,25 @@ function parseChain(node: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: nu
 }
 
 function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
+  // Outer entry: parse a primary node, then apply postfix/infix operator sugar
+  // (see applyInfix). Keeps the primary parser logic in parseNodeNoInfix.
+  // Handle prefix `!` (logical not) here since the primary parser doesn't.
+  let primary: IonIRNode;
+  if (peek(cur) === '!' && cur.text[cur.pos + 1] !== '=') {
+    cur.pos++;
+    const inner = parseNode(cur, ctx, depth + 1);
+    primary = {
+      kind: 'App',
+      callee: { kind: 'Var', name: '__not__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+      args: [inner], span: WIRE_SPAN, type: { kind: 'Unit' },
+    };
+  } else {
+    primary = parseNodeNoInfix(cur, ctx, depth);
+  }
+  return applyInfix(primary, cur, ctx, depth);
+}
+
+function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
   if (depth > MAX_ENCODE_DEPTH) {
     throw new WireDecodeError('module exceeds maximum encoding depth');
   }
@@ -575,14 +722,136 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
     return { kind: 'Literal', value, span: WIRE_SPAN, type };
   }
 
-  // ── Abs: (params)->body ──────────────────────────────────────────────────
-  if (c === '(') {
+  // ── Inline object/do-block: {k:v,k:v,...} or {stmt;stmt;...;result} ──
+  // Disambiguate by scanning the first key-or-expr: if followed by `:`, it's
+  // an object literal; if followed by `;` or `)` (or a comma in a non-key
+  // pattern), it's a do-block. Both lower to existing builtins:
+  //   {k:v,...:s,k:v} → app(__obj__, "k", v, "...", s, "k", v)
+  //   {s1;s2;result}  → app(__do__, s1, s2, result)
+  // Spread inside an object literal is `...:expr` which uses the special
+  // "..." key. A plain `expr` arg (no `:`) before any `:`-key forces do-block.
+  if (c === '{') {
     cur.pos++;
-    const params = parseParamList(cur, ctx);
-    consume(cur, ')');
-    consume(cur, '->');
-    const body = parseNode(cur, ctx, depth + 1);
-    return { kind: 'Abs', params, body, captures: [], span: WIRE_SPAN, type: { kind: 'Unit' } };
+    skipSpaces(cur);
+    if (peek(cur) === '}') {
+      // empty {} — treat as empty object literal (rare but consistent)
+      cur.pos++;
+      return {
+        kind: 'App',
+        callee: { kind: 'Var', name: '__obj__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+        args: [], span: WIRE_SPAN, type: { kind: 'Unit' },
+      };
+    }
+
+    // Two-pass disambiguation: try parsing as object literal first; if the
+    // first parsed item isn't followed by `:`, restart as do-block.
+    const startPos = cur.pos;
+    let isObjectLit = false;
+    // Special case: `...` spread key
+    if (cur.text.startsWith('...:', cur.pos) || cur.text.startsWith('...', cur.pos)) {
+      isObjectLit = true;
+    } else {
+      // Scan first ident or string-literal then look for `:`
+      const probePos = cur.pos;
+      try {
+        if (peek(cur) === '"') {
+          parseLiteral(cur);
+        } else {
+          readIdent(cur);
+        }
+        skipSpaces(cur);
+        if (peek(cur) === ':') {
+          isObjectLit = true;
+        }
+      } catch {
+        // not a clean ident or string — not an object literal
+      }
+      cur.pos = probePos;
+    }
+
+    if (isObjectLit) {
+      const args: IonIRNode[] = [];
+      while (true) {
+        skipSpaces(cur);
+        if (peek(cur) === '}') break;
+        let key: string;
+        if (cur.text.startsWith('...', cur.pos)) {
+          cur.pos += 3;
+          key = '...';
+        } else if (peek(cur) === '"') {
+          const lit = parseLiteral(cur);
+          if (lit.kind !== 'Str') {
+            throw new WireDecodeError(`object literal key must be a string at pos ${cur.pos}`);
+          }
+          key = lit.value;
+        } else {
+          key = readIdent(cur);
+        }
+        skipSpaces(cur);
+        consume(cur, ':');
+        skipSpaces(cur);
+        const value = parseNode(cur, ctx, depth + 1);
+        args.push({ kind: 'Literal', value: { kind: 'Str', value: key }, span: WIRE_SPAN, type: { kind: 'Str' } });
+        args.push(value);
+        skipSpaces(cur);
+        if (peek(cur) === ',') { cur.pos++; continue; }
+        break;
+      }
+      consume(cur, '}');
+      return {
+        kind: 'App',
+        callee: { kind: 'Var', name: '__obj__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+        args, span: WIRE_SPAN, type: { kind: 'Unit' },
+      };
+    }
+
+    // Do-block: {stmt;stmt;...;result}
+    cur.pos = startPos;
+    const stmts: IonIRNode[] = [];
+    while (true) {
+      skipSpaces(cur);
+      if (peek(cur) === '}') break;
+      stmts.push(parseNode(cur, ctx, depth + 1));
+      skipSpaces(cur);
+      if (peek(cur) === ';') { cur.pos++; continue; }
+      break;
+    }
+    consume(cur, '}');
+    return {
+      kind: 'App',
+      callee: { kind: 'Var', name: '__do__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+      args: stmts, span: WIRE_SPAN, type: { kind: 'Unit' },
+    };
+  }
+
+  // ── Abs: (params)->body  OR  parenthesized expression (...) ──────────────
+  // Disambiguate: try the lambda path first; if the closing `)` isn't
+  // followed by `->`, rewind and parse as a grouped expression. The
+  // lambda body itself isn't parsed yet, so the cost of the speculative
+  // parse is only the param list.
+  if (c === '(') {
+    const startPos = cur.pos;
+    cur.pos++;
+    let isLambda = false;
+    try {
+      const params = parseParamList(cur, ctx);
+      if (peek(cur) === ')') {
+        cur.pos++;
+        if (cur.text.startsWith('->', cur.pos)) {
+          cur.pos += 2;
+          const body = parseNode(cur, ctx, depth + 1);
+          return { kind: 'Abs', params, body, captures: [], span: WIRE_SPAN, type: { kind: 'Unit' } };
+        }
+      }
+    } catch {
+      // Param-list parse failed — rewind and try as parenthesized expression.
+    }
+    if (!isLambda) {
+      cur.pos = startPos + 1;
+      const inner = parseNode(cur, ctx, depth + 1);
+      consume(cur, ')');
+      return inner;
+    }
   }
 
   // ── let name:type=value;body ─────────────────────────────────────────────
@@ -592,8 +861,14 @@ function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
   if (cur.text.startsWith('let ', cur.pos)) {
     cur.pos += 4;
     const name = resolveName(readIdent(cur), ctx);
-    consume(cur, ':');
-    const bindingType = parseType(cur, ctx);
+    // Type annotation is optional — `let x=v` is sugar for `let x:any=v`.
+    let bindingType: IonType;
+    if (peek(cur) === ':') {
+      cur.pos++;
+      bindingType = parseType(cur, ctx);
+    } else {
+      bindingType = { kind: 'User', name: 'any', symbolId: makeSymbolId(''), args: [] };
+    }
     consume(cur, '=');
     const value = parseNode(cur, ctx, depth + 1);
     let body: IonIRNode;
