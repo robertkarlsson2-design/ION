@@ -127,3 +127,15 @@ describe('checkModule — error cases', () => {
     expect(mm.length).toBeGreaterThan(0);
   });
 });
+
+describe('checkModule — raw() expression', () => {
+  it('let x: Str = raw("`json`") → zero errors', () => {
+    const result = check('let x: Str = raw("`json`")');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('fn f() -> Int = raw("42") → zero errors', () => {
+    const result = check('fn f() -> Int = raw("42")');
+    expect(result.errors).toHaveLength(0);
+  });
+});

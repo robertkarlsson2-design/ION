@@ -174,6 +174,12 @@ export interface AstListLitNode {
 
 // GroupExprNode is intentionally absent — elided by the builder.
 
+export interface AstRawExprNode {
+  readonly kind: 'RawExpr';
+  readonly code: string;
+  readonly span: Span;
+}
+
 export type AstExprNode =
   | LiteralIntNode
   | LiteralFloatNode
@@ -191,7 +197,8 @@ export type AstExprNode =
   | AstLetExprNode
   | AstAccessorExprNode
   | AstPropagateExprNode
-  | AstListLitNode;
+  | AstListLitNode
+  | AstRawExprNode;
 
 // ---------------------------------------------------------------------------
 // Declaration helpers
