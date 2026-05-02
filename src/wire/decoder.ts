@@ -195,12 +195,17 @@ interface ModuleHeader {
 }
 
 function parseModuleLine(line: string): ModuleHeader | { error: string } {
-  // "<module> v=<version> [d=<dialect1,dialect2>]"
+  // "<module> [v=<version>] [d=<dialect1,dialect2>]"
+  // Defaults: version="0.1.0", dialects=["core"]. Project files that don't
+  // need custom version or dialects can write just `M org.example.foo`.
   const parts = line.split(' ');
-  if (parts.length < 2) return { error: `malformed M line: ${JSON.stringify(line)}` };
+  if (parts.length < 1 || parts[0] === '') {
+    return { error: `malformed M line: ${JSON.stringify(line)}` };
+  }
 
   const module = parts[0]!;
-  let version = '';
+  let version: string | undefined;
+  let dialectsExplicit = false;
   const dialects: string[] = [];
 
   for (let i = 1; i < parts.length; i++) {
@@ -208,11 +213,13 @@ function parseModuleLine(line: string): ModuleHeader | { error: string } {
     if (p.startsWith('v=')) {
       version = p.slice(2);
     } else if (p.startsWith('d=')) {
+      dialectsExplicit = true;
       dialects.push(...p.slice(2).split(',').filter(d => d.length > 0));
     }
   }
 
-  if (!version) return { error: 'M line missing v= field' };
+  if (!version) version = '0.1.0';
+  if (!dialectsExplicit) dialects.push('core');
 
   return { module, version, dialects };
 }
