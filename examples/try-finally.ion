@@ -1,0 +1,25 @@
+// try/catch/finally idioms in ION surface syntax
+//
+// ION models fallible operations with Result<T, E>.
+// ? propagates Err up; exhaustive match replaces try/catch.
+// Use raw(...) only for finally blocks with side effects.
+
+module examples.try_finally  "1.0.0"
+
+// try { return f(x) } catch (e) { return fallback }
+// → Result unwrap with fallback
+fn handle_result(x: Result<Str, Str>) -> Str =
+  match x | Ok(v) -> v | Err(e) -> e
+
+// async function load(id) { try { return await apiFetch(id) } catch(e) { throw e } }
+// → ? propagates Err up to the caller
+// (apiFetch is assumed to be a @foreign extern returning Result<Str, Str>)
+@foreign("api", "fetch", "apiFetch($1)")
+extern fn apiFetch(id: Str) -> Result<Str, Str>;
+
+fn load(id: Str) -> Result<Str, Str> = apiFetch(id)?
+
+// try { ... } catch (e) { setError(e?.message) } finally { setSubmitting(false) }
+// → raw() is required when finally performs side effects
+fn submit_with_cleanup(data: Str) -> Unit =
+  raw("try { submit(data); } catch (e) { setError(e?.message ?? \"error\"); } finally { setSubmitting(false); }")
