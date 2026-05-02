@@ -450,6 +450,8 @@ function emitTsExpr(node: IonIRNode): string {
         }
         // __obj__(k1, v1, k2, v2, ...) → plain JS object literal
         // Pairs of args are alternating string keys + value expressions.
+        // A key of "..." or any string starting with "..." emits as a spread:
+        // `app(__obj__,"...","payload",...,"jti",x)` → `{ ...payload, jti: x }`.
         if (calleeName === '__obj__' && app.args.length % 2 === 0) {
           const parts: string[] = [];
           for (let i = 0; i < app.args.length; i += 2) {
@@ -458,6 +460,10 @@ function emitTsExpr(node: IonIRNode): string {
             const key = keyNode.kind === 'Literal' && (keyNode as LiteralNode).value.kind === 'Str'
               ? ((keyNode as LiteralNode).value as { kind: 'Str'; value: string }).value
               : emitTsExpr(keyNode);
+            if (key === '...') {
+              parts.push(`...${emitTsExpr(valNode)}`);
+              continue;
+            }
             // Wrap key in quotes if it's not a valid JS identifier; otherwise bare
             const keyOut = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : JSON.stringify(key);
             parts.push(`${keyOut}: ${emitTsExpr(valNode)}`);
@@ -479,6 +485,22 @@ function emitTsExpr(node: IonIRNode): string {
             const m = ((memberNode as LiteralNode).value as { kind: 'Str'; value: string }).value;
             return `${emitTsExpr(app.args[0])}?.${m}`;
           }
+        }
+        // __throw__(msg) → throw new Error(msg)
+        // Wraps in IIFE so it's an expression: `(() => { throw ... })()`.
+        if (calleeName === '__throw__' && app.args.length === 1) {
+          return `(() => { throw new Error(${emitTsExpr(app.args[0])}); })()`;
+        }
+        // __spread__(obj) → ...obj  (spread operator, only valid inside obj/array literals)
+        // Use carefully: emits `...obj` directly; only meaningful when used as
+        // an argument to __obj__ in a position where the surrounding context
+        // accepts it. The emitter does not validate position.
+        if (calleeName === '__spread__' && app.args.length === 1) {
+          return `...${emitTsExpr(app.args[0])}`;
+        }
+        // __env__(key) → process.env[key]  (env var read, returns string | undefined)
+        if (calleeName === '__env__' && app.args.length === 1) {
+          return `process.env[${emitTsExpr(app.args[0])}]`;
         }
       }
       return `${emitTsExpr(app.callee)}(${app.args.map(emitTsExpr).join(', ')})`;
@@ -575,9 +597,20 @@ function emitTsExpr(node: IonIRNode): string {
 
     case 'OopThis': return 'this';
 
-    case 'AsyncBlock':
-      // Wrap in an immediately-invoked async arrow so it eagerly starts
-      return `(async () => ${emitTsExpr(node.body)})()`;
+    case 'AsyncBlock': {
+      // Wrap in an immediately-invoked async arrow so it eagerly starts.
+      // When the body is a Let chain, inline the bindings directly inside the
+      // async arrow as a block — otherwise the let's IIFE wrap would be sync,
+      // making any `await` inside it a SyntaxError.
+      const body = (node as { body: IonIRNode }).body;
+      if (body.kind === 'Let') {
+        const block = emitTsLetBlock(body as LetNode);
+        if (block.stmts.length > 0) {
+          return `(async () => {\n  ${block.stmts.join('\n  ')}\n  return ${block.ret};\n})()`;
+        }
+      }
+      return `(async () => ${emitTsExpr(body)})()`;
+    }
 
     case 'Await': return `await ${emitTsExpr(node.expr)}`;
 
