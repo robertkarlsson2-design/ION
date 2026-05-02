@@ -15,6 +15,7 @@ import type {
   EffectDeclNode,
   HandleNode,
   PerformNode,
+  LiteralNode,
 } from '../../src/ir/nodes.js';
 import type { IonType } from '../../src/ir/types.js';
 import { expandTemplate, wrapEmitted } from '../../src/emit/template.js';
@@ -436,15 +437,48 @@ function emitTsExpr(node: IonIRNode): string {
     case 'App': {
       const app = node as AppNode;
       if (app.callee.kind === 'Var') {
-        const bop = BUILTIN_BINARY_OPS[(app.callee as VarNode).name];
+        const calleeName = (app.callee as VarNode).name;
+        const bop = BUILTIN_BINARY_OPS[calleeName];
         if (bop !== undefined && app.args.length === 2) {
           const l = needsParens(app.args[0]) ? `(${emitTsExpr(app.args[0])})` : emitTsExpr(app.args[0]);
           const r = needsParens(app.args[1]) ? `(${emitTsExpr(app.args[1])})` : emitTsExpr(app.args[1]);
           return `${l} ${bop} ${r}`;
         }
-        const uop = BUILTIN_UNARY_OPS[(app.callee as VarNode).name];
+        const uop = BUILTIN_UNARY_OPS[calleeName];
         if (uop !== undefined && app.args.length === 1) {
           return `${uop}${emitTsExpr(app.args[0])}`;
+        }
+        // __obj__(k1, v1, k2, v2, ...) → plain JS object literal
+        // Pairs of args are alternating string keys + value expressions.
+        if (calleeName === '__obj__' && app.args.length % 2 === 0) {
+          const parts: string[] = [];
+          for (let i = 0; i < app.args.length; i += 2) {
+            const keyNode = app.args[i]!;
+            const valNode = app.args[i + 1]!;
+            const key = keyNode.kind === 'Literal' && (keyNode as LiteralNode).value.kind === 'Str'
+              ? ((keyNode as LiteralNode).value as { kind: 'Str'; value: string }).value
+              : emitTsExpr(keyNode);
+            // Wrap key in quotes if it's not a valid JS identifier; otherwise bare
+            const keyOut = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : JSON.stringify(key);
+            parts.push(`${keyOut}: ${emitTsExpr(valNode)}`);
+          }
+          return `{ ${parts.join(', ')} }`;
+        }
+        // __index__(arr, idx) → arr[idx]  (array/object indexing)
+        if (calleeName === '__index__' && app.args.length === 2) {
+          return `${emitTsExpr(app.args[0])}[${emitTsExpr(app.args[1])}]`;
+        }
+        // __nullish__(a, b) → a ?? b  (nullish coalescing)
+        if (calleeName === '__nullish__' && app.args.length === 2) {
+          return `(${emitTsExpr(app.args[0])} ?? ${emitTsExpr(app.args[1])})`;
+        }
+        // __optchain__(obj, member-string) → obj?.member  (optional chaining)
+        if (calleeName === '__optchain__' && app.args.length === 2) {
+          const memberNode = app.args[1]!;
+          if (memberNode.kind === 'Literal' && (memberNode as LiteralNode).value.kind === 'Str') {
+            const m = ((memberNode as LiteralNode).value as { kind: 'Str'; value: string }).value;
+            return `${emitTsExpr(app.args[0])}?.${m}`;
+          }
         }
       }
       return `${emitTsExpr(app.callee)}(${app.args.map(emitTsExpr).join(', ')})`;
@@ -463,7 +497,12 @@ function emitTsExpr(node: IonIRNode): string {
         const stmts = body.stmts.join('\n  ');
         return `(${params})${retAnnotation} => {\n  ${stmts}\n  return ${body.ret};\n}`;
       }
-      return `(${params})${retAnnotation} => ${body.ret}`;
+      // Wrap body in parens when it starts with `{` so the JS parser doesn't
+      // mis-read an object literal as a block. Affects arrow functions
+      // returning `__obj__(...)` results.
+      const needsObjectWrap = body.ret.startsWith('{');
+      const ret = needsObjectWrap ? `(${body.ret})` : body.ret;
+      return `(${params})${retAnnotation} => ${ret}`;
     }
 
     case 'Let': {

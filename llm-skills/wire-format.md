@@ -198,3 +198,29 @@ const getUser = (p: any, id: string) => (async () => await Pool(p, id))();
 ```
 
 FFI refs can also be used at the top of an `F` line as bare identifiers (no `app(...)` needed) when you only want to declare them, not call them — that's how cross-module FFI imports register the module name (see ION-190).
+
+## Operator builtins (use via `app(__name__, args)`)
+
+Wire form has no infix operators. Use these built-in names with `app(...)`:
+
+| Wire form | TS output | Notes |
+|---|---|---|
+| `app(__add__,a,b)` | `a + b` | Arithmetic + string concat |
+| `app(__sub__,a,b)` | `a - b` | |
+| `app(__mul__,a,b)` | `a * b` | |
+| `app(__div__,a,b)` | `a / b` | |
+| `app(__mod__,a,b)` | `a % b` | |
+| `app(__eq__,a,b)` | `a === b` | Strict equality |
+| `app(__ne__,a,b)` | `a !== b` | |
+| `app(__lt__,a,b)` | `a < b` | Plus `__gt__`, `__le__`, `__ge__` |
+| `app(__and__,a,b)` | `a && b` | |
+| `app(__or__,a,b)` | `a \|\| b` | |
+| `app(__neg__,a)` | `-a` | |
+| `app(__not__,a)` | `!a` | |
+| `app(__obj__,"k1",v1,"k2",v2,...)` | `{ k1: v1, k2: v2, ... }` | Object literal — string keys + value expressions interleaved. |
+| `app(__index__,arr,i)` | `arr[i]` | Array/object indexing. |
+| `app(__nullish__,a,b)` | `(a ?? b)` | Nullish coalescing. |
+| `app(__optchain__,obj,"member")` | `obj?.member` | Optional chaining (member must be a string literal). |
+
+These let you write real-Ion bodies for almost every common JS expression
+pattern without dropping into `raw(...)`.
