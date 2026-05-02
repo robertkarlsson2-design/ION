@@ -5,6 +5,7 @@ import type {
   AbsNode,
   LetNode,
   CaseNode,
+  CasePattern,
   ForeignRefNode,
   AdtDeclNode,
   AdtMatchNode,
@@ -70,6 +71,20 @@ const JS_GLOBAL_NAMESPACES = new Set([
   'JSON', 'console', 'Set', 'Map', 'Promise', 'process', 'Buffer',
   'Symbol', 'RegExp', 'Error', 'Date',
 ]);
+
+let _tsCtorFields: Map<string, readonly string[]> = new Map();
+
+function buildTsCtorBindings(pat: CasePattern, scrutinee: string): Array<{ name: string; member: string }> {
+  if (pat.kind !== 'Constructor') return [];
+  const fieldNames = _tsCtorFields.get(pat.ctorName) ?? [];
+  const result: Array<{ name: string; member: string }> = [];
+  for (let fi = 0; fi < pat.fields.length; fi++) {
+    const f = pat.fields[fi]!;
+    if (f.kind !== 'Var') continue;
+    result.push({ name: f.name, member: fieldNames[fi] ?? `_${fi}` });
+  }
+  return result;
+}
 
 export const PRELUDE_NAMES = new Set([
   'map', 'filter', 'fold', 'length', 'range', 'concat', 'contains', 'isEmpty',
@@ -580,11 +595,14 @@ function emitTsCase(node: CaseNode): string {
     if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
       parts.push(emitTsExpr(arm.body));
     } else {
-      if (pat.kind === 'Tuple' && pat.fields.some(f => f.kind === 'Var')) {
-        throw new Error('TuplePattern variable binding not yet supported in TS emitter');
-      }
       const cond = emitTsPatCond(pat, scrutinee);
-      parts.push(`${cond} ? ${emitTsExpr(arm.body)}`);
+      const bindings = buildTsCtorBindings(pat, scrutinee);
+      if (bindings.length > 0) {
+        const decls = bindings.map(b => `const ${b.name} = ${scrutinee}.${b.member};`).join(' ');
+        parts.push(`${cond} ? (() => { ${decls} return ${emitTsExpr(arm.body)}; })()`);
+      } else {
+        parts.push(`${cond} ? ${emitTsExpr(arm.body)}`);
+      }
     }
   }
   if (parts.length === 1) return parts[0];
@@ -618,6 +636,14 @@ function emitTsAdtMatch(node: AdtMatchNode): string {
 
 export function emitTS(irModule: IonIRModule): string {
   const module = shakePreludeDecls(irModule);
+
+  _tsCtorFields = new Map();
+  for (const d of module.data) {
+    for (const v of d.variants) {
+      _tsCtorFields.set(v.tag, v.fields.map(f => f.name));
+    }
+  }
+
   const usedPrelude = new Set<string>();
   const foreignImports = new Map<string, Set<string>>();
 

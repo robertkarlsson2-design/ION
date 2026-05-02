@@ -355,3 +355,65 @@ describe('desugar — labeled call args → AppNode.propDict', () => {
     expect(app.propDict![0]!.key).toBe('key');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 18. ConstructorPattern field IR round-trip (Shape/area reproducer)
+// ---------------------------------------------------------------------------
+
+describe('desugarModule — ConstructorPattern field IR round-trip', () => {
+  const src = `
+data Shape = Circle { radius: Int } | Rect { width: Int; height: Int }
+fn area(s: Shape) -> Int = match s
+  | Circle(r) -> r * r
+  | Rect(w, h) -> w * h
+`;
+
+  it('data[0] has correct variant tags and field names', () => {
+    const ir = desugar(src);
+    expect(ir.data).toHaveLength(1);
+    const adt = ir.data[0]!;
+    expect(adt.variants[0]!.tag).toBe('Circle');
+    expect(adt.variants[0]!.fields[0]!.name).toBe('radius');
+    expect(adt.variants[1]!.tag).toBe('Rect');
+    expect(adt.variants[1]!.fields[0]!.name).toBe('width');
+    expect(adt.variants[1]!.fields[1]!.name).toBe('height');
+  });
+
+  it('area fn body is a CaseNode with 2 arms', () => {
+    const ir = desugar(src);
+    const letDecl = ir.decls.find(d => d.kind === 'Let' && (d as LetNode).name === 'area') as LetNode;
+    expect(letDecl).toBeDefined();
+    const abs = letDecl.value as AbsNode;
+    const caseNode = abs.body as CaseNode;
+    expect(caseNode.kind).toBe('Case');
+    expect(caseNode.arms).toHaveLength(2);
+  });
+
+  it('first arm pattern is ConstructorPattern { ctorName: Circle, fields: [VarPattern r] }', () => {
+    const ir = desugar(src);
+    const letDecl = ir.decls.find(d => d.kind === 'Let' && (d as LetNode).name === 'area') as LetNode;
+    const abs = letDecl.value as AbsNode;
+    const caseNode = abs.body as CaseNode;
+    const firstPat = caseNode.arms[0]!.pattern as ConstructorPattern;
+    expect(firstPat.kind).toBe('Constructor');
+    expect(firstPat.ctorName).toBe('Circle');
+    expect(firstPat.fields).toHaveLength(1);
+    expect(firstPat.fields[0]!.kind).toBe('Var');
+    expect((firstPat.fields[0]! as VarPattern).name).toBe('r');
+  });
+
+  it('second arm pattern is ConstructorPattern { ctorName: Rect, fields: [VarPattern w, VarPattern h] }', () => {
+    const ir = desugar(src);
+    const letDecl = ir.decls.find(d => d.kind === 'Let' && (d as LetNode).name === 'area') as LetNode;
+    const abs = letDecl.value as AbsNode;
+    const caseNode = abs.body as CaseNode;
+    const secondPat = caseNode.arms[1]!.pattern as ConstructorPattern;
+    expect(secondPat.kind).toBe('Constructor');
+    expect(secondPat.ctorName).toBe('Rect');
+    expect(secondPat.fields).toHaveLength(2);
+    expect(secondPat.fields[0]!.kind).toBe('Var');
+    expect((secondPat.fields[0]! as VarPattern).name).toBe('w');
+    expect(secondPat.fields[1]!.kind).toBe('Var');
+    expect((secondPat.fields[1]! as VarPattern).name).toBe('h');
+  });
+});

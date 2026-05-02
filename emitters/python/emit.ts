@@ -5,6 +5,7 @@ import type {
   AbsNode,
   LetNode,
   CaseNode,
+  CasePattern,
   ForeignRefNode,
   AdtDeclNode,
   AdtMatchNode,
@@ -29,6 +30,23 @@ const BUILTIN_BINARY_OPS: Record<string, string> = {
   __and__: 'and', __or__: 'or',
 };
 const BUILTIN_UNARY_OPS: Record<string, string> = { __neg__: '-', __not__: 'not ' };
+
+let _pyCtorFields: Map<string, readonly string[]> = new Map();
+
+function buildPyCtorBindings(pat: CasePattern, scrutinee: string): { params: string[]; args: string[] } | null {
+  if (pat.kind !== 'Constructor') return null;
+  const fieldNames = _pyCtorFields.get(pat.ctorName) ?? [];
+  const params: string[] = [];
+  const args: string[] = [];
+  for (let fi = 0; fi < pat.fields.length; fi++) {
+    const f = pat.fields[fi]!;
+    if (f.kind !== 'Var') continue;
+    params.push(f.name);
+    args.push(`${scrutinee}["${fieldNames[fi] ?? `_${fi}`}"]`);
+  }
+  if (params.length === 0) return null;
+  return { params, args };
+}
 
 // ---------------------------------------------------------------------------
 // Python prelude templates — same $1/$2 positional convention as JS
@@ -280,11 +298,15 @@ function emitPyCase(node: CaseNode): string {
     if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
       parts.push(emitPyExpr(arm.body));
     } else {
-      if (pat.kind === 'Tuple' && pat.fields.some(f => f.kind === 'Var')) {
-        throw new Error('TuplePattern variable binding not yet supported in Python emitter');
-      }
       const cond = emitPyPatCond(pat, scrutinee);
-      parts.push(`(${emitPyExpr(arm.body)}) if (${cond}) else`);
+      const bindings = buildPyCtorBindings(pat, scrutinee);
+      if (bindings !== null) {
+        const lp = bindings.params.join(', ');
+        const la = bindings.args.join(', ');
+        parts.push(`((lambda ${lp}: (${emitPyExpr(arm.body)}))(${la})) if (${cond}) else`);
+      } else {
+        parts.push(`(${emitPyExpr(arm.body)}) if (${cond}) else`);
+      }
     }
   }
   return parts.join(' ');
@@ -530,6 +552,14 @@ function emitPyInterface(iface: OopInterfaceNode): string {
 
 export function emitPython(irModule: IonIRModule): string {
   const module = shakePreludeDecls(irModule);
+
+  _pyCtorFields = new Map();
+  for (const d of module.data) {
+    for (const v of d.variants) {
+      _pyCtorFields.set(v.tag, v.fields.map(f => f.name));
+    }
+  }
+
   const parts: string[] = [];
 
   // Emit ADT data declarations as dataclasses

@@ -6,6 +6,7 @@ import type {
   VarNode,
   AppNode,
   AccessorNode,
+  CasePattern,
   OopClassNode,
   OopAnnotation,
   OopConstructor,
@@ -18,6 +19,31 @@ import type {
 import type { IonType } from '../../src/ir/types.js';
 import { isHtmlElement } from '../ui-shared.js';
 import { emitHtmlNode } from '../html/emit.js';
+
+let _vueCtorFields: Map<string, readonly string[]> = new Map();
+
+function buildVueCtorBindings(pat: CasePattern, scrutinee: string): Array<{ name: string; member: string }> {
+  if (pat.kind !== 'Constructor') return [];
+  const fieldNames = _vueCtorFields.get(pat.ctorName) ?? [];
+  const result: Array<{ name: string; member: string }> = [];
+  for (let fi = 0; fi < pat.fields.length; fi++) {
+    const f = pat.fields[fi]!;
+    if (f.kind !== 'Var') continue;
+    result.push({ name: f.name, member: fieldNames[fi] ?? `_${fi}` });
+  }
+  return result;
+}
+
+function emitVuePatCond(pat: CasePattern, scrutinee: string): string {
+  if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'true';
+  if (pat.kind === 'Constructor') return `${scrutinee}._tag === "${pat.ctorName}"`;
+  if (pat.kind === 'Tuple') return `${scrutinee}.length === ${pat.fields.length}`;
+  const v = pat.value;
+  if (v.kind === 'Bool') return `${scrutinee} === ${v.value}`;
+  if (v.kind === 'Null') return `${scrutinee} === null`;
+  if (v.kind === 'Str') return `${scrutinee} === ${JSON.stringify(v.value)}`;
+  return `${scrutinee} === ${v.value}`;
+}
 
 // ---------------------------------------------------------------------------
 // IonType → TypeScript type annotation (used in <script setup lang="ts">)
@@ -85,6 +111,9 @@ export function emitTsExprForVue(node: IonIRNode): string {
     case 'Case': {
       const c = node;
       if (c.arms.length === 0) return 'undefined';
+      if (c.arms.length === 1 && c.arms[0]!.pattern.kind === 'Wildcard') {
+        return emitTsExprForVue(c.arms[0]!.body);
+      }
       if (
         c.arms.length === 2 &&
         c.arms[0]!.pattern.kind === 'Literal' &&
@@ -94,7 +123,28 @@ export function emitTsExprForVue(node: IonIRNode): string {
       ) {
         return `(${emitTsExprForVue(c.scrutinee)} ? ${emitTsExprForVue(c.arms[0]!.body)} : ${emitTsExprForVue(c.arms[1]!.body)})`;
       }
-      return emitTsExprForVue(c.arms[0]!.body);
+      const scrutinee = emitTsExprForVue(c.scrutinee);
+      const parts: string[] = [];
+      for (let i = 0; i < c.arms.length; i++) {
+        const arm = c.arms[i]!;
+        const isLast = i === c.arms.length - 1;
+        const pat = arm.pattern;
+        if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
+          parts.push(emitTsExprForVue(arm.body));
+        } else {
+          const cond = emitVuePatCond(pat, scrutinee);
+          const bindings = buildVueCtorBindings(pat, scrutinee);
+          if (bindings.length > 0) {
+            const decls = bindings.map(b => `const ${b.name} = ${scrutinee}.${b.member};`).join(' ');
+            parts.push(`${cond} ? (() => { ${decls} return ${emitTsExprForVue(arm.body)}; })()`);
+          } else {
+            parts.push(`${cond} ? ${emitTsExprForVue(arm.body)}`);
+          }
+        }
+      }
+      if (parts.length === 1) return parts[0]!;
+      const last = parts.pop()!;
+      return parts.join(' : ') + ' : ' + last;
     }
     case 'Constructor': {
       const args = node.args.map(emitTsExprForVue).join(', ');
@@ -282,6 +332,13 @@ function emitScriptDeclForVue(node: IonIRNode): string {
 // ---------------------------------------------------------------------------
 
 export function emitVue(irModule: IonIRModule): string {
+  _vueCtorFields = new Map();
+  for (const d of irModule.data) {
+    for (const v of d.variants) {
+      _vueCtorFields.set(v.tag, v.fields.map(f => f.name));
+    }
+  }
+
   // Build environment map for variable resolution
   const env = new Map<string, IonIRNode>();
   for (const d of irModule.decls) {

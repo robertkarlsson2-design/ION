@@ -5,6 +5,7 @@ import type {
   AbsNode,
   LetNode,
   CaseNode,
+  CasePattern,
   OopClassNode,
   OopMethod,
   OopAnnotation,
@@ -23,6 +24,31 @@ import {
   parseAttrString,
   getAttrRaw,
 } from '../ui-shared.js';
+
+let _htmlCtorFields: Map<string, readonly string[]> = new Map();
+
+function buildHtmlCtorBindings(pat: CasePattern, scrutinee: string): Array<{ name: string; member: string }> {
+  if (pat.kind !== 'Constructor') return [];
+  const fieldNames = _htmlCtorFields.get(pat.ctorName) ?? [];
+  const result: Array<{ name: string; member: string }> = [];
+  for (let fi = 0; fi < pat.fields.length; fi++) {
+    const f = pat.fields[fi]!;
+    if (f.kind !== 'Var') continue;
+    result.push({ name: f.name, member: fieldNames[fi] ?? `_${fi}` });
+  }
+  return result;
+}
+
+function emitHtmlPatCond(pat: CasePattern, scrutinee: string): string {
+  if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'true';
+  if (pat.kind === 'Constructor') return `${scrutinee}._tag === "${pat.ctorName}"`;
+  if (pat.kind === 'Tuple') return `${scrutinee}.length === ${pat.fields.length}`;
+  const v = pat.value;
+  if (v.kind === 'Bool') return `${scrutinee} === ${v.value}`;
+  if (v.kind === 'Null') return `${scrutinee} === null`;
+  if (v.kind === 'Str') return `${scrutinee} === ${JSON.stringify(v.value)}`;
+  return `${scrutinee} === ${v.value}`;
+}
 
 // ---------------------------------------------------------------------------
 // HTML-escape
@@ -95,6 +121,9 @@ function emitJsExpr(node: IonIRNode): string {
     case 'Case': {
       const c = node as CaseNode;
       if (c.arms.length === 0) return 'undefined';
+      if (c.arms.length === 1 && c.arms[0]!.pattern.kind === 'Wildcard') {
+        return emitJsExpr(c.arms[0]!.body);
+      }
       if (
         c.arms.length === 2 &&
         c.arms[0]!.pattern.kind === 'Literal' &&
@@ -104,7 +133,28 @@ function emitJsExpr(node: IonIRNode): string {
       ) {
         return `(${emitJsExpr(c.scrutinee)} ? ${emitJsExpr(c.arms[0]!.body)} : ${emitJsExpr(c.arms[1]!.body)})`;
       }
-      return emitJsExpr(c.arms[0]!.body);
+      const scrutinee = emitJsExpr(c.scrutinee);
+      const parts: string[] = [];
+      for (let i = 0; i < c.arms.length; i++) {
+        const arm = c.arms[i]!;
+        const isLast = i === c.arms.length - 1;
+        const pat = arm.pattern;
+        if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
+          parts.push(emitJsExpr(arm.body));
+        } else {
+          const cond = emitHtmlPatCond(pat, scrutinee);
+          const bindings = buildHtmlCtorBindings(pat, scrutinee);
+          if (bindings.length > 0) {
+            const decls = bindings.map(b => `const ${b.name} = ${scrutinee}.${b.member};`).join(' ');
+            parts.push(`${cond} ? (() => { ${decls} return ${emitJsExpr(arm.body)}; })()`);
+          } else {
+            parts.push(`${cond} ? ${emitJsExpr(arm.body)}`);
+          }
+        }
+      }
+      if (parts.length === 1) return parts[0]!;
+      const last = parts.pop()!;
+      return parts.join(' : ') + ' : ' + last;
     }
     case 'Constructor': {
       const args = node.args.map(emitJsExpr).join(', ');
@@ -518,6 +568,13 @@ export function emitHtmlNode(node: IonIRNode, env?: ReadonlyMap<string, IonIRNod
 // ---------------------------------------------------------------------------
 
 export function emitHTML(irModule: IonIRModule): string {
+  _htmlCtorFields = new Map();
+  for (const d of irModule.data) {
+    for (const v of d.variants) {
+      _htmlCtorFields.set(v.tag, v.fields.map(f => f.name));
+    }
+  }
+
   // Build an environment map from all let-binding decls for variable resolution
   const env = new Map<string, IonIRNode>();
   for (const d of irModule.decls) {
