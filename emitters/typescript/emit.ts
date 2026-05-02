@@ -530,15 +530,18 @@ function emitTsExpr(node: IonIRNode): string {
         if (calleeName === '__finally__' && app.args.length === 2) {
           return `(async () => { try { ${emitArmBody(app.args[0])} } finally { ${emitTsExpr(app.args[1])}; } })()`;
         }
-        // __do__(s1, s2, ..., resultExpr) — async IIFE wrapping multiple
-        // side-effect statements followed by a return. The arms accept awaits.
+        // __do__(s1, s2, ..., resultExpr) — synchronous IIFE wrapping multiple
+        // side-effect statements followed by a return. Use this for router
+        // setup chains and other sync side-effect sequences. For async chains,
+        // use a let-chain inside async{...} or wrap inside __try__/__tryfin__
+        // which provide their own async IIFE.
         if (calleeName === '__do__' && app.args.length >= 1) {
           const last = app.args[app.args.length - 1]!;
           const stmts = app.args.slice(0, -1).map(a => `${emitTsExpr(a)};`);
           if (stmts.length === 0) {
             return emitTsExpr(last);
           }
-          return `(async () => { ${stmts.join(' ')} return ${emitTsExpr(last)}; })()`;
+          return `(() => { ${stmts.join(' ')} return ${emitTsExpr(last)}; })()`;
         }
         // __seq__(a, b, c, ...) → (a, b, c, ...) — comma-sequenced expressions
         // Useful for side-effect chains. Result is the last expression.
@@ -555,6 +558,23 @@ function emitTsExpr(node: IonIRNode): string {
         // __env__(key) → process.env[key]  (env var read, returns string | undefined)
         if (calleeName === '__env__' && app.args.length === 1) {
           return `process.env[${emitTsExpr(app.args[0])}]`;
+        }
+        // __set__(obj, "field", value) → ((obj).field = value) — property assignment
+        // Returns the assigned value. Field must be a string literal (compile time).
+        if (calleeName === '__set__' && app.args.length === 3) {
+          const fieldNode = app.args[1]!;
+          if (fieldNode.kind === 'Literal' && (fieldNode as LiteralNode).value.kind === 'Str') {
+            const f = ((fieldNode as LiteralNode).value as { kind: 'Str'; value: string }).value;
+            return `((${emitTsExpr(app.args[0])}).${f} = ${emitTsExpr(app.args[2])})`;
+          }
+          return `((${emitTsExpr(app.args[0])})[${emitTsExpr(app.args[1])}] = ${emitTsExpr(app.args[2])})`;
+        }
+        // __regex__(pattern, flags) → new RegExp(pattern, flags) — runtime regex
+        if (calleeName === '__regex__' && (app.args.length === 1 || app.args.length === 2)) {
+          if (app.args.length === 1) {
+            return `new RegExp(${emitTsExpr(app.args[0])})`;
+          }
+          return `new RegExp(${emitTsExpr(app.args[0])}, ${emitTsExpr(app.args[1])})`;
         }
       }
       return `${emitTsExpr(app.callee)}(${app.args.map(emitTsExpr).join(', ')})`;
@@ -886,6 +906,34 @@ export function emitTS(irModule: IonIRModule): string {
 
     } else if (d.kind === 'RawInject') {
       parts.push(d.code);
+    }
+  }
+
+  // Auto-generate `export { ... };` footer covering every top-level Let
+  // (excluding privates whose name starts with `_`) + every AdtDecl /
+  // OopClass / OopInterface name. Skip if a RawInject already emits
+  // an `export { ... };` footer (string match) so we don't duplicate.
+  const userHasExportFooter = module.decls.some(d =>
+    d.kind === 'RawInject' && /\bexport\s*\{/.test(d.code)
+  );
+  if (!userHasExportFooter) {
+    const exports: string[] = [];
+    for (const d of module.decls) {
+      if (d.kind === 'Let') {
+        const lt = d as LetNode;
+        if (PRELUDE_NAMES.has(lt.name)) continue;
+        if (lt.name.startsWith('_')) continue;
+        exports.push(lt.name);
+      } else if (d.kind === 'AdtDecl') {
+        const a = d as AdtDeclNode;
+        if (!a.name.startsWith('_')) exports.push(a.name);
+      } else if (d.kind === 'OopClass' || d.kind === 'OopInterface') {
+        const n = (d as OopClassNode | OopInterfaceNode).name;
+        if (!n.startsWith('_')) exports.push(n);
+      }
+    }
+    if (exports.length > 0) {
+      parts.push(`export { ${exports.join(', ')} };`);
     }
   }
 
