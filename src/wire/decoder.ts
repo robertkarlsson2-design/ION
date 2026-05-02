@@ -570,8 +570,13 @@ function parseJsx(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
   if (depth > MAX_ENCODE_DEPTH) throw new WireDecodeError('JSX depth exceeds maximum');
   consume(cur, '<');
   const startTagPos = cur.pos;
-  const tagName = readIdent(cur);
-  const isHtmlTag = /^[a-z]/.test(tagName);
+  // Tag name supports dotted forms like `Context.Provider` or `React.Fragment`.
+  let tagName = readIdent(cur);
+  while (peek(cur) === '.' && cur.text[cur.pos + 1] !== undefined && /[A-Za-z_]/.test(cur.text[cur.pos + 1]!)) {
+    cur.pos++;
+    tagName += '.' + readIdent(cur);
+  }
+  const isHtmlTag = /^[a-z]/.test(tagName) && !tagName.includes('.');
   const tagNode: IonIRNode = isHtmlTag
     ? { kind: 'Literal', value: { kind: 'Str', value: tagName }, span: WIRE_SPAN, type: { kind: 'Str' } }
     : { kind: 'Var', name: tagName, symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } };
@@ -657,10 +662,14 @@ function parseJsx(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
       }
       if (cur.pos === tStart) break; // safety: avoid infinite loop
     }
-    // Close tag: </Tag>
+    // Close tag: </Tag> or </Tag.Sub>
     consume(cur, '<');
     consume(cur, '/');
-    const closeName = readIdent(cur);
+    let closeName = readIdent(cur);
+    while (peek(cur) === '.' && cur.text[cur.pos + 1] !== undefined && /[A-Za-z_]/.test(cur.text[cur.pos + 1]!)) {
+      cur.pos++;
+      closeName += '.' + readIdent(cur);
+    }
     if (closeName !== tagName) {
       throw new WireDecodeError(`JSX: closing tag </${closeName}> does not match opening <${tagName}> at pos ${startTagPos}`);
     }
@@ -844,22 +853,26 @@ function parseChain(node: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: nu
   return result;
 }
 
-function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
-  // Outer entry: parse a primary node, then apply postfix/infix operator sugar
-  // (see applyInfix). Keeps the primary parser logic in parseNodeNoInfix.
-  // Handle prefix `!` (logical not) here since the primary parser doesn't —
-  // bind it tightly so `!x?a:b` parses as `(!x)?a:b`, not `!(x?a:b)`.
-  let primary: IonIRNode;
+function parseNotPrefix(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
+  // Eat as many leading `!` as we see — `!!x` should parse as `!(!x)`.
+  // The eventual primary is parsed at high minPrec so `!` binds tight against
+  // its operand (e.g. `!x?a:b` becomes `(!x)?a:b`, not `!(x?a:b)`).
   if (peek(cur) === '!' && cur.text[cur.pos + 1] !== '=') {
     cur.pos++;
-    // Parse only the primary + postfix chain (no full infix), so `!` stays
-    // tight against the immediate operand.
-    const inner = applyInfix(parseNodeNoInfix(cur, ctx, depth + 1), cur, ctx, depth + 1, 100);
-    primary = {
+    const inner = parseNotPrefix(cur, ctx, depth + 1);
+    return {
       kind: 'App',
       callee: { kind: 'Var', name: '__not__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
       args: [inner], span: WIRE_SPAN, type: { kind: 'Unit' },
     };
+  }
+  return applyInfix(parseNodeNoInfix(cur, ctx, depth), cur, ctx, depth, 100);
+}
+
+function parseNode(cur: Cursor, ctx: DecoderContext, depth = 0): IonIRNode {
+  let primary: IonIRNode;
+  if (peek(cur) === '!' && cur.text[cur.pos + 1] !== '=') {
+    primary = parseNotPrefix(cur, ctx, depth);
   } else {
     primary = parseNodeNoInfix(cur, ctx, depth);
   }
@@ -1058,7 +1071,27 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
   // for top-level let declarations where there's no "rest" expression.
   if (cur.text.startsWith('let ', cur.pos)) {
     cur.pos += 4;
-    const name = resolveName(readIdent(cur), ctx);
+    // Destructuring let: `let [a,b]=expr` or `let {a,b}=expr`. The pattern is
+    // stored verbatim as the binding name; emitters output it as-is.
+    let name: string;
+    if (peek(cur) === '[' || peek(cur) === '{') {
+      const open = cur.text[cur.pos]!;
+      const close = open === '[' ? ']' : '}';
+      const startP = cur.pos;
+      let depthBrace = 0;
+      while (cur.pos < cur.text.length) {
+        const ch = cur.text[cur.pos]!;
+        if (ch === open) depthBrace++;
+        else if (ch === close) {
+          depthBrace--;
+          if (depthBrace === 0) { cur.pos++; break; }
+        }
+        cur.pos++;
+      }
+      name = cur.text.slice(startP, cur.pos);
+    } else {
+      name = resolveName(readIdent(cur), ctx);
+    }
     // Type annotation is optional — `let x=v` is sugar for `let x:any=v`.
     let bindingType: IonType;
     if (peek(cur) === ':') {

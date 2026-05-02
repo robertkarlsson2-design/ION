@@ -500,9 +500,16 @@ export function emitTsExprForReact(node: IonIRNode): string {
       return `new Map([${entries}])`;
     }
     case 'Let': {
+      // Emit a let-chain expression as an IIFE that runs the bindings as
+      // statements then returns the final body. Mirrors the TS emitter.
+      const stmts: string[] = [];
       let cur: IonIRNode = node;
-      while (cur.kind === 'Let') cur = (cur as LetNode).body;
-      return emitTsExprForReact(cur);
+      while (cur.kind === 'Let') {
+        const lt = cur as LetNode;
+        stmts.push(`const ${lt.name} = ${emitTsExprForReact(lt.value)};`);
+        cur = lt.body;
+      }
+      return `(() => { ${stmts.join(' ')} return ${emitTsExprForReact(cur)}; })()`;
     }
     case 'Case': {
       const c = node as CaseNode;
