@@ -10,6 +10,17 @@ import { bindModule } from '../../src/binder/index.js';
 import { checkModule } from '../../src/checker/index.js';
 import { desugarModule } from '../../src/desugar/index.js';
 
+/** End-to-end pipeline: Ion source string → emitted TypeScript string. */
+function compile(src: string, moduleName = 'TestModule'): string {
+  const tokens = lex(src, `${moduleName}.ion`);
+  const cst = parseModule(tokens);
+  const ast = buildModule(cst);
+  const bind = bindModule(ast, moduleName);
+  const check = checkModule(ast, bind, moduleName);
+  const ir = desugarModule(ast, bind, check, moduleName, '0.0.0');
+  return emitTS(ir);
+}
+
 function compileSurface(src: string): string {
   const tokens = lex(src, 'test.ion');
   const cst = parseModule(tokens);
@@ -60,6 +71,30 @@ describe('emitTS — top-level RawInject passthrough', () => {
     };
     const out = emitTS(makeModule([node]));
     expect(out.trim()).not.toBe('"use strict";');
+  });
+});
+
+describe('emitTS — data declarations', () => {
+  it('emits a single-ctor data type as a plain interface (no _tag)', () => {
+    const out = compile('data User = User { id: Int; email: Str }');
+    expect(out).toContain('interface User {');
+    expect(out).toContain('id: number');
+    expect(out).toContain('email: string');
+    expect(out).not.toContain('_tag');
+    expect(out).not.toContain('type User =');
+  });
+
+  it('emits a multi-ctor data type as a discriminated union', () => {
+    const out = compile('data Shape = Circle { r: Float } | Rect { w: Float; h: Float }');
+    expect(out).toContain('type Shape =');
+    expect(out).toContain('"Circle"');
+    expect(out).toContain('"Rect"');
+    expect(out).toContain('_tag');
+  });
+
+  it('emits data declaration before function declarations', () => {
+    const out = compile('data User = User { id: Int }\npub fn show(u: User) -> Str = "user"');
+    expect(out.indexOf('interface User')).toBeLessThan(out.indexOf('const show'));
   });
 });
 
