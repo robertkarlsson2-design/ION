@@ -5,6 +5,7 @@ import type {
   AbsNode,
   LetNode,
   CaseNode,
+  CasePattern,
   VarNode,
   OopClassNode,
   OopAnnotation,
@@ -22,6 +23,31 @@ import {
   isHtmlElement,
   getAttrRaw,
 } from '../ui-shared.js';
+
+let _lwcCtorFields: Map<string, readonly string[]> = new Map();
+
+function buildLwcCtorBindings(pat: CasePattern, scrutinee: string): Array<{ name: string; member: string }> {
+  if (pat.kind !== 'Constructor') return [];
+  const fieldNames = _lwcCtorFields.get(pat.ctorName) ?? [];
+  const result: Array<{ name: string; member: string }> = [];
+  for (let fi = 0; fi < pat.fields.length; fi++) {
+    const f = pat.fields[fi]!;
+    if (f.kind !== 'Var') continue;
+    result.push({ name: f.name, member: fieldNames[fi] ?? `_${fi}` });
+  }
+  return result;
+}
+
+function emitLwcPatCond(pat: CasePattern, scrutinee: string): string {
+  if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'true';
+  if (pat.kind === 'Constructor') return `${scrutinee}._tag === "${pat.ctorName}"`;
+  if (pat.kind === 'Tuple') return `${scrutinee}.length === ${pat.fields.length}`;
+  const v = pat.value;
+  if (v.kind === 'Bool') return `${scrutinee} === ${v.value}`;
+  if (v.kind === 'Null') return `${scrutinee} === null`;
+  if (v.kind === 'Str') return `${scrutinee} === ${JSON.stringify(v.value)}`;
+  return `${scrutinee} === ${v.value}`;
+}
 
 // ---------------------------------------------------------------------------
 // LwcOutput — all four files for a single LWC component
@@ -135,6 +161,9 @@ function emitLwcExpr(node: IonIRNode): string {
     case 'Case': {
       const c = node as CaseNode;
       if (c.arms.length === 0) return 'undefined';
+      if (c.arms.length === 1 && c.arms[0]!.pattern.kind === 'Wildcard') {
+        return emitLwcExpr(c.arms[0]!.body);
+      }
       if (
         c.arms.length === 2 &&
         c.arms[0]!.pattern.kind === 'Literal' &&
@@ -144,7 +173,28 @@ function emitLwcExpr(node: IonIRNode): string {
       ) {
         return `(${emitLwcExpr(c.scrutinee)} ? ${emitLwcExpr(c.arms[0]!.body)} : ${emitLwcExpr(c.arms[1]!.body)})`;
       }
-      return emitLwcExpr(c.arms[0]!.body);
+      const scrutinee = emitLwcExpr(c.scrutinee);
+      const parts: string[] = [];
+      for (let i = 0; i < c.arms.length; i++) {
+        const arm = c.arms[i]!;
+        const isLast = i === c.arms.length - 1;
+        const pat = arm.pattern;
+        if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
+          parts.push(emitLwcExpr(arm.body));
+        } else {
+          const cond = emitLwcPatCond(pat, scrutinee);
+          const bindings = buildLwcCtorBindings(pat, scrutinee);
+          if (bindings.length > 0) {
+            const decls = bindings.map(b => `const ${b.name} = ${scrutinee}.${b.member};`).join(' ');
+            parts.push(`${cond} ? (() => { ${decls} return ${emitLwcExpr(arm.body)}; })()`);
+          } else {
+            parts.push(`${cond} ? ${emitLwcExpr(arm.body)}`);
+          }
+        }
+      }
+      if (parts.length === 1) return parts[0]!;
+      const last = parts.pop()!;
+      return parts.join(' : ') + ' : ' + last;
     }
     case 'Constructor': {
       const args = node.args.map(emitLwcExpr).join(', ');
@@ -693,6 +743,13 @@ const LWC_META = `<?xml version="1.0" encoding="UTF-8"?>
 // ---------------------------------------------------------------------------
 
 export function emitLWC(irModule: IonIRModule): LwcOutput {
+  _lwcCtorFields = new Map();
+  for (const d of irModule.data) {
+    for (const v of d.variants) {
+      _lwcCtorFields.set(v.tag, v.fields.map(f => f.name));
+    }
+  }
+
   return {
     html: buildLwcTemplate(irModule),
     js: buildLwcJs(irModule),

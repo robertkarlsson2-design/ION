@@ -6,6 +6,7 @@ import type {
   AsyncBlockNode,
   LetNode,
   CaseNode,
+  CasePattern,
   VarNode,
   OopClassNode,
   OopAnnotation,
@@ -24,6 +25,31 @@ import {
   getAttrRaw,
 } from '../ui-shared.js';
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
+
+let _reactCtorFields: Map<string, readonly string[]> = new Map();
+
+function buildReactCtorBindings(pat: CasePattern, scrutinee: string): Array<{ name: string; member: string }> {
+  if (pat.kind !== 'Constructor') return [];
+  const fieldNames = _reactCtorFields.get(pat.ctorName) ?? [];
+  const result: Array<{ name: string; member: string }> = [];
+  for (let fi = 0; fi < pat.fields.length; fi++) {
+    const f = pat.fields[fi]!;
+    if (f.kind !== 'Var') continue;
+    result.push({ name: f.name, member: fieldNames[fi] ?? `_${fi}` });
+  }
+  return result;
+}
+
+function emitReactPatCond(pat: CasePattern, scrutinee: string): string {
+  if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'true';
+  if (pat.kind === 'Constructor') return `${scrutinee}._tag === "${pat.ctorName}"`;
+  if (pat.kind === 'Tuple') return `${scrutinee}.length === ${pat.fields.length}`;
+  const v = pat.value;
+  if (v.kind === 'Bool') return `${scrutinee} === ${v.value}`;
+  if (v.kind === 'Null') return `${scrutinee} === null`;
+  if (v.kind === 'Str') return `${scrutinee} === ${JSON.stringify(v.value)}`;
+  return `${scrutinee} === ${v.value}`;
+}
 
 // ---------------------------------------------------------------------------
 // IonType → TypeScript type annotation
@@ -401,6 +427,9 @@ export function emitTsExprForReact(node: IonIRNode): string {
     case 'Case': {
       const c = node as CaseNode;
       if (c.arms.length === 0) return 'undefined';
+      if (c.arms.length === 1 && c.arms[0]!.pattern.kind === 'Wildcard') {
+        return emitTsExprForReact(c.arms[0]!.body);
+      }
       if (
         c.arms.length === 2 &&
         c.arms[0]!.pattern.kind === 'Literal' &&
@@ -410,7 +439,28 @@ export function emitTsExprForReact(node: IonIRNode): string {
       ) {
         return `(${emitTsExprForReact(c.scrutinee)} ? ${emitTsExprForReact(c.arms[0]!.body)} : ${emitTsExprForReact(c.arms[1]!.body)})`;
       }
-      return emitTsExprForReact(c.arms[0]!.body);
+      const scrutinee = emitTsExprForReact(c.scrutinee);
+      const parts: string[] = [];
+      for (let i = 0; i < c.arms.length; i++) {
+        const arm = c.arms[i]!;
+        const isLast = i === c.arms.length - 1;
+        const pat = arm.pattern;
+        if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
+          parts.push(emitTsExprForReact(arm.body));
+        } else {
+          const cond = emitReactPatCond(pat, scrutinee);
+          const bindings = buildReactCtorBindings(pat, scrutinee);
+          if (bindings.length > 0) {
+            const decls = bindings.map(b => `const ${b.name} = ${scrutinee}.${b.member};`).join(' ');
+            parts.push(`${cond} ? (() => { ${decls} return ${emitTsExprForReact(arm.body)}; })()`);
+          } else {
+            parts.push(`${cond} ? ${emitTsExprForReact(arm.body)}`);
+          }
+        }
+      }
+      if (parts.length === 1) return parts[0]!;
+      const last = parts.pop()!;
+      return parts.join(' : ') + ' : ' + last;
     }
     case 'Constructor': {
       const args = node.args.map(emitTsExprForReact).join(', ');
@@ -647,6 +697,13 @@ export function emitReact(irModule: IonIRModule): string {
   // Without this every output gets ~80 lines of `const map = unknown;` style
   // noise from the auto-prepended prelude.
   irModule = shakePreludeDecls(irModule);
+
+  _reactCtorFields = new Map();
+  for (const d of irModule.data) {
+    for (const v of d.variants) {
+      _reactCtorFields.set(v.tag, v.fields.map(f => f.name));
+    }
+  }
 
   // Build environment map for variable resolution
   const env = new Map<string, IonIRNode>();

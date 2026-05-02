@@ -180,8 +180,34 @@ export function emitApexExpr(node: IonIRNode): string {
         return emitApexExpr(caseNode.arms[0]!.body);
       }
 
-      // General case: emit first arm
-      return emitApexExpr(caseNode.arms[0]!.body);
+      // General case: _tag-based ternary dispatch
+      /* Apex: field bindings are inlined as (Object)s.get('_argN') — multi-use vars need manual extraction */
+      const scrutinee = emitApexExpr(caseNode.scrutinee);
+      const parts: string[] = [];
+      for (let i = 0; i < caseNode.arms.length; i++) {
+        const arm = caseNode.arms[i]!;
+        const isLast = i === caseNode.arms.length - 1;
+        const pat = arm.pattern;
+        if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
+          parts.push(emitApexExpr(arm.body));
+        } else if (pat.kind === 'Constructor') {
+          const cond = `(String) ${scrutinee}.get('_tag') == '${pat.ctorName}'`;
+          parts.push(`${cond} ? ${emitApexExpr(arm.body)}`);
+        } else if (pat.kind === 'Literal') {
+          const lv = pat.value;
+          let cond: string;
+          if (lv.kind === 'Bool') cond = `${scrutinee} == ${lv.value}`;
+          else if (lv.kind === 'Null') cond = `${scrutinee} == null`;
+          else if (lv.kind === 'Str') cond = `${scrutinee} == '${lv.value}'`;
+          else cond = `${scrutinee} == ${lv.value}`;
+          parts.push(`${cond} ? ${emitApexExpr(arm.body)}`);
+        } else {
+          parts.push(emitApexExpr(arm.body));
+        }
+      }
+      if (parts.length === 1) return parts[0]!;
+      const last = parts.pop()!;
+      return parts.join(' : ') + ' : ' + last;
     }
 
     case 'Let': {

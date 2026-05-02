@@ -26,6 +26,7 @@ import type {
   LetNode,
   CaseNode,
   CasePattern,
+  VarPattern,
   ForeignRefNode,
   AdtDeclNode,
   AdtMatchNode,
@@ -598,8 +599,17 @@ function emitCase(c: CaseNode, ctx: EmitCtx): string {
       continue;
     }
     if (arm.pattern.kind === 'Constructor') {
-      const cond = `(${emitExpr(c.scrutinee, ctx)} instanceof ${arm.pattern.ctorName})`;
-      acc = acc === null ? body : `${cond} ? (${body}) : (${acc})`;
+      const hasVarBindings = arm.pattern.fields.some(f => f.kind === 'Var');
+      if (hasVarBindings) {
+        const components = arm.pattern.fields.map(f =>
+          f.kind === 'Var' ? `var ${(f as VarPattern).name}` : '_'
+        ).join(', ');
+        const cond = `(${emitExpr(c.scrutinee, ctx)} instanceof ${arm.pattern.ctorName}(${components}))`;
+        acc = acc === null ? body : `${cond} ? (${body}) : (${acc})`;
+      } else {
+        const cond = `(${emitExpr(c.scrutinee, ctx)} instanceof ${arm.pattern.ctorName})`;
+        acc = acc === null ? body : `${cond} ? (${body}) : (${acc})`;
+      }
       continue;
     }
     acc = body;
