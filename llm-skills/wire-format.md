@@ -224,3 +224,44 @@ Wire form has no infix operators. Use these built-in names with `app(...)`:
 
 These let you write real-Ion bodies for almost every common JS expression
 pattern without dropping into `raw(...)`.
+
+## Wire-format sugar (preferred over `app(__name__, ...)` for token efficiency)
+
+The wire format supports lightweight sugar that lowers to the operator
+builtins above. Use these forms when authoring `.ion` files — they save
+7-13% bytes vs the verbose `app(__name__, ...)` equivalents.
+
+| Sugar | Lowers to | Notes |
+|---|---|---|
+| `{k:v,k:v}` | `app(__obj__, "k", v, "k", v)` | Inline object literal. Bare ident or string key. |
+| `{...:obj,k:v}` | `app(__obj__, "...", obj, "k", v)` | Spread inside object. |
+| `{stmt;stmt;result}` | `app(__do__, stmt, stmt, result)` | Multi-statement IIFE. |
+| `arr[i]` | `app(__index__, arr, i)` | Postfix indexing. |
+| `obj?.field` | `app(__optchain__, obj, "field")` | Optional chain. |
+| `!x` | `app(__not__, x)` | Prefix not. |
+| `a+b` `a-b` `a*b` `a/b` `a%b` | `app(__add__,a,b)` etc | Arithmetic. |
+| `a===b` `a!==b` | `app(__eq__,a,b)` `__ne__` | Strict equality. |
+| `a<b` `a>b` `a<=b` `a>=b` | `__lt__` / `__gt__` / `__le__` / `__ge__` | Comparison. |
+| `a&&b` `a\|\|b` | `__and__` / `__or__` | Logical. |
+| `a??b` | `app(__nullish__, a, b)` | Nullish coalescing. |
+| `c?a:b` | `match(c){true->a;_->b}` | Ternary. Lowest precedence. |
+| `(expr)` | (grouped) | Parenthesised expression for precedence. |
+| `(p1, p2) -> body` | `(p1:any, p2:any) -> body` | Default `:any` param type. |
+| `let x = v` | `let x:any = v` | Default `:any` let-binding type. |
+
+Operator precedence (high → low): postfix `[]` `?.`, prefix `!`, `* / %`,
+`+ -`, `< > <= >=`, `=== !==`, `&&`, `||`, `??`, ternary `?:`.
+
+### Concrete savings on real files
+
+A 342-byte `services/shared/users.ion` (one async pg.query function) now
+emits 368 bytes of TypeScript — **the wire form is 7% smaller**. A
+1947-byte `services/shared/auth.ion` (10 functions: JWT, bcrypt, env-or-throw,
+async DB queries) emits 2247 bytes of TS — **13% smaller in wire**.
+
+### Authoring rule (still in force)
+
+Forbidden: `let X:fn(...)->any=raw("entire async body")`. The body of every
+function must be real Ion using the sugar above (or `raw("...")` line-level
+for the rare expression Ion can't reach today). The architecture stage
+rejects whole-body raw().
