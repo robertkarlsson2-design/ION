@@ -178,90 +178,107 @@ Card("class=card", key: item.id, item: item)
 
 **Other emitters**: emitters that do not yet handle `propDict` will ignore the field silently (since it is optional). File a ticket to add support if needed.
 
-## Special call forms inside expressions
+## Wire-format syntax — sugared form (use this)
 
-| Form | Meaning |
-|---|---|
-| `app(callee, ...args)` | Explicit application where the callee is itself an expression (typically an FFI ref). **Required** for calling FFI refs: `app(ffi:js:pg:Pool, conn)`. Without `app(...)`, `name(args)` parses as a call to a Var named `name`. |
-| `async{body}` | AsyncBlock — runs body in `(async () => body)()`. |
-| `await(expr)` | Emits `await expr`. Must be inside `async{...}` or an async surface function. |
-| `match(scrutinee){pat->body;...}` | Pattern match. For booleans, use `match(b){true->a;_->b}` — emits a ternary. |
-| `raw("...")` | Verbatim target-language escape hatch — line-level only, never whole-module. |
+This is the canonical syntax for writing `.ion` wire-format files. The
+underlying IR builtin names (`app(__obj__, ...)`, etc.) are listed at the
+end as a reference but **do not author wire format using the verbose
+`app(__name__, ...)` form** — it costs more bytes and the architecture
+stage will reject as not idiomatic.
 
-Example — async DB query body in real Ion (no `raw()` for the function body):
-```
-F let getUser:fn(any,str)->any=(p:any,id:str)->async{await(app(ffi:js:pg:Pool,p,id))};0
-```
-emits:
-```ts
-const getUser = (p: any, id: string) => (async () => await Pool(p, id))();
-```
-
-FFI refs can also be used at the top of an `F` line as bare identifiers (no `app(...)` needed) when you only want to declare them, not call them — that's how cross-module FFI imports register the module name (see ION-190).
-
-## Operator builtins (use via `app(__name__, args)`)
-
-Wire form has no infix operators. Use these built-in names with `app(...)`:
-
-| Wire form | TS output | Notes |
+| Sugar | TS output | Notes |
 |---|---|---|
-| `app(__add__,a,b)` | `a + b` | Arithmetic + string concat |
-| `app(__sub__,a,b)` | `a - b` | |
-| `app(__mul__,a,b)` | `a * b` | |
-| `app(__div__,a,b)` | `a / b` | |
-| `app(__mod__,a,b)` | `a % b` | |
-| `app(__eq__,a,b)` | `a === b` | Strict equality |
-| `app(__ne__,a,b)` | `a !== b` | |
-| `app(__lt__,a,b)` | `a < b` | Plus `__gt__`, `__le__`, `__ge__` |
-| `app(__and__,a,b)` | `a && b` | |
-| `app(__or__,a,b)` | `a \|\| b` | |
-| `app(__neg__,a)` | `-a` | |
-| `app(__not__,a)` | `!a` | |
-| `app(__obj__,"k1",v1,"k2",v2,...)` | `{ k1: v1, k2: v2, ... }` | Object literal — string keys + value expressions interleaved. |
-| `app(__index__,arr,i)` | `arr[i]` | Array/object indexing. |
-| `app(__nullish__,a,b)` | `(a ?? b)` | Nullish coalescing. |
-| `app(__optchain__,obj,"member")` | `obj?.member` | Optional chaining (member must be a string literal). |
-
-These let you write real-Ion bodies for almost every common JS expression
-pattern without dropping into `raw(...)`.
-
-## Wire-format sugar (preferred over `app(__name__, ...)` for token efficiency)
-
-The wire format supports lightweight sugar that lowers to the operator
-builtins above. Use these forms when authoring `.ion` files — they save
-7-13% bytes vs the verbose `app(__name__, ...)` equivalents.
-
-| Sugar | Lowers to | Notes |
-|---|---|---|
-| `{k:v,k:v}` | `app(__obj__, "k", v, "k", v)` | Inline object literal. Bare ident or string key. |
-| `{...:obj,k:v}` | `app(__obj__, "...", obj, "k", v)` | Spread inside object. |
-| `{stmt;stmt;result}` | `app(__do__, stmt, stmt, result)` | Multi-statement IIFE. |
-| `arr[i]` | `app(__index__, arr, i)` | Postfix indexing. |
-| `obj?.field` | `app(__optchain__, obj, "field")` | Optional chain. |
-| `!x` | `app(__not__, x)` | Prefix not. |
-| `a+b` `a-b` `a*b` `a/b` `a%b` | `app(__add__,a,b)` etc | Arithmetic. |
-| `a===b` `a!==b` | `app(__eq__,a,b)` `__ne__` | Strict equality. |
-| `a<b` `a>b` `a<=b` `a>=b` | `__lt__` / `__gt__` / `__le__` / `__ge__` | Comparison. |
-| `a&&b` `a\|\|b` | `__and__` / `__or__` | Logical. |
-| `a??b` | `app(__nullish__, a, b)` | Nullish coalescing. |
-| `c?a:b` | `match(c){true->a;_->b}` | Ternary. Lowest precedence. |
-| `(expr)` | (grouped) | Parenthesised expression for precedence. |
-| `(p1, p2) -> body` | `(p1:any, p2:any) -> body` | Default `:any` param type. |
-| `let x = v` | `let x:any = v` | Default `:any` let-binding type. |
+| `{k:v,k:v}` | `{ k: v, k: v }` | Inline object literal. Bare ident or string key. |
+| `{...:obj,k:v}` | `{ ...obj, k: v }` | Spread inside object. |
+| `{stmt;stmt;result}` | `(() => { stmt; stmt; return result; })()` | Multi-statement do-block. |
+| `arr[i]` | `arr[i]` | Postfix indexing. |
+| `obj?.field` | `obj?.field` | Optional chain. |
+| `!x` | `!x` | Prefix not. |
+| `a+b` `a-b` `a*b` `a/b` `a%b` | infix arithmetic | |
+| `a===b` `a!==b` | strict equality | |
+| `a<b` `a>b` `a<=b` `a>=b` | comparison | |
+| `a&&b` `a\|\|b` | logical | |
+| `a??b` | `(a ?? b)` | Nullish coalescing. |
+| `c?a:b` | `c ? a : b` | Ternary. Lowest precedence. |
+| `(expr)` | (grouped) | Parens for precedence grouping. |
+| `(p1, p2) -> body` | function with `:any` params | Default `:any` annotation. |
+| `let x = v` | `let x:any = v` | Default `:any` let-binding. |
+| `app(callee, ...args)` | `callee(...args)` | Explicit application — needed for calling FFI refs and other expression callees. |
+| `obj->method(args)` | `obj.method(args)` | Method call. |
+| `async{body}` | `(async () => body)()` | Async block. Body can be a let-chain or a do-block. |
+| `await(expr)` | `await expr` | Must be inside `async{...}`. |
+| `match(scrutinee){pat->body;...}` | TS chain of ternaries on `_tag` (or `===` for booleans) | Pattern match. For booleans prefer the `c?a:b` ternary form. |
+| `raw("expr")` | verbatim TS | Line-level escape hatch. Never wrap a whole function body. |
 
 Operator precedence (high → low): postfix `[]` `?.`, prefix `!`, `* / %`,
 `+ -`, `< > <= >=`, `=== !==`, `&&`, `||`, `??`, ternary `?:`.
 
-### Concrete savings on real files
+### Example — a complete async pg query function
 
-A 342-byte `services/shared/users.ion` (one async pg.query function) now
-emits 368 bytes of TypeScript — **the wire form is 7% smaller**. A
-1947-byte `services/shared/auth.ion` (10 functions: JWT, bcrypt, env-or-throw,
-async DB queries) emits 2247 bytes of TS — **13% smaller in wire**.
+```
+F let getMe=(pool,userId)->async{let r=await(pool->query("SELECT id, email, display_name FROM users WHERE id = $1 AND deleted_at IS NULL",[userId]));r.rows[0]??null}
+```
 
-### Authoring rule (still in force)
+emits:
+
+```ts
+const getMe = (pool: any, userId: any) => (async () => {
+  const r: any = await pool.query("SELECT id, email, display_name FROM users WHERE id = $1 AND deleted_at IS NULL", [userId]);
+  return (r.rows[0] ?? null);
+})();
+```
+
+### Example — JWT signing with object spread
+
+```
+F let signToken=(payload)->app(ffi:js:jsonwebtoken:sign,{...:payload,jti:app(ffi:js:crypto:randomUUID)},getJwtSecret(),{expiresIn:"24h"})
+```
+
+emits:
+
+```ts
+const signToken = (payload: any) => sign({ ...payload, jti: randomUUID() }, getJwtSecret(), { expiresIn: "24h" });
+```
+
+### Example — try/catch/finally for transactions
+
+```
+F let createCrew=(pool,userId,name)->async{let client=await(pool->connect());app(__tryfin__,let _b=await(client->query("BEGIN"));let cr=await(client->query("INSERT...",[name,userId]));let crew=cr.rows[0];let _m=await(client->query("INSERT crew_members...",[crew.id,userId,"owner"]));let _c=await(client->query("COMMIT"));crew,{await(client->query("ROLLBACK"));raw("(() => { throw e; })()")},client->release())}
+```
+
+emits clean async TS with try/catch/finally, BEGIN/COMMIT, ROLLBACK on error,
+client.release() in finally.
+
+## Authoring rule (hard)
 
 Forbidden: `let X:fn(...)->any=raw("entire async body")`. The body of every
-function must be real Ion using the sugar above (or `raw("...")` line-level
-for the rare expression Ion can't reach today). The architecture stage
-rejects whole-body raw().
+function MUST be real Ion using the sugar above. `raw(...)` is line-level
+only — for the rare expression Ion can't express today (re-throw `e`,
+TypeScript type augmentations, multi-step dynamic SQL with for-loops).
+Architecture stage rejects whole-body raw().
+
+## Verified savings on real OTOURENV2 files
+
+| File | Ion bytes | TS bytes | Savings |
+|---|---|---|---|
+| services/shared/users.ion | 342 | 368 | 7% |
+| services/shared/auth.ion (10 funcs) | 1947 | 2194 | 11% |
+| services/crew/crews.ion (5 funcs incl. transaction) | 1652 | 1971 | 16% |
+| services/crew/courses.ion | 2110 | 2359 | 11% |
+| services/crew/courseFeatures.ion | 2396 | 2666 | 10% |
+| services/crew/courseHoles.ion | 1349 | 1527 | 12% |
+| services/crew/courseFavorites.ion | 1110 | 1220 | 9% |
+| services/crew/members.ion (5 simple + 2 raw transactions) | 4690 | 4983 | 6% |
+
+Average: 10% smaller in Ion than the equivalent TypeScript.
+
+## Underlying IR builtins (reference only — do not author with these)
+
+The sugar above lowers to these IR-level builtin names. Listed for
+debugging compiler output, not for authoring:
+
+`__add__` `__sub__` `__mul__` `__div__` `__mod__` `__eq__` `__ne__`
+`__lt__` `__gt__` `__le__` `__ge__` `__and__` `__or__` `__neg__` `__not__`
+`__obj__` `__index__` `__nullish__` `__optchain__` `__throw__` `__env__`
+`__set__` `__regex__` `__try__` `__tryfin__` `__finally__` `__do__`
+`__seq__` `__spread__`.
