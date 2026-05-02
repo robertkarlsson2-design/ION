@@ -61,25 +61,19 @@ ION has no infix operators in surface syntax. Use builtin functions:
 | `!a`     | `not(a)` | Bool |
 | `concat` | `concat(s1, s2)` | Str |
 
-## Case / pattern matching
+## Match / pattern matching
 
 ```ion
 let abs_val = (x: Int) ->
-  case x > 0 of {
-    true  -> x
-  | false -> sub(0, x)
-  };
+  match gt(x, 0) | true -> x | false -> sub(0, x);
 ```
 
-## Ternary shorthand (via case)
+## Ternary shorthand (via match)
 
 ```ion
-// case <bool> of { true -> <a> | _ -> <b> }
+// match <bool> | true -> <a> | _ -> <b>
 let max = (a: Int, b: Int) ->
-  case gt(a, b) of {
-    true -> a
-  | _    -> b
-  };
+  match gt(a, b) | true -> a | _ -> b;
 ```
 
 ## Lists
@@ -110,10 +104,20 @@ type Maybe =
 
 ```ion
 let unwrap = (m: Maybe) ->
-  case m of {
-    Just(v) -> v
-  | Nothing -> 0
-  };
+  match m | Just(v) -> v | Nothing -> 0;
+```
+
+## Option and Result patterns
+
+```ion
+// Unwrap Option<T> with fallback (equivalent to x ?? fallback in TypeScript)
+fn get_or_zero(x: Option<Int>) -> Int = match x | Some(n) -> n | None -> 0
+
+// Unwrap Result<T, E> (equivalent to try { return f() } catch (e) { return fallback })
+fn get_or_err(x: Result<Str, Str>) -> Str = match x | Ok(v) -> v | Err(e) -> e
+
+// Propagate None/Err up the call stack with the ? operator
+fn propagate(x: Option<Int>) -> Option<Int> = x?
 ```
 
 ## Extern functions (FFI)

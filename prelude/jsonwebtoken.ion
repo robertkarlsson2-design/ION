@@ -1,0 +1,18 @@
+// @ion/prelude/jsonwebtoken — JWT sign/verify
+
+// Sign a payload with a secret. `payload` is opaque (Str); pass a JSON string
+// or an Ion-encoded value. `options` is also opaque — common keys: expiresIn.
+@foreign("jsonwebtoken", "sign", "(require('jsonwebtoken').sign)($1, $2, $3)")
+extern fn jwt_sign(payload: Str, secret: Str, options: Str) !io -> Str
+
+// Sign without options.
+@foreign("jsonwebtoken", "sign2", "(require('jsonwebtoken').sign)($1, $2)")
+extern fn jwt_sign_simple(payload: Str, secret: Str) !io -> Str
+
+// Verify a token. Throws on invalid signature.
+@foreign("jsonwebtoken", "verify", "(require('jsonwebtoken').verify)($1, $2)")
+extern fn jwt_verify(token: Str, secret: Str) !io -> Str
+
+// Decode a token without verifying (use carefully).
+@foreign("jsonwebtoken", "decode", "(require('jsonwebtoken').decode)($1)")
+extern fn jwt_decode(token: Str) -> Str

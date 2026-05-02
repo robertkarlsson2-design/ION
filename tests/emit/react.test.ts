@@ -279,7 +279,7 @@ describe('emitReact', () => {
     expect(out).toContain('const [error, setError] = useState(null)');
     expect(out).toContain('return (');
     expect(out).toContain('error');
-    expect(out).toContain('?');
+    expect(out).toContain('&&');
   });
 });
 

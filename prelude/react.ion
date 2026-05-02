@@ -1,0 +1,53 @@
+// @ion/prelude/react — React 18+ hook + DOM bindings
+//
+// React generally produces JSX/TSX. Ion can emit React via `--target react`
+// (see ION/emitters/react/), but for plain Node-rendered components or
+// cross-compiled apps you can also use the TS target with these externs.
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
+
+// useState — returns the [value, setter] tuple as `Str` (opaque to Ion).
+// The caller will typically destructure in raw TS or use the React target.
+@foreign("react", "useState", "(require('react').useState)($1)")
+extern fn react_use_state(initial: Str) -> Str
+
+// useEffect — runs `effect` after render. `deps` is the dependency array.
+@foreign("react", "useEffect", "(require('react').useEffect)($1, $2)")
+extern fn react_use_effect(effect: Str, deps: Str) !io -> Str
+
+// useRef — mutable reference holder.
+@foreign("react", "useRef", "(require('react').useRef)($1)")
+extern fn react_use_ref(initial: Str) -> Str
+
+// useContext — read value from a Context.
+@foreign("react", "useContext", "(require('react').useContext)($1)")
+extern fn react_use_context(ctx: Str) -> Str
+
+// useMemo — memoized value.
+@foreign("react", "useMemo", "(require('react').useMemo)($1, $2)")
+extern fn react_use_memo(compute: Str, deps: Str) -> Str
+
+// useCallback — memoized callback.
+@foreign("react", "useCallback", "(require('react').useCallback)($1, $2)")
+extern fn react_use_callback(cb: Str, deps: Str) -> Str
+
+// ---------------------------------------------------------------------------
+// Context
+// ---------------------------------------------------------------------------
+
+@foreign("react", "createContext", "(require('react').createContext)($1)")
+extern fn react_create_context(default_value: Str) -> Str
+
+// ---------------------------------------------------------------------------
+// react-dom/client
+// ---------------------------------------------------------------------------
+
+// Create a root for client-side rendering. Pass a DOM element.
+@foreign("react-dom/client", "createRoot", "(require('react-dom/client').createRoot)($1)")
+extern fn react_create_root(container: Str) !io -> Str
+
+// Render a React element into a root.
+@foreign("react-dom/client", "render", "$1.render($2)")
+extern fn react_root_render(root: Str, element: Str) !io -> Str

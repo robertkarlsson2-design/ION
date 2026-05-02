@@ -1,0 +1,52 @@
+// @ion/prelude/node — Node.js stdlib bindings
+//
+// Covers crypto, fs/promises, path, and process.
+
+// ---------------------------------------------------------------------------
+// crypto
+// ---------------------------------------------------------------------------
+
+// Generate a UUID v4. Unit dummy parameter to force a real call at each use.
+@foreign("node:crypto", "randomUUID", "(require('node:crypto').randomUUID)()")
+extern fn node_random_uuid(unit: Bool) !io -> Str
+
+// SHA-256 hex digest of a string. (createHash('sha256').update(s).digest('hex'))
+@foreign("node:crypto", "sha256", "(require('node:crypto').createHash('sha256').update($1).digest('hex'))")
+extern fn node_sha256(input: Str) !io -> Str
+
+// ---------------------------------------------------------------------------
+// fs/promises
+// ---------------------------------------------------------------------------
+
+// Read a UTF-8 file.
+@foreign("node:fs/promises", "readFile", "(require('node:fs/promises').readFile)($1, 'utf8')")
+extern fn node_read_file(path: Str) !async !io -> Str
+
+// Write a UTF-8 file.
+@foreign("node:fs/promises", "writeFile", "(require('node:fs/promises').writeFile)($1, $2, 'utf8')")
+extern fn node_write_file(path: Str, content: Str) !async !io -> Str
+
+// ---------------------------------------------------------------------------
+// path
+// ---------------------------------------------------------------------------
+
+// Join two path segments.
+@foreign("node:path", "join", "(require('node:path').join)($1, $2)")
+extern fn node_path_join(a: Str, b: Str) -> Str
+
+// Resolve to absolute path.
+@foreign("node:path", "resolve", "(require('node:path').resolve)($1)")
+extern fn node_path_resolve(p: Str) -> Str
+
+// ---------------------------------------------------------------------------
+// process
+// ---------------------------------------------------------------------------
+
+// Read an env var (returns Str — undefined coerces to "undefined" in JS,
+// so make sure the var is set or wrap with a default in the caller).
+@foreign("process", "env_get", "(process.env[$1] ?? '')")
+extern fn node_env(name: Str) !io -> Str
+
+// Get the current working directory.
+@foreign("process", "cwd", "process.cwd()")
+extern fn node_cwd(unit: Bool) !io -> Str

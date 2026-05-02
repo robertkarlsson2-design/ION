@@ -85,27 +85,6 @@ ion build
 
 ---
 
-## Vite integration
-
-Add `vite-plugin-ion` to your Vite project and the plugin will compile any `.ion`
-file on demand — no separate `ion build --watch` process needed.
-
-```js
-// vite.config.ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import ion from 'vite-plugin-ion';
-
-export default defineConfig({
-  plugins: [ion(), react()]
-});
-```
-
-The plugin intercepts `.tsx` imports that have a sibling `.ion` file and direct `.ion` imports.
-Default target is `react` (emits TSX). Pass `{ target: 'typescript' }` for `.ts` output.
-
----
-
 ## Language
 
 ### Data types
@@ -302,7 +281,7 @@ F a (id:i)->o { c(id) }
 
 ## Status
 
-> Ion is in active development. The compiler frontend, IR, and JS/TS/Python/Java backends are wired into the `ion build` CLI. Frontend and Salesforce emitters exist as code but are not yet exposed through the CLI.
+> Ion is in active development. The compiler frontend, IR, and all 10 backends (JS, TS, TS-DTS, Python, Java, React, HTML, Vue, Apex, LWC) are wired into the `ion build` CLI.
 
 | Component | Status |
 |---|---|
@@ -328,8 +307,8 @@ F a (id:i)->o { c(id) }
 | HTML emitter | ✅ Wired (`--target html`) |
 | React (JSX/TSX) emitter | ✅ Wired (`--target react`) |
 | Vue SFC emitter | ✅ Wired (`--target vue`) |
-| Lightning Web Component emitter | 🚧 Code present, not wired into CLI |
-| Salesforce Apex emitter | 🚧 Code present, not wired into CLI |
+| Lightning Web Component emitter | ✅ Wired (`--target lwc`, multi-file bundle) |
+| Salesforce Apex emitter | ✅ Wired (`--target apex`) |
 | VS Code extension | ✅ Syntax highlighting + formatter |
 | LSP server | 🚧 Code present, no `ion lsp` launcher yet |
 | LLM skill guides (`llm-skills/`) | ✅ Complete — includes React component patterns (useState, async handlers, conditional render) |
@@ -341,7 +320,7 @@ F a (id:i)->o { c(id) }
 ```bash
 # Compile
 ion build                          # compile per ion.config.json
-ion build --target typescript      # javascript | typescript | python | java | react | html | vue
+ion build --target typescript      # javascript | typescript | typescript-dts | python | java | react | html | vue | apex | lwc
 ion build --watch                  # incremental watch mode
 ion build --no-token-report        # suppress token-savings summary
 

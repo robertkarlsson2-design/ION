@@ -1,0 +1,79 @@
+// @ion/prelude/express — Express 4.x foreign bindings
+//
+// COPY THE LINES YOU NEED INTO YOUR .ion FILE. Ion has no working cross-file
+// FFI today: `use express.{...}` resolves names but the TS emitter does not
+// emit `import` statements, so the generated TS would reference undefined
+// symbols. Same-module declarations work — that's the contract here.
+//
+// All foreign types are declared as `Str` because Ion's `data` declarations
+// don't currently emit to TypeScript (they live on `module.data` which the
+// TS emitter ignores). Treat the parameters and return values as opaque
+// handles; runtime values are correct, only static types are imprecise.
+//
+// Naming: foreign extern functions use the `express_` prefix to avoid
+// shadowing the built-in Ion prelude (`length`, `concat`, ...).
+
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
+
+// Returns a fresh Express app. The `unit: Bool` parameter is intentional —
+// without it the template would inline at module-load time and `expressApp()`
+// at a call site would invoke the *result* (an app) rather than constructing
+// a new one.
+@foreign("express", "express", "(require('express'))()")
+extern fn express_app(unit: Bool) !io -> Str
+
+// Returns a fresh Router instance.
+@foreign("express", "Router", "(require('express').Router)()")
+extern fn express_router(unit: Bool) !io -> Str
+
+// ---------------------------------------------------------------------------
+// App / Router methods
+// ---------------------------------------------------------------------------
+
+@foreign("express", "use", "$1.use($2)")
+extern fn express_use(app: Str, middleware: Str) !io -> Str
+
+@foreign("express", "use_path", "$1.use($2, $3)")
+extern fn express_use_path(app: Str, path: Str, middleware: Str) !io -> Str
+
+@foreign("express", "listen", "$1.listen($2)")
+extern fn express_listen(app: Str, port: Int) !io -> Str
+
+@foreign("express", "get", "$1.get($2, $3)")
+extern fn express_get(app: Str, path: Str, handler: Str) !io -> Str
+
+@foreign("express", "post", "$1.post($2, $3)")
+extern fn express_post(app: Str, path: Str, handler: Str) !io -> Str
+
+@foreign("express", "put", "$1.put($2, $3)")
+extern fn express_put(app: Str, path: Str, handler: Str) !io -> Str
+
+@foreign("express", "delete", "$1.delete($2, $3)")
+extern fn express_delete(app: Str, path: Str, handler: Str) !io -> Str
+
+// ---------------------------------------------------------------------------
+// Body parsers (built into Express since 4.16)
+// ---------------------------------------------------------------------------
+
+// Returns the json() middleware factory. Call sites of `express_json()`
+// emit as `express_json()` which evaluates `require('express').json()`.
+@foreign("express", "json", "require('express').json")
+extern fn express_json() !io -> Str
+
+@foreign("express", "urlencoded", "require('express').urlencoded")
+extern fn express_urlencoded() !io -> Str
+
+// ---------------------------------------------------------------------------
+// Response helpers — call from inside a route handler
+// ---------------------------------------------------------------------------
+
+@foreign("express", "res_status", "$1.status($2)")
+extern fn express_res_status(res: Str, code: Int) !io -> Str
+
+@foreign("express", "res_json", "$1.json($2)")
+extern fn express_res_json(res: Str, body: Str) !io -> Str
+
+@foreign("express", "res_send", "$1.send($2)")
+extern fn express_res_send(res: Str, body: Str) !io -> Str

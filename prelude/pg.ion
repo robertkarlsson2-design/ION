@@ -1,0 +1,43 @@
+// @ion/prelude/pg — node-postgres bindings
+//
+// Conventions:
+// - Pool / Client / QueryResult are opaque values typed as Str (Ion's `data`
+//   decl doesn't currently emit to TS; see prelude/README.md). At runtime
+//   they're real pg objects.
+// - All db calls are !async !io.
+
+// Construct a new Pool from a connection string. Pool can also accept a
+// config object, but Ion strings can't contain `{}` literals, so this binding
+// only takes a connection string. For object-form config, declare your own
+// inline extern in the same file.
+@foreign("pg", "Pool", "new (require('pg').Pool)($1)")
+extern fn pg_new_pool(connection_string: Str) !io -> Str
+
+// Run a parameterized query. `params` is passed through verbatim; in a real
+// caller you'll declare `params` as `Str` and JSON-encode lists yourself,
+// since Ion's List<Str> -> JS array boundary is straightforward.
+@foreign("pg", "query", "$1.query($2, $3)")
+extern fn pg_query(pool: Str, sql: Str, params: Str) !async !io -> Str
+
+// Convenience: query without params
+@foreign("pg", "query0", "$1.query($2)")
+extern fn pg_query_no_params(pool: Str, sql: Str) !async !io -> Str
+
+// Borrow a client from the pool (for transactions).
+@foreign("pg", "connect", "$1.connect()")
+extern fn pg_connect(pool: Str) !async !io -> Str
+
+// Release a borrowed client back to the pool.
+@foreign("pg", "release", "$1.release()")
+extern fn pg_release(client: Str) !io -> Str
+
+// QueryResult fields.
+@foreign("pg", "rows", "$1.rows")
+extern fn pg_rows(result: Str) -> Str
+
+@foreign("pg", "rowCount", "$1.rowCount")
+extern fn pg_row_count(result: Str) -> Int
+
+// End the pool (graceful shutdown).
+@foreign("pg", "end", "$1.end()")
+extern fn pg_end(pool: Str) !async !io -> Str

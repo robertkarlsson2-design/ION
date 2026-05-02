@@ -1,0 +1,4 @@
+I1
+M TodoList v=0.0.0
+S a=TodoList b=todos c=todo d=map e=length f=title g=id
+F let a:never=()->let _s1:never=raw("type Todo = { id: number; title: string; done: boolean }");let _s2:never=raw("const todos: Todo[] = useTodos()");div("class=todo-list",h2("","Your todos"),match(raw("todos.length === 0")){true->p("class=empty","Nothing here yet")_->ul("",raw("{todos.map((todo: Todo) => (<li key={todo.id} className={todo.done ? 'done' : ''}>{todo.title}</li>))}"))});0
