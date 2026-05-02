@@ -491,31 +491,54 @@ function emitTsExpr(node: IonIRNode): string {
         if (calleeName === '__throw__' && app.args.length === 1) {
           return `(() => { throw new Error(${emitTsExpr(app.args[0])}); })()`;
         }
-        // __try__(tryExpr, catchExpr) → (() => { try { return tryExpr; } catch (e) { return catchExpr; } })()
-        // Note: catchExpr should reference `e` if it needs the caught error.
-        // For async, wrap the whole __try__ inside async{...}.
+        // Helper: emit an arg as either an inline statement-block (when it's a
+        // Let chain or a __do__) or as a single return-expression. Used for
+        // try/catch/finally arms so awaits inside the arm body work.
+        const emitArmBody = (n: IonIRNode): string => {
+          if (n.kind === 'Let') {
+            const blk = emitTsLetBlock(n as LetNode);
+            if (blk.stmts.length > 0) {
+              return `${blk.stmts.join(' ')} return ${blk.ret};`;
+            }
+            return `return ${blk.ret};`;
+          }
+          // __do__(s1, ..., result) emitted inline as statement chain
+          if (n.kind === 'App' && (n as AppNode).callee.kind === 'Var' &&
+              ((n as AppNode).callee as VarNode).name === '__do__') {
+            const dargs = (n as AppNode).args;
+            if (dargs.length >= 1) {
+              const last = dargs[dargs.length - 1]!;
+              const stmts = dargs.slice(0, -1).map(a => `${emitTsExpr(a)};`);
+              return `${stmts.join(' ')} return ${emitTsExpr(last)};`;
+            }
+          }
+          return `return ${emitTsExpr(n)};`;
+        };
+
+        // __try__(tryExpr, catchExpr) — try/catch as an async-capable expression.
+        // Emits an async IIFE so awaits inside the bodies are valid; in a sync
+        // context the result is a Promise that resolves to the value.
+        // catchExpr can reference `e` (the caught error binding).
         if (calleeName === '__try__' && app.args.length === 2) {
-          return `(() => { try { return ${emitTsExpr(app.args[0])}; } catch (e) { return ${emitTsExpr(app.args[1])}; } })()`;
+          return `(async () => { try { ${emitArmBody(app.args[0])} } catch (e) { ${emitArmBody(app.args[1])} } })()`;
         }
         // __tryfin__(tryExpr, catchExpr, finallyExpr) — try/catch/finally as expression.
         if (calleeName === '__tryfin__' && app.args.length === 3) {
-          return `(() => { try { return ${emitTsExpr(app.args[0])}; } catch (e) { return ${emitTsExpr(app.args[1])}; } finally { ${emitTsExpr(app.args[2])}; } })()`;
+          return `(async () => { try { ${emitArmBody(app.args[0])} } catch (e) { ${emitArmBody(app.args[1])} } finally { ${emitTsExpr(app.args[2])}; } })()`;
         }
         // __finally__(tryExpr, finallyExpr) — try/finally with no catch.
         if (calleeName === '__finally__' && app.args.length === 2) {
-          return `(() => { try { return ${emitTsExpr(app.args[0])}; } finally { ${emitTsExpr(app.args[1])}; } })()`;
+          return `(async () => { try { ${emitArmBody(app.args[0])} } finally { ${emitTsExpr(app.args[1])}; } })()`;
         }
-        // __do__(s1, s2, ..., resultExpr) — multi-statement IIFE block where each
-        // arg before the last is evaluated as a side-effect statement and the
-        // last arg is returned. Useful for imperative-style handlers without
-        // a let-chain (e.g. `do { router.get(...); router.post(...); router }`).
+        // __do__(s1, s2, ..., resultExpr) — async IIFE wrapping multiple
+        // side-effect statements followed by a return. The arms accept awaits.
         if (calleeName === '__do__' && app.args.length >= 1) {
           const last = app.args[app.args.length - 1]!;
           const stmts = app.args.slice(0, -1).map(a => `${emitTsExpr(a)};`);
           if (stmts.length === 0) {
             return emitTsExpr(last);
           }
-          return `(() => { ${stmts.join(' ')} return ${emitTsExpr(last)}; })()`;
+          return `(async () => { ${stmts.join(' ')} return ${emitTsExpr(last)}; })()`;
         }
         // __seq__(a, b, c, ...) → (a, b, c, ...) — comma-sequenced expressions
         // Useful for side-effect chains. Result is the last expression.
