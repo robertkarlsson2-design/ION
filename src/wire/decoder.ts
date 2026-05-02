@@ -36,6 +36,7 @@ const FOREIGN_SIG_PLACEHOLDER: ForeignSignature = { params: [], ret: { kind: 'Un
 interface DecoderContext {
   readonly sym: ReadonlyMap<string, string>; // alias → raw name
   readonly typ: ReadonlyMap<string, string>; // alias → type expression string
+  readonly lit: ReadonlyMap<string, string>; // alias → literal string value
 }
 
 interface Cursor {
@@ -118,6 +119,7 @@ interface ParsedLines {
   X?: string;
   D?: string;
   F?: string;
+  L?: string;
 }
 
 function parseLines(text: string): ParsedLines | { error: string } {
@@ -133,6 +135,7 @@ function parseLines(text: string): ParsedLines | { error: string } {
   let X: string | undefined;
   let D: string | undefined;
   let F: string | undefined;
+  let L: string | undefined;
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]!;
@@ -152,19 +155,20 @@ function parseLines(text: string): ParsedLines | { error: string } {
         if (T !== undefined) return { error: 'duplicate T line' };
         T = rest;
         break;
+      case 'L':
+        // Literal pool — multiple L lines append space-separated.
+        // Format: `L alias="long string literal" alias="..."` — each alias maps
+        // to a string-literal value referenced by `&alias` in node positions.
+        L = L === undefined ? rest : `${L} ${rest}`;
+        break;
       case 'X':
         if (X !== undefined) return { error: 'duplicate X line' };
         X = rest;
         break;
       case 'D':
-        // Multiple D lines are allowed: subsequent ones append to the first
-        // (space-separated). This lets a file declare each data type on its
-        // own line without packing them all onto one giant line.
         D = D === undefined ? rest : `${D} ${rest}`;
         break;
       case 'F':
-        // Multiple F lines are allowed for the same reason: a single file
-        // can declare each top-level definition on its own line.
         F = F === undefined ? rest : `${F} ${rest}`;
         break;
       default:
@@ -181,6 +185,7 @@ function parseLines(text: string): ParsedLines | { error: string } {
     ...(X !== undefined && { X }),
     ...(D !== undefined && { D }),
     ...(F !== undefined && { F }),
+    ...(L !== undefined && { L }),
   };
 }
 
@@ -871,6 +876,20 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
     return { kind: 'Literal', value: parseLiteral(cur), span: WIRE_SPAN, type: { kind: 'Str' } };
   }
 
+  // ── Literal-pool reference: &alias resolves to the pooled string literal ──
+  // L pool aliases are mapped at module-decode time; the encoder may auto-hoist
+  // repeated long string literals into the L pool to save bytes, and decoded
+  // here back to the original string value.
+  if (c === '&' && cur.text[cur.pos + 1] !== undefined && /[A-Za-z_]/.test(cur.text[cur.pos + 1]!)) {
+    cur.pos++;
+    const alias = readIdent(cur);
+    const v = ctx.lit.get(alias);
+    if (v === undefined) {
+      throw new WireDecodeError(`unknown literal-pool alias '&${alias}' at pos ${cur.pos}`);
+    }
+    return { kind: 'Literal', value: { kind: 'Str', value: v }, span: WIRE_SPAN, type: { kind: 'Str' } };
+  }
+
   // ── List literal [elem1,elem2,...] ───────────────────────────────────────
   if (c === '[') {
     cur.pos++;
@@ -1431,6 +1450,71 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
     return { kind: 'AsyncBlock', body, span: WIRE_SPAN, type: { kind: 'Unit' } };
   }
 
+  // ── throw EXPR — sugar for app(__throw__, EXPR) ──
+  // Saves ~10 chars per use vs the verbose form.
+  if (cur.text.startsWith('throw ', cur.pos) || cur.text.startsWith('throw"', cur.pos)) {
+    cur.pos += 5;
+    if (cur.text[cur.pos] === ' ') cur.pos++;
+    const expr = parseNode(cur, ctx, depth + 1);
+    return {
+      kind: 'App',
+      callee: { kind: 'Var', name: '__throw__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+      args: [expr], span: WIRE_SPAN, type: { kind: 'Unit' },
+    };
+  }
+
+  // ── try{tryExpr}catch{catchExpr}[finally{finallyExpr}] keyword sugar ──
+  // Each `{...}` body is parsed as a do-block sequence (statements separated
+  // by `;`, last is result). Lowers to app(__try__/__tryfin__/__finally__, ...).
+  const parseDoBlockBody = (): IonIRNode => {
+    const stmts: IonIRNode[] = [];
+    while (true) {
+      skipSpaces(cur);
+      if (peek(cur) === '}') break;
+      stmts.push(parseNode(cur, ctx, depth + 1));
+      skipSpaces(cur);
+      if (peek(cur) === ';') { cur.pos++; continue; }
+      break;
+    }
+    if (stmts.length === 1) return stmts[0]!;
+    return { kind: 'App',
+      callee: { kind: 'Var', name: '__do__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+      args: stmts, span: WIRE_SPAN, type: { kind: 'Unit' } };
+  };
+  if (cur.text.startsWith('try{', cur.pos)) {
+    cur.pos += 4;
+    const tryExpr = parseDoBlockBody();
+    consume(cur, '}');
+    let catchExpr: IonIRNode | null = null;
+    let finExpr: IonIRNode | null = null;
+    if (cur.text.startsWith('catch{', cur.pos)) {
+      cur.pos += 6;
+      catchExpr = parseDoBlockBody();
+      consume(cur, '}');
+    }
+    if (cur.text.startsWith('finally{', cur.pos)) {
+      cur.pos += 8;
+      finExpr = parseDoBlockBody();
+      consume(cur, '}');
+    }
+    if (catchExpr !== null && finExpr !== null) {
+      return { kind: 'App',
+        callee: { kind: 'Var', name: '__tryfin__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+        args: [tryExpr, catchExpr, finExpr], span: WIRE_SPAN, type: { kind: 'Unit' } };
+    }
+    if (catchExpr !== null) {
+      return { kind: 'App',
+        callee: { kind: 'Var', name: '__try__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+        args: [tryExpr, catchExpr], span: WIRE_SPAN, type: { kind: 'Unit' } };
+    }
+    if (finExpr !== null) {
+      return { kind: 'App',
+        callee: { kind: 'Var', name: '__finally__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+        args: [tryExpr, finExpr], span: WIRE_SPAN, type: { kind: 'Unit' } };
+    }
+    throw new WireDecodeError(`try{...} requires catch{...} and/or finally{...} at pos ${cur.pos}`);
+  }
+
   // ── await(expr) — Await (paired with the encoder) ──
   if (cur.text.startsWith('await(', cur.pos)) {
     cur.pos += 6;
@@ -1683,7 +1767,23 @@ export function decodeModule(wireText: string): IonIRModule | { error: string } 
 
     const symPool = lines.S !== undefined ? parsePool(lines.S) : new Map<string, string>();
     const typPool = lines.T !== undefined ? parsePool(lines.T) : new Map<string, string>();
-    const ctx: DecoderContext = { sym: symPool, typ: typPool };
+    // Literal pool: parse `alias="string" alias="string"` pairs.
+    const litPool = new Map<string, string>();
+    if (lines.L !== undefined) {
+      const cur: Cursor = { text: lines.L, pos: 0 };
+      while (cur.pos < cur.text.length) {
+        skipSpaces(cur);
+        if (cur.pos >= cur.text.length) break;
+        const alias = readIdent(cur);
+        consume(cur, '=');
+        const lit = parseLiteral(cur);
+        if (lit.kind !== 'Str') {
+          throw new WireDecodeError(`L pool entry "${alias}" must be a string literal`);
+        }
+        litPool.set(alias, lit.value);
+      }
+    }
+    const ctx: DecoderContext = { sym: symPool, typ: typPool, lit: litPool };
 
     const imports = lines.X !== undefined ? parseSectionX(lines.X, ctx) : [];
     const data = lines.D !== undefined ? parseSectionD(lines.D, ctx) : [];

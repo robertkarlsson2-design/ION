@@ -486,6 +486,10 @@ function emitTsExpr(node: IonIRNode): string {
             return `${emitTsExpr(app.args[0])}?.${m}`;
           }
         }
+        // __fold__(list, init, fn) → list.reduce((acc, item) => body, init)
+        if (calleeName === '__fold__' && app.args.length === 3) {
+          return `${emitTsExpr(app.args[0])}.reduce(${emitTsExpr(app.args[2])}, ${emitTsExpr(app.args[1])})`;
+        }
         // __throw__(msg) → throw new Error(msg)
         // Wraps in IIFE so it's an expression: `(() => { throw ... })()`.
         if (calleeName === '__throw__' && app.args.length === 1) {
