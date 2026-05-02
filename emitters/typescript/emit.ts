@@ -595,6 +595,9 @@ function emitTsCase(node: CaseNode): string {
     if (isLast && (pat.kind === 'Wildcard' || pat.kind === 'Var')) {
       parts.push(emitTsExpr(arm.body));
     } else {
+      if (pat.kind === 'Tuple' && pat.fields.some(f => f.kind === 'Var')) {
+        throw new Error('TuplePattern variable binding not yet supported in TS emitter');
+      }
       const cond = emitTsPatCond(pat, scrutinee);
       const bindings = buildTsCtorBindings(pat, scrutinee);
       if (bindings.length > 0) {

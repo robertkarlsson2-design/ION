@@ -570,13 +570,6 @@ function emitJsDecl(node: IonIRNode): string {
 // ---------------------------------------------------------------------------
 
 function buildLwcJs(irModule: IonIRModule): string {
-  _lwcCtorFields = new Map();
-  for (const d of irModule.data) {
-    for (const v of d.variants) {
-      _lwcCtorFields.set(v.tag, v.fields.map(f => f.name));
-    }
-  }
-
   const className = toClassName(irModule.module);
   const lines: string[] = [];
   const trackProps: string[] = [];
@@ -750,6 +743,13 @@ const LWC_META = `<?xml version="1.0" encoding="UTF-8"?>
 // ---------------------------------------------------------------------------
 
 export function emitLWC(irModule: IonIRModule): LwcOutput {
+  _lwcCtorFields = new Map();
+  for (const d of irModule.data) {
+    for (const v of d.variants) {
+      _lwcCtorFields.set(v.tag, v.fields.map(f => f.name));
+    }
+  }
+
   return {
     html: buildLwcTemplate(irModule),
     js: buildLwcJs(irModule),
