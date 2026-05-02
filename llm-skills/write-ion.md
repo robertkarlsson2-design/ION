@@ -67,7 +67,7 @@ Priority order — try in sequence:
 
 1. **`@external(target="javascript", module="...", symbol="...")`** (surface) or **`ffi:js:<module>:<symbol>`** (wire) — for ANY third-party call. Almost always sufficient.
 2. **A `data` type with deferred fields** — if a foreign object's full shape isn't expressible, declare a `data` for the fields you DO use; access remaining fields via `ffi:` getters.
-3. **`raw("expression")` at the LINE level** — for ONE expression that even FFI can't reach (a complex generic instantiation, a runtime-only construct). The function around it stays in real Ion. Document each use in a project-local `docs/spec.md`.
+3. **`raw("expression")` at the LINE level** (valid in **surface syntax** and wire format) — for ONE expression that even FFI can't reach (a complex generic instantiation, a runtime-only construct). The function around it stays in real Ion. Document each use in a project-local `docs/spec.md`.
 4. **NOT permitted**: `raw("entire-module-body")`, `raw("multiple statements")`, or stashing TS in a `dist-overrides/` directory. The architecture stage of pipeline projects rejects these.
 
 ## Hard rules

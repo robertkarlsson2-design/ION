@@ -604,6 +604,9 @@ function computeType(expr: AstExprNode, ctx: InferCtx): IonType {
       }
       return { kind: 'List', elem: elemType };
     }
+
+    case 'RawExpr':
+      return freshTypeVar(ctx);
   }
 }
 

@@ -20,6 +20,8 @@ export type {
   AccessorExprNode,
   PropagateExprNode,
   GroupExprNode,
+  ListLitExprNode,
+  RawExprNode,
   TriviaNode,
   CallArg,
   LambdaParam,

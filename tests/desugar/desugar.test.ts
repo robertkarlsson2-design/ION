@@ -259,6 +259,21 @@ describe('desugarModule — type annotation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 15. RawExpr → RawInjectNode
+// ---------------------------------------------------------------------------
+
+describe('desugarModule — RawExpr → RawInjectNode', () => {
+  it('let x: Str = raw("some.code") → value is RawInjectNode', () => {
+    const ir = desugar('let x: Str = raw("some.code")');
+    const letDecl = ir.decls[0] as LetNode;
+    expect(letDecl.kind).toBe('Let');
+    const rawNode = letDecl.value as import('../../src/ir/nodes.js').RawInjectNode;
+    expect(rawNode.kind).toBe('RawInject');
+    expect(rawNode.code).toBe('some.code');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 15. UnaryExpr → AppNode with __neg__
 // ---------------------------------------------------------------------------
 

@@ -3,6 +3,22 @@ import { emitTS } from '../../emitters/typescript/emit.js';
 import type { IonIRModule, RawInjectNode, ForeignRefNode, LetNode, VarNode } from '../../src/ir/nodes.js';
 import type { IonType } from '../../src/ir/types.js';
 import type { Span, SymbolId } from '../../src/types.js';
+import { lex } from '../../src/lexer/index.js';
+import { parseModule } from '../../src/parser/declarations.js';
+import { buildModule } from '../../src/ast/builder.js';
+import { bindModule } from '../../src/binder/index.js';
+import { checkModule } from '../../src/checker/index.js';
+import { desugarModule } from '../../src/desugar/index.js';
+
+function compileSurface(src: string): string {
+  const tokens = lex(src, 'test.ion');
+  const cst = parseModule(tokens);
+  const ast = buildModule(cst);
+  const bindResult = bindModule(ast, 'test');
+  const checkResult = checkModule(ast, bindResult, 'test');
+  const ir = desugarModule(ast, bindResult, checkResult, 'test', '0.0.0');
+  return emitTS(ir);
+}
 
 const S: Span = { file: '', startLine: 0, startCol: 0, endLine: 0, endCol: 0 };
 const UNIT: IonType = { kind: 'Unit' };
@@ -137,5 +153,16 @@ describe('emitTS — cross-module ForeignRef imports', () => {
     expect(importLines[0]).toContain('Client');
     expect(importLines[0]).toContain('Pool');
     expect(importLines[0]).toContain("from 'pg'");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// raw() surface-syntax → RawInject verbatim emit
+// ---------------------------------------------------------------------------
+
+describe('emitTS — raw() surface syntax passthrough', () => {
+  it('let x: Str = raw("`json`") → output contains `json` verbatim', () => {
+    const out = compileSurface('let x: Str = raw("`json`")');
+    expect(out).toContain('`json`');
   });
 });

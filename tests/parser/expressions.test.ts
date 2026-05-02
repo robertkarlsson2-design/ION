@@ -431,6 +431,28 @@ describe('trivia preservation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// raw() special form
+// ---------------------------------------------------------------------------
+
+describe('raw() expression', () => {
+  it('raw("some.code") → RawExprNode with correct code', () => {
+    const node = parse('raw("some.code")');
+    expect(node.kind).toBe('RawExpr');
+    if (node.kind === 'RawExpr') {
+      expect(node.code).toBe('some.code');
+    }
+  });
+
+  it('raw("`json`") → RawExprNode with backtick content', () => {
+    const node = parse('raw("`json`")');
+    expect(node.kind).toBe('RawExpr');
+    if (node.kind === 'RawExpr') {
+      expect(node.code).toBe('`json`');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
 
