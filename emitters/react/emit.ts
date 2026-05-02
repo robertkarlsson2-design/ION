@@ -22,6 +22,7 @@ import {
   isHtmlElement,
   getAttrRaw,
 } from '../ui-shared.js';
+import { shakePreludeDecls } from '../../src/prelude/dce.js';
 
 // ---------------------------------------------------------------------------
 // IonType → TypeScript type annotation
@@ -78,6 +79,16 @@ function isJsIdentifier(v: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v);
 }
 
+/**
+ * Attribute names whose values React always treats as JS expressions when
+ * they look like an identifier. Lets `value=email` emit as `value={email}`
+ * without the author having to write `value={email}` explicitly.
+ */
+const EXPR_ATTR_NAMES = new Set([
+  'value', 'checked', 'disabled', 'selected', 'readOnly', 'autoFocus',
+  'key', 'ref', 'style', 'htmlFor',
+]);
+
 /** Parse key=value pairs from raw attr string into JSX props. */
 function emitJsxAttrString(raw: string): string {
   const trimmed = raw.trim();
@@ -90,8 +101,19 @@ function emitJsxAttrString(raw: string): string {
       const rawKey = pair.slice(0, eq);
       const v = pair.slice(eq + 1);
       const k = ATTR_MAP[rawKey] ?? rawKey;
-      // Use curly braces for function references, strings otherwise
+      // Explicit expression form: value={email} or onClick={(e) => ...}
+      // (Preserves whatever's between the braces verbatim.)
+      if (v.startsWith('{') && v.endsWith('}')) {
+        return `${k}=${v}`;
+      }
+      // Event handler bound to an identifier (onclick=handleClick → onClick={handleClick})
       if (isJsIdentifier(v) && ATTR_MAP[rawKey] !== undefined && rawKey.startsWith('on')) {
+        return `${k}={${v}}`;
+      }
+      // Common expression-valued attrs whose value looks like an identifier
+      // (value=email → value={email}). Skip if the value would more
+      // naturally be a string literal (anything with non-ident chars).
+      if (isJsIdentifier(v) && EXPR_ATTR_NAMES.has(k)) {
         return `${k}={${v}}`;
       }
       return `${k}="${v}"`;
@@ -148,11 +170,28 @@ export function emitJsxNode(node: IonIRNode, indent = 0, env?: ReadonlyMap<strin
           return `${pad}<${tagName}${attrStr}>\n${children}\n${pad}</${tagName}>`;
         }
 
-        // Non-HTML function call in JSX context
+        // Non-HTML function call in JSX context — capitalised name = component
+        // (e.g. <Card item={x} />), lowercase = plain function call expression.
+        const isComponent = /^[A-Z]/.test(tagName);
+        if (isComponent) {
+          // Emit as a self-closing JSX component reference; first arg is treated
+          // as attr-string when it's a string literal, else passed via {...spread}.
+          const first = app.args[0];
+          if (first && first.kind === 'Literal' && first.value.kind === 'Str') {
+            const attrs = emitJsxAttrString(first.value.value);
+            const attrStr = attrs ? ` ${attrs}` : '';
+            const children = app.args.slice(1).map(c => emitJsxNode(c, indent + 1, env)).filter(s => s.trim()).join('\n');
+            if (!children) return `${pad}<${tagName}${attrStr} />`;
+            return `${pad}<${tagName}${attrStr}>\n${children}\n${pad}</${tagName}>`;
+          }
+          // No string-literal attr block — fall through to expression emission.
+        }
         const argStrs = app.args.map(a => emitTsExprForReact(a)).join(', ');
         return `{${tagName}(${argStrs})}`;
       }
-      return `{/* app */}`;
+      // Callee is something else (Accessor like items.map, lambda, etc.).
+      // Treat the whole call as a TS expression and wrap in JSX braces.
+      return `{${emitTsExprForReact(app)}}`;
     }
 
     case 'Abs': {
@@ -185,9 +224,24 @@ export function emitJsxNode(node: IonIRNode, indent = 0, env?: ReadonlyMap<strin
         caseNode.arms[1]!.pattern.kind === 'Wildcard'
       ) {
         const cond = emitTsExprForReact(caseNode.scrutinee);
-        const tTrue = emitJsxNode(caseNode.arms[0]!.body, indent, env);
-        const tFalse = emitJsxNode(caseNode.arms[1]!.body, indent, env);
-        return `{${cond} ? (\n${tTrue}\n) : (\n${tFalse}\n)}`;
+        const trueBody = caseNode.arms[0]!.body;
+        const falseBody = caseNode.arms[1]!.body;
+        // If the false arm is null / null literal, prefer the && short-circuit
+        // form so the output is valid JSX (`{cond && <jsx/>}`) instead of a
+        // ternary with an empty branch.
+        const falseIsNull =
+          (falseBody.kind === 'Literal' && falseBody.value.kind === 'Null') ||
+          (falseBody.kind === 'Literal' && falseBody.value.kind === 'Bool' && falseBody.value.value === false);
+        const tTrue = emitJsxNode(trueBody, indent, env);
+        if (falseIsNull) {
+          return `{${cond} && (\n${tTrue}\n)}`;
+        }
+        const tFalse = emitJsxNode(falseBody, indent, env);
+        // Defensive: if either branch ended up empty (e.g. unsupported node),
+        // fall back to `null` so the output still parses as TSX.
+        const safeTrue = tTrue.trim() ? tTrue : `${'  '.repeat(indent + 1)}null`;
+        const safeFalse = tFalse.trim() ? tFalse : `${'  '.repeat(indent + 1)}null`;
+        return `{${cond} ? (\n${safeTrue}\n) : (\n${safeFalse}\n)}`;
       }
       // Fallback: first arm
       return emitJsxNode(caseNode.arms[0]!.body, indent, env);
@@ -289,6 +343,14 @@ export function emitTsExprForReact(node: IonIRNode): string {
     case 'Var': return (node as VarNode).name;
     case 'App': {
       const app = node as AppNode;
+      // HTML-element call appearing in expression position (e.g. inside a
+      // lambda passed to .map): re-route through emitJsxNode so the result
+      // is real JSX. emitJsxNode wraps non-tag children in {} braces, so
+      // strip those when we're already in an expression context.
+      if (isHtmlElement(app)) {
+        const jsx = emitJsxNode(app);
+        return jsx.trim();
+      }
       const callee = emitTsExprForReact(app.callee);
       const args = app.args.map(emitTsExprForReact).join(', ');
       return `${callee}(${args})`;
@@ -296,6 +358,11 @@ export function emitTsExprForReact(node: IonIRNode): string {
     case 'Abs': {
       const abs = node as AbsNode;
       const params = abs.params.map(p => p.name).join(', ');
+      // If the lambda body is HTML or a Let-chain ending in HTML, prefer JSX.
+      const innerBody = abs.body;
+      if (isHtmlElement(innerBody)) {
+        return `(${params}) => (${emitJsxNode(innerBody).trim()})`;
+      }
       return `(${params}) => ${emitTsExprForReact(abs.body)}`;
     }
     case 'Accessor': return `${emitTsExprForReact(node.receiver)}.${node.member}`;
@@ -526,10 +593,61 @@ function emitTopLevelDecl(node: IonIRNode): string {
 }
 
 // ---------------------------------------------------------------------------
+// Component body helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Walks a `Let` chain inside a component body, peeling off each binding as
+ * a `const ... = ...;` line, and stops at the first non-`Let` node. Returns
+ * the collected statement lines and the inner expression (the future return
+ * value). Used to compile component bodies that look like:
+ *
+ *   () =>
+ *     let useStateRaw = raw("const [count, setCount] = useState(0)");
+ *     <div>{count}</div>
+ *
+ * into:
+ *
+ *   () => {
+ *     const [count, setCount] = useState(0);
+ *     return <div>{count}</div>;
+ *   }
+ *
+ * Recognised binding shapes:
+ *   - RawInject value      → emit the raw code verbatim (terminating `;` added if missing)
+ *   - Anything else        → `const ${name} = ${emitTsExprForReact(value)};`
+ */
+function collectBodyStatements(
+  body: IonIRNode
+): { statements: string[]; tail: IonIRNode } {
+  const statements: string[] = [];
+  let cur: IonIRNode = body;
+  while (cur.kind === 'Let') {
+    const lt = cur as LetNode;
+    const v = lt.value;
+    if (v.kind === 'RawInject') {
+      // Treat raw block as a free-standing statement; the binding name
+      // is conventional and ignored (e.g. "_useStateRaw").
+      const code = v.code.trim();
+      statements.push(code.endsWith(';') || code.endsWith('}') ? code : `${code};`);
+    } else {
+      statements.push(`const ${lt.name} = ${emitTsExprForReact(v)};`);
+    }
+    cur = lt.body;
+  }
+  return { statements, tail: cur };
+}
+
+// ---------------------------------------------------------------------------
 // emitReact
 // ---------------------------------------------------------------------------
 
 export function emitReact(irModule: IonIRModule): string {
+  // Drop unused prelude declarations (mirrors what the JS/TS emitters do).
+  // Without this every output gets ~80 lines of `const map = unknown;` style
+  // noise from the auto-prepended prelude.
+  irModule = shakePreludeDecls(irModule);
+
   // Build environment map for variable resolution
   const env = new Map<string, IonIRNode>();
   for (const d of irModule.decls) {
@@ -557,9 +675,38 @@ export function emitReact(irModule: IonIRModule): string {
         const name = lt.name;
         const value = lt.value;
 
+        // User-declared HTML tag externs (foreign refs whose name is an HTML
+        // tag) are only used inline as JSX elements — emitting `const div =
+        // unknown;` for them is noise. Skip the binding entirely.
+        if (value.kind === 'ForeignRef' && HTML_TAGS.has(name)) {
+          break;
+        }
+
         if (value.kind === 'Abs') {
           const abs = value as AbsNode;
           const params = abs.params.map(p => p.name).join(', ');
+
+          // If the body is a Let chain, peel off bindings into `const` statements
+          // and emit a block-form arrow function. This is how hooks survive:
+          //   () => { const [c, setC] = useState(0); return <div>{c}</div>; }
+          if (abs.body.kind === 'Let') {
+            const { statements, tail } = collectBodyStatements(abs.body);
+            const tailJsx = emitJsxNode(tail, 2, env);
+            const tailIsJsx = tailJsx.trim().startsWith('<') || tailJsx.trim().startsWith('{');
+            const returnExpr = tailIsJsx ? tailJsx.trim() : emitTsExprForReact(tail);
+            parts.push(`const ${name}: React.FC = (${params}) => {`);
+            for (const s of statements) parts.push(`  ${s}`);
+            if (tailIsJsx && tailJsx.includes('\n')) {
+              parts.push(`  return (`);
+              parts.push(`    ${returnExpr.split('\n').join('\n    ')}`);
+              parts.push(`  );`);
+            } else {
+              parts.push(`  return ${returnExpr};`);
+            }
+            parts.push(`};`);
+            break;
+          }
+
           const body = emitJsxNode(abs.body, 1, env);
           const isJsx = body.trim().startsWith('<');
 

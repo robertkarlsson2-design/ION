@@ -20,6 +20,9 @@ import { emitJava } from '../../emitters/java/emit.js';
 import { emitReact } from '../../emitters/react/emit.js';
 import { emitHTML } from '../../emitters/html/emit.js';
 import { emitVue } from '../../emitters/vue/emit.js';
+import { emitApex } from '../../emitters/apex/emit.js';
+import { emitLWC } from '../../emitters/lwc/emit.js';
+import type { LwcOutput } from '../../emitters/lwc/emit.js';
 import { loadConfig } from './config.js';
 import type { IonConfig } from './config.js';
 import { generateSourceMap } from '../emit/sourcemap.js';
@@ -64,6 +67,8 @@ const TARGET_LABEL: Record<string, string> = {
   react: 'TSX',
   html: 'HTML',
   vue: 'Vue',
+  apex: 'Apex',
+  lwc: 'LWC',
 };
 
 interface BuildDiagnostic {
@@ -110,9 +115,11 @@ const TARGET_EXT: Record<string, string> = {
   react: '.tsx',
   html: '.html',
   vue: '.vue',
+  apex: '.cls',
 };
 
 type EmitFn = (module: IonIRModule) => string;
+type MultiFileEmitFn = (module: IonIRModule) => LwcOutput;
 
 function getEmitter(target: string): EmitFn | null {
   if (target === 'javascript') return emitJS;
@@ -123,6 +130,25 @@ function getEmitter(target: string): EmitFn | null {
   if (target === 'react') return emitReact;
   if (target === 'html') return emitHTML;
   if (target === 'vue') return emitVue;
+  if (target === 'apex') return emitApex;
+  return null;
+}
+
+/**
+ * Multi-file emitter dispatch (parallel to getEmitter).
+ *
+ * Multi-file emitters (currently only LWC) return a structured object containing
+ * multiple files for a single .ion module. The dispatcher in build.ts checks
+ * getMultiFileEmitter first; if it returns non-null we route through the
+ * multi-file write path, otherwise fall back to getEmitter for the single-file
+ * case.
+ *
+ * LWC emits a 4-file bundle per component (.html, .js, .css, .js-meta.xml)
+ * laid out in a directory named after the .ion module's basename, matching
+ * Salesforce's expected SFDX layout.
+ */
+function getMultiFileEmitter(target: string): MultiFileEmitFn | null {
+  if (target === 'lwc') return emitLWC;
   return null;
 }
 
@@ -337,10 +363,30 @@ async function compileFile(
   ionPath: string,
   rootDir: string,
   outDir: string,
-  emitter: EmitFn,
+  emitter: EmitFn | null,
+  multiEmitter: MultiFileEmitFn | null,
   target: string,
   noSourcemap: boolean,
 ): Promise<CompileFileResult> {
+  // Multi-file path (LWC and similar): emit a bundle into a directory named
+  // after the .ion module's basename. Source maps are not generated for the
+  // multi-file path because the bundle is multi-target (template + script +
+  // styles + metadata) and there is no canonical "main" output to map back.
+  if (multiEmitter !== null) {
+    return compileFileMulti(ionPath, rootDir, outDir, multiEmitter, target);
+  }
+  if (emitter === null) {
+    return {
+      outputPath: ionPath,
+      diagnostics: [{
+        file: ionPath,
+        code: 'BD001',
+        message: `internal error: no emitter for target ${target}`,
+        span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: null,
+      }],
+    };
+  }
   const ext = TARGET_EXT[target] ?? '.js';
   const outputPath = resolveOutputPath(ionPath, rootDir, outDir, ext);
 
@@ -485,6 +531,159 @@ async function compileFile(
 }
 
 // ---------------------------------------------------------------------------
+// Multi-file compilation (LWC)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compile a single .ion module to a multi-file bundle.
+ *
+ * Layout: <outDir>/<relPathWithoutExt>/<bundleName>.{html,js,css,js-meta.xml}
+ *
+ * The bundle directory is named after the .ion file's basename (which is the
+ * LWC component name). Inside it, the four files use the same basename as
+ * their stem. This mirrors the SFDX `force-app/main/default/lwc/<name>/`
+ * convention.
+ */
+async function compileFileMulti(
+  ionPath: string,
+  rootDir: string,
+  outDir: string,
+  multiEmitter: MultiFileEmitFn,
+  _target: string,
+): Promise<CompileFileResult> {
+  // Bundle directory: strip rootDir prefix, drop .ion extension, treat the
+  // resulting path as the bundle dir under outDir. The bundle stem is the
+  // basename of that dir.
+  const rel = relative(rootDir, ionPath).replace(/\.ion$/, '');
+  const bundleDir = join(outDir, rel);
+  const bundleName = basename(bundleDir);
+
+  if (!bundleDir.startsWith(outDir + sep) && bundleDir !== outDir) {
+    return {
+      outputPath: bundleDir,
+      diagnostics: [{
+        file: ionPath,
+        code: 'BD001',
+        message: `output path escapes outDir: ${bundleDir}`,
+        span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: null,
+      }],
+    };
+  }
+
+  let src: string;
+  try {
+    src = await readFile(ionPath, 'utf-8');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      outputPath: bundleDir,
+      diagnostics: [{
+        file: ionPath,
+        code: 'BD001',
+        message: `cannot read file: ${msg}`,
+        span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: null,
+      }],
+    };
+  }
+
+  // Resolve IR — supports the same wire/JSON/source detection as compileFile.
+  let ir: IonIRModule;
+  const fmt = detectInputFormat(src);
+  if (fmt !== 'source') {
+    const irOrDiag = loadIrFromPrecompiled(src, ionPath);
+    if ('code' in irOrDiag) {
+      return { outputPath: bundleDir, diagnostics: [irOrDiag] };
+    }
+    ir = irOrDiag;
+  } else {
+    const tokens = lex(src, ionPath);
+    let cst;
+    try {
+      cst = parseModule(tokens);
+    } catch (err) {
+      if (err instanceof ParseError) {
+        return {
+          outputPath: bundleDir,
+          diagnostics: [{
+            file: ionPath,
+            code: 'BD002',
+            message: err.message,
+            span: err.span,
+            suggestion: err.suggestion,
+          }],
+        };
+      }
+      throw err;
+    }
+    const rawAst = buildModule(cst);
+    const ast = { ...rawAst, decls: [...getPreludeDecls(), ...rawAst.decls] };
+    const bindResult = bindModule(ast, ionPath);
+    const diagnostics: BuildDiagnostic[] = bindResult.errors.map(e => mapBindError(e, ionPath));
+    const checkResult = checkModule(ast, bindResult, ionPath);
+    for (const e of checkResult.errors) {
+      diagnostics.push(mapCheckError(e));
+    }
+    if (diagnostics.length > 0) {
+      return { outputPath: bundleDir, diagnostics };
+    }
+    try {
+      ir = desugarModule(ast, bindResult, checkResult, ionPath, '0.0.0');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        outputPath: bundleDir,
+        diagnostics: [{
+          file: ionPath,
+          code: 'BD005',
+          message: `desugar error: ${msg}`,
+          span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+          suggestion: null,
+        }],
+      };
+    }
+  }
+
+  let bundle: LwcOutput;
+  try {
+    bundle = multiEmitter(ir);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      outputPath: bundleDir,
+      diagnostics: [{
+        file: ionPath,
+        code: 'BD005',
+        message: `emit error: ${msg}`,
+        span: { file: ionPath, startLine: 1, startCol: 0, endLine: 1, endCol: 0 },
+        suggestion: null,
+      }],
+    };
+  }
+
+  await mkdir(bundleDir, { recursive: true });
+  const htmlPath = join(bundleDir, bundleName + '.html');
+  const jsPath = join(bundleDir, bundleName + '.js');
+  const cssPath = join(bundleDir, bundleName + '.css');
+  const metaPath = join(bundleDir, bundleName + '.js-meta.xml');
+  await writeFile(htmlPath, bundle.html, 'utf-8');
+  await writeFile(jsPath, bundle.js, 'utf-8');
+  await writeFile(cssPath, bundle.css, 'utf-8');
+  await writeFile(metaPath, bundle.meta, 'utf-8');
+
+  // Token telemetry: count Ion source vs the concatenated bundle. The bundle
+  // is multi-file, so we report the total emitted size as the sum of all four.
+  const allOut = bundle.html + '\n' + bundle.js + '\n' + bundle.css + '\n' + bundle.meta;
+  const tokenStats: TokenStats = {
+    ion: countTokens(src, 'cl100k'),
+    out: countTokens(allOut, 'cl100k'),
+  };
+
+  return { outputPath: bundleDir, diagnostics: [], tokens: tokenStats };
+}
+
+// ---------------------------------------------------------------------------
 // Output formatting
 // ---------------------------------------------------------------------------
 
@@ -580,7 +779,8 @@ async function runBuildOnce(
   config: IonConfig,
   resolvedRootDir: string,
   resolvedOutDir: string,
-  emitter: EmitFn,
+  emitter: EmitFn | null,
+  multiEmitter: MultiFileEmitFn | null,
   target: string,
   noSourcemap: boolean,
   json: boolean,
@@ -614,7 +814,7 @@ async function runBuildOnce(
   }
 
   const results = await Promise.all(
-    ionFiles.map(f => compileFile(f, resolvedRootDir, resolvedOutDir, emitter, target, noSourcemap)),
+    ionFiles.map(f => compileFile(f, resolvedRootDir, resolvedOutDir, emitter, multiEmitter, target, noSourcemap)),
   );
 
   const allDiags = results.flatMap(r => r.diagnostics);
@@ -665,9 +865,10 @@ export async function runBuild(args: string[]): Promise<RunResult> {
 
   const target = parsed.targetOverride ?? config.target;
   const emitter = getEmitter(target);
-  if (emitter === null) {
+  const multiEmitter = getMultiFileEmitter(target);
+  if (emitter === null && multiEmitter === null) {
     process.stderr.write(`error: unsupported target: ${target}\n`);
-    process.stderr.write('supported targets: javascript, typescript, typescript-dts, python, java, react, html, vue\n');
+    process.stderr.write('supported targets: javascript, typescript, typescript-dts, python, java, react, html, vue, apex, lwc\n');
     return { exitCode: 2 };
   }
 
@@ -681,6 +882,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
       resolvedRootDir,
       resolvedOutDir,
       emitter,
+      multiEmitter,
       target,
       parsed.noSourcemap,
       parsed.json,
@@ -697,6 +899,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
     resolvedRootDir,
     resolvedOutDir,
     emitter,
+    multiEmitter,
     target,
     parsed.noSourcemap,
     false,
@@ -711,7 +914,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
 
       const ionPath = resolve(resolvedRootDir, filename);
       if (!ionPath.startsWith(resolvedRootDir + sep)) return;
-      compileFile(ionPath, resolvedRootDir, resolvedOutDir, emitter, target, parsed.noSourcemap)
+      compileFile(ionPath, resolvedRootDir, resolvedOutDir, emitter, multiEmitter, target, parsed.noSourcemap)
         .then(result => {
           if (result.diagnostics.length > 0) {
             process.stdout.write(`[watch] error in ${ionPath}\n`);

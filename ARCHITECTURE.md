@@ -42,8 +42,8 @@ emitters/                     # backends (one folder per target)
   react/emit.ts               # IonIR → React TSX  [WIRED IN CLI]
   html/emit.ts                # IonIR → HTML       [WIRED IN CLI]
   vue/emit.ts                 # IonIR → Vue SFC    [WIRED IN CLI]
-  apex/emit.ts                # IonIR → Apex       [code present, not wired]
-  lwc/emit.ts                 # IonIR → LWC files  [code present, not wired]
+  apex/emit.ts                # IonIR → Apex       [WIRED IN CLI]
+  lwc/emit.ts                 # IonIR → LWC files  [WIRED IN CLI, multi-file]
 tests/
   lexer/  parser/  binder/  checker/  desugar/  ir/  wire/  emit/  golden/
   cli/  integration/
@@ -105,7 +105,7 @@ Plus the corresponding `import` at the top of `build.ts`.
 
 After wiring, the emitter is reachable via `ion build --target react` and via `"target": "react"` in `ion.config.json`. Acceptance criteria: a sample `.ion` file compiles cleanly to `.tsx` and the existing emitter tests still pass.
 
-For multi-file emitters (LWC), `getEmitter` returns a different signature; see `contributor-skills/new-emitter.md` for that path.
+For multi-file emitters (LWC and similar), register via `getMultiFileEmitter(target)` instead. Its signature is `(m: IonIRModule) => LwcOutput` (or a similar structured type). Add a `TARGET_EXT` entry only for single-file emitters; multi-file targets are written by `compileFileMulti` into a directory named after the .ion module's basename. The CLI dispatcher in `runBuild` checks `getMultiFileEmitter` first; if it returns non-null we route through `compileFileMulti`, otherwise we use the single-file `compileFile` path. See `contributor-skills/new-emitter.md` for the broader emitter authoring guide.
 
 ## Patterns to follow
 
@@ -148,12 +148,12 @@ npx ion --version           # CLI binary works
 | python | ✅ | tests/emit/python.test.ts |
 | java | ✅ | tests/emit/java.test.ts |
 | react | ✅ | tests/emit/react.test.ts |
-| **html** | ✅ | tests/emit/html.test.ts |
-| **vue** | ✅ | tests/emit/vue.test.ts |
-| **apex** | ❌ (code present) | tests/emit/apex.test.ts (if present) |
-| **lwc** | ❌ (multi-file; emit signature differs) | tests/emit/lwc.test.ts (if present) |
+| **html** | ✅ | tests/emit/html.test.ts + tests/cli/build-html.test.ts |
+| **vue** | ✅ | tests/emit/vue.test.ts + tests/cli/build-vue.test.ts |
+| **apex** | ✅ | tests/emit/apex.test.ts + tests/cli/build-apex.test.ts |
+| **lwc** | ✅ (multi-file bundle) | tests/emit/lwc.test.ts + tests/cli/build-lwc.test.ts |
 
-Wiring the unwired emitters is the next architectural priority — see ION-1+ in the Tickster ION project.
+All 10 emitters are wired into `ion build`. The single-file emitters share the `EmitFn = (m: IonIRModule) => string` contract dispatched by `getEmitter`. The LWC multi-file emitter uses a parallel `MultiFileEmitFn = (m: IonIRModule) => LwcOutput` contract dispatched by `getMultiFileEmitter` and writes a 4-file bundle directory (`<name>.html`, `<name>.js`, `<name>.css`, `<name>.js-meta.xml`) under `outDir`. The CLI checks `getMultiFileEmitter` first and falls back to `getEmitter`.
 
 ## Out of scope (don't restructure these without a dedicated ticket)
 

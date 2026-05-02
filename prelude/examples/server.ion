@@ -1,0 +1,46 @@
+// Worked example: Express + pg + bcrypt + jsonwebtoken end-to-end.
+//
+// This file demonstrates the prelude in action. Because Ion has no working
+// cross-module FFI (see prelude/README.md), we copy the @foreign declarations
+// we need into this file. In a real project, you can either:
+//   (a) drop the prelude .ion files into your `ion/src/lib/` and copy the
+//       extern blocks here, or
+//   (b) script a code-generation step that pastes extern blocks per-file.
+
+// ─── express.ion ────────────────────────────────────────────────────────────
+@foreign("express", "express", "(require('express'))()")
+extern fn express_app(unit: Bool) !io -> Str
+@foreign("express", "use", "$1.use($2)")
+extern fn express_use(app: Str, mw: Str) !io -> Str
+@foreign("express", "json", "require('express').json")
+extern fn express_json() !io -> Str
+@foreign("express", "post", "$1.post($2, $3)")
+extern fn express_post(app: Str, path: Str, h: Str) !io -> Str
+@foreign("express", "listen", "$1.listen($2)")
+extern fn express_listen(app: Str, port: Int) !io -> Str
+
+// ─── pg.ion ─────────────────────────────────────────────────────────────────
+@foreign("pg", "Pool", "new (require('pg').Pool)($1)")
+extern fn pg_new_pool(conn: Str) !io -> Str
+
+// ─── bcrypt.ion ─────────────────────────────────────────────────────────────
+@foreign("bcrypt", "hash", "(require('bcrypt').hash)($1, $2)")
+extern fn bcrypt_hash(plain: Str, rounds: Int) !async !io -> Str
+
+// ─── jsonwebtoken.ion ───────────────────────────────────────────────────────
+@foreign("jsonwebtoken", "sign", "(require('jsonwebtoken').sign)($1, $2)")
+extern fn jwt_sign(payload: Str, secret: Str) !io -> Str
+
+// ─── application code ─────────────────────────────────────────────────────-
+fn boot() !io -> Str =
+  let pool = pg_new_pool("postgres://localhost/app");
+  let app = express_app(true);
+  let _u = express_use(app, express_json());
+  let _r = express_post(app, "/login", "loginHandler");
+  express_listen(app, 3000)
+
+fn make_token(user_id: Str) !io -> Str =
+  jwt_sign(user_id, "supersecret")
+
+fn hash_password(plain: Str) !async !io -> Str =
+  bcrypt_hash(plain, 10)

@@ -1,0 +1,13 @@
+// @ion/prelude/bcrypt — password hashing
+
+// Hash a plaintext password with `rounds` salt rounds (typically 10-12).
+@foreign("bcrypt", "hash", "(require('bcrypt').hash)($1, $2)")
+extern fn bcrypt_hash(plain: Str, rounds: Int) !async !io -> Str
+
+// Compare a plaintext to a stored hash. Returns Bool.
+@foreign("bcrypt", "compare", "(require('bcrypt').compare)($1, $2)")
+extern fn bcrypt_compare(plain: Str, hash: Str) !async !io -> Bool
+
+// Generate a salt directly (useful for hash-with-salt patterns).
+@foreign("bcrypt", "genSalt", "(require('bcrypt').genSalt)($1)")
+extern fn bcrypt_gen_salt(rounds: Int) !async !io -> Str

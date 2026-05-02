@@ -1,0 +1,4 @@
+I1
+M UseEffectDemo v=0.0.0
+S a=UseEffectDemo b=crewId c=items d=setItems
+F let a:never=(b:str)->let _s1:never=raw("const [items, setItems] = React.useState<string[]>([])");let _s2:never=raw("React.useEffect(() => { let cancelled = false; fetch('/api/crews/' + crewId + '/items').then((r) => r.json()).then((data) => { if (!cancelled) setItems(data); }); return () => { cancelled = true; }; }, [crewId])");div("class=crew-items",h2("","Items"),ul("",raw("{items.map((it) => (<li key={it}>{it}</li>))}")));0

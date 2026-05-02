@@ -1,0 +1,3 @@
+I1
+M ion.prelude.jsonwebtoken v=1.0.0 d=core
+F ffi:js:jsonwebtoken:sign ffi:js:jsonwebtoken:verify ffi:js:jsonwebtoken:decode

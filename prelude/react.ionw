@@ -1,0 +1,3 @@
+I1
+M ion.prelude.react v=1.0.0 d=core
+F ffi:js:react:useState ffi:js:react:useEffect ffi:js:react:useRef ffi:js:react:useContext ffi:js:react:useMemo ffi:js:react:useCallback ffi:js:react:createContext ffi:js:react-dom-client:createRoot

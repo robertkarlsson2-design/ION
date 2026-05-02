@@ -1,0 +1,4 @@
+I1
+M Counter v=0.0.0
+S a=Counter b=count c=setCount d=increment
+F let a:never=()->let _s1:never=raw("const [count, setCount] = React.useState<number>(0)");let _s2:never=raw("const increment = () => setCount(count + 1)");div("class=counter",span("class=count",raw("{count}")),button("onclick=increment class=btn","Increment"));0
