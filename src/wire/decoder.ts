@@ -528,6 +528,129 @@ function parseCasePattern(cur: Cursor, ctx: DecoderContext): CasePattern {
   return { kind: 'Var', name, symbolId: makeSymbolId(''), span: WIRE_SPAN };
 }
 
+/**
+ * Parse a JSX-style wire element into `app(ffi:js:react:createElement, tag, props, ...children)`.
+ *
+ * Forms:
+ *   <Tag/>                                         self-closing, no attrs
+ *   <Tag attr1=v attr2="s" attr3={expr} flag />   attrs with various value forms
+ *   <Tag>child child child</Tag>                  with children (nested JSX, {expr}, or text)
+ *   <Tag {...rest}>...</Tag>                      spread attrs
+ *
+ * Lowercase tag names ([a-z]...) → string literal "tag" (HTML element).
+ * Uppercase tag names ([A-Z]...) → Var ref to a component identifier.
+ */
+function parseJsx(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
+  if (depth > MAX_ENCODE_DEPTH) throw new WireDecodeError('JSX depth exceeds maximum');
+  consume(cur, '<');
+  const startTagPos = cur.pos;
+  const tagName = readIdent(cur);
+  const isHtmlTag = /^[a-z]/.test(tagName);
+  const tagNode: IonIRNode = isHtmlTag
+    ? { kind: 'Literal', value: { kind: 'Str', value: tagName }, span: WIRE_SPAN, type: { kind: 'Str' } }
+    : { kind: 'Var', name: tagName, symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } };
+
+  // Parse attrs into __obj__ args (key/value pairs interleaved)
+  const propPairs: IonIRNode[] = [];
+  while (true) {
+    skipSpaces(cur);
+    if (peek(cur) === '/' || peek(cur) === '>') break;
+    // Spread attrs: {...expr}
+    if (cur.text.startsWith('{...', cur.pos)) {
+      cur.pos += 4;
+      const sp = parseNode(cur, ctx, depth + 1);
+      consume(cur, '}');
+      propPairs.push({ kind: 'Literal', value: { kind: 'Str', value: '...' }, span: WIRE_SPAN, type: { kind: 'Str' } });
+      propPairs.push(sp);
+      continue;
+    }
+    // Attr name (until `=`, space, `/`, `>`)
+    const aStart = cur.pos;
+    while (cur.pos < cur.text.length && !'= />\n\t'.includes(cur.text[cur.pos]!)) cur.pos++;
+    if (cur.pos === aStart) {
+      throw new WireDecodeError(`JSX: expected attr name at pos ${cur.pos}`);
+    }
+    const name = cur.text.slice(aStart, cur.pos);
+    let val: IonIRNode;
+    if (peek(cur) === '=') {
+      cur.pos++;
+      if (peek(cur) === '"') {
+        const lit = parseLiteral(cur);
+        val = { kind: 'Literal', value: lit, span: WIRE_SPAN, type: { kind: 'Str' } };
+      } else if (peek(cur) === '{') {
+        cur.pos++;
+        val = parseNode(cur, ctx, depth + 1);
+        consume(cur, '}');
+      } else {
+        // bare value — parse as a primary expression (numbers, idents, etc.)
+        val = parseNode(cur, ctx, depth + 1);
+      }
+    } else {
+      // boolean shorthand: just `name` means `name={true}`
+      val = { kind: 'Literal', value: { kind: 'Bool', value: true }, span: WIRE_SPAN, type: { kind: 'Bool' } };
+    }
+    propPairs.push({ kind: 'Literal', value: { kind: 'Str', value: name }, span: WIRE_SPAN, type: { kind: 'Str' } });
+    propPairs.push(val);
+  }
+  // Build props: __obj__ App, or null literal if no props
+  const propsNode: IonIRNode = propPairs.length > 0
+    ? { kind: 'App',
+        callee: { kind: 'Var', name: '__obj__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
+        args: propPairs, span: WIRE_SPAN, type: { kind: 'Unit' } }
+    : { kind: 'Literal', value: { kind: 'Null' }, span: WIRE_SPAN, type: { kind: 'Null' } };
+
+  const children: IonIRNode[] = [];
+
+  if (peek(cur) === '/' && cur.text[cur.pos + 1] === '>') {
+    cur.pos += 2;
+  } else {
+    consume(cur, '>');
+    // Children loop: text (until `<` or `{`), {expr}, or nested <element>
+    while (true) {
+      // Closing tag?
+      if (cur.text.startsWith('</', cur.pos)) break;
+      // Interpolation `{expr}`
+      if (peek(cur) === '{') {
+        cur.pos++;
+        children.push(parseNode(cur, ctx, depth + 1));
+        consume(cur, '}');
+        continue;
+      }
+      // Nested element
+      if (peek(cur) === '<' && cur.text[cur.pos + 1] !== undefined && /[A-Za-z_]/.test(cur.text[cur.pos + 1]!)) {
+        children.push(parseJsx(cur, ctx, depth + 1));
+        continue;
+      }
+      // Text run — until `<` or `{`. Trim leading/trailing whitespace; collapse internal runs.
+      const tStart = cur.pos;
+      while (cur.pos < cur.text.length && cur.text[cur.pos] !== '<' && cur.text[cur.pos] !== '{') cur.pos++;
+      const raw = cur.text.slice(tStart, cur.pos);
+      const text = raw.replace(/\s+/g, ' ').trim();
+      if (text.length > 0) {
+        children.push({ kind: 'Literal', value: { kind: 'Str', value: text }, span: WIRE_SPAN, type: { kind: 'Str' } });
+      }
+      if (cur.pos === tStart) break; // safety: avoid infinite loop
+    }
+    // Close tag: </Tag>
+    consume(cur, '<');
+    consume(cur, '/');
+    const closeName = readIdent(cur);
+    if (closeName !== tagName) {
+      throw new WireDecodeError(`JSX: closing tag </${closeName}> does not match opening <${tagName}> at pos ${startTagPos}`);
+    }
+    consume(cur, '>');
+  }
+
+  return {
+    kind: 'App',
+    callee: { kind: 'ForeignRef', target: 'js', module: 'react', symbol: 'createElement',
+              sig: { params: [], ret: { kind: 'Unit' }, template: '', paramNames: [] },
+              span: WIRE_SPAN, type: { kind: 'Unit' } },
+    args: [tagNode, propsNode, ...children],
+    span: WIRE_SPAN, type: { kind: 'Unit' },
+  };
+}
+
 function parseNodeArgs(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode[] {
   const args: IonIRNode[] = [];
   if (peek(cur) !== ')') {
@@ -744,6 +867,15 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
     const value = parseLiteral(cur);
     const type: IonType = value.kind === 'Float' ? { kind: 'Float' } : { kind: 'Int' };
     return { kind: 'Literal', value, span: WIRE_SPAN, type };
+  }
+
+  // ── JSX-style element: <Tag attrs>children</Tag>  or  <Tag attrs/> ──
+  // Lowers to `app(ffi:js:react:createElement, tagOrComp, propsOrNull, ...children)`.
+  // Lowercase tag name → string literal (HTML element), uppercase → Var ref.
+  // Attrs: `name=value`, `name="str"`, `name={expr}`, `name` (= true), `{...spread}`.
+  // Children: more JSX, `{expr}` for interpolated, or raw text.
+  if (c === '<' && cur.text[cur.pos + 1] !== undefined && /[A-Za-z_]/.test(cur.text[cur.pos + 1]!)) {
+    return parseJsx(cur, ctx, depth);
   }
 
   // ── Inline object/do-block: {k:v,k:v,...} or {stmt;stmt;...;result} ──
