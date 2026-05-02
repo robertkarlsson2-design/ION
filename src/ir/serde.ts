@@ -458,12 +458,23 @@ function parseNode(raw: unknown, path: string, depth = 0): IonIRNode {
       return node;
     }
     case 'App': {
+      const rawPD = r['propDict'];
+      const propDict = Array.isArray(rawPD)
+        ? rawPD.map((entry, i) => {
+            const e = assertRecord(entry, `${path}.propDict[${i}]`);
+            return {
+              key: assertString(e['key'], `${path}.propDict[${i}].key`),
+              value: parseNode(e['value'], `${path}.propDict[${i}].value`, depth + 1),
+            };
+          })
+        : undefined;
       const node: AppNode = {
         kind: 'App',
         callee: parseNode(r['callee'], `${path}.callee`, depth + 1),
         args: assertArray(r['args'], `${path}.args`).map((a, i) => parseNode(a, `${path}.args[${i}]`, depth + 1)),
         span: parseSpan(r['span'], `${path}.span`),
         type: parseType(r['type'], `${path}.type`),
+        ...(propDict ? { propDict } : {}),
       };
       return node;
     }

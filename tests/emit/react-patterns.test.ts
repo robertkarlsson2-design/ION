@@ -47,6 +47,21 @@ function appNode(tag: string, attrStr: string, ...children: IonIRNode[]): IonIRN
     type: UNIT,
   };
 }
+function propAppNode(
+  tag: string,
+  attrStr: string,
+  propDict: { key: string; value: IonIRNode }[],
+  ...children: IonIRNode[]
+): IonIRNode {
+  return {
+    kind: 'App',
+    callee: varNode(tag),
+    args: [strLit(attrStr), ...children],
+    propDict,
+    span: SPAN,
+    type: UNIT,
+  };
+}
 function callNode(callee: IonIRNode, ...args: IonIRNode[]): IonIRNode {
   return { kind: 'App', callee, args, span: SPAN, type: UNIT };
 }
@@ -274,12 +289,33 @@ describe('Pattern 5: list render with empty state', () => {
     expect(out).toContain('items.map((item) =>');
   });
 
-  it.todo(
-    'list render with explicit key={item.id}: needs IR-level support for spread props ' +
-      'so the agent can write <Card key={item.id} item={item} /> without falling back to raw(). ' +
-      'Today: write the .map(...) lambda body as a raw("<Card key={item.id} item={item} />") ' +
-      'literal, OR drop into raw() for the whole map call.'
-  );
+  it('list render with explicit key={item.id} via propDict emits <Card key={...} item={...} />', () => {
+    // items.map(item => <Card key={item.id} item={item} />)
+    const cardNode = propAppNode('Card', '', [
+      { key: 'key', value: accessor(varNode('item'), 'id') },
+      { key: 'item', value: varNode('item') },
+    ]);
+    const mapCall = callNode(accessor(varNode('items'), 'map'), lambda(['item'], cardNode));
+    const out = emitJsxNode(mapCall);
+    expect(out).toContain('items.map((item) =>');
+    expect(out).toContain('<Card');
+    expect(out).toContain('key={item.id}');
+    expect(out).toContain('item={item}');
+  });
+
+  it('propDict-only component (no attr string) emits only propDict attrs', () => {
+    const node = propAppNode('Card', '', [{ key: 'item', value: varNode('selected') }]);
+    const out = emitJsxNode(node);
+    expect(out).toContain('<Card item={selected} />');
+    expect(out).not.toContain('""');
+  });
+
+  it('propDict + attr string on HTML element emits both', () => {
+    const node = propAppNode('div', 'class=container', [{ key: 'id', value: strLit('root') }]);
+    const out = emitJsxNode(node);
+    expect(out).toContain('className="container"');
+    expect(out).toContain('id={"root"}');
+  });
 });
 
 // ---------------------------------------------------------------------------
