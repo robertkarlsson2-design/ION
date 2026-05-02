@@ -65,6 +65,12 @@ const BUILTIN_BINARY_OPS: Record<string, string> = {
 };
 const BUILTIN_UNARY_OPS: Record<string, string> = { __neg__: '-', __not__: '!' };
 
+const JS_GLOBAL_NAMESPACES = new Set([
+  'Math', 'Array', 'String', 'Number', 'Boolean', 'Object',
+  'JSON', 'console', 'Set', 'Map', 'Promise', 'process', 'Buffer',
+  'Symbol', 'RegExp', 'Error', 'Date',
+]);
+
 export const PRELUDE_NAMES = new Set([
   'map', 'filter', 'fold', 'length', 'range', 'concat', 'contains', 'isEmpty',
   'reverse', 'slice', 'joinWith', 'flatMap', 'any', 'all', 'abs', 'floor', 'ceil',
@@ -613,10 +619,16 @@ function emitTsAdtMatch(node: AdtMatchNode): string {
 export function emitTS(irModule: IonIRModule): string {
   const module = shakePreludeDecls(irModule);
   const usedPrelude = new Set<string>();
+  const foreignImports = new Map<string, Set<string>>();
 
-  // First pass: collect referenced prelude names
+  // First pass: collect referenced prelude names and foreign module imports
   function collectPrelude(node: IonIRNode): void {
     if (node.kind === 'Var' && PRELUDE_NAMES.has(node.name)) usedPrelude.add(node.name);
+    if (node.kind === 'ForeignRef' && node.module !== '' && !JS_GLOBAL_NAMESPACES.has(node.module)) {
+      let syms = foreignImports.get(node.module);
+      if (!syms) { syms = new Set(); foreignImports.set(node.module, syms); }
+      syms.add(node.symbol);
+    }
     // Walk children
     switch (node.kind) {
       case 'App': collectPrelude(node.callee); node.args.forEach(collectPrelude); break;
@@ -635,7 +647,11 @@ export function emitTS(irModule: IonIRModule): string {
 
   for (const d of module.decls) collectPrelude(d);
 
-  const parts: string[] = ['"use strict";'];
+  const importLines: string[] = [];
+  for (const [mod, syms] of foreignImports) {
+    importLines.push(`import { ${[...syms].sort().join(', ')} } from '${mod}';`);
+  }
+  const parts: string[] = [...importLines, '"use strict";'];
 
   // Emit used prelude declarations
   for (const name of PRELUDE_NAMES) {
