@@ -748,6 +748,15 @@ function applyInfix(left: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: nu
       left = { kind: 'OopVirtualCall', receiver: left, method, args, span: WIRE_SPAN, type: { kind: 'Unit' } };
       continue;
     }
+    // Postfix call `(args)` on any expression — supports `auth.login(x, y)`,
+    // `f()()`, `arr[0](x)`, etc. JS-style call notation.
+    if (peek(cur) === '(') {
+      cur.pos++;
+      const args = parseNodeArgs(cur, ctx, depth + 1);
+      consume(cur, ')');
+      left = { kind: 'App', callee: left, args, span: WIRE_SPAN, type: { kind: 'Unit' } };
+      continue;
+    }
     break;
   }
 
