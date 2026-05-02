@@ -655,6 +655,11 @@ function classNameFor(moduleName: string): string {
 function emitDecl(d: IonIRNode, ctx: EmitCtx): string | null {
   if (d.kind === 'AdtDecl') {
     const adt = d as AdtDeclNode;
+    if (adt.variants.length === 1) {
+      const v = adt.variants[0]!;
+      const fields = v.fields.map(f => `${javaTypeBoxed(f.type)} ${f.name}`).join(', ');
+      return `  public record ${adt.name}(${fields}) {}`;
+    }
     const variants = adt.variants.map(v => {
       const fields = v.fields.map(f => `${javaTypeBoxed(f.type)} ${f.name}`).join(', ');
       return `  public record ${v.tag}(${fields}) implements ${adt.name} {}`;

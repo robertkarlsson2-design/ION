@@ -15,6 +15,7 @@ import type {
   OopAnnotation,
   OopConstructor,
 } from '../../src/ir/nodes.js';
+import type { IonType } from '../../src/ir/types.js';
 import { expandTemplate, wrapEmitted } from '../../src/emit/template.js';
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
 
@@ -90,6 +91,30 @@ const PYTHON_PRELUDE: Record<string, string> = {
 };
 
 const PRELUDE_NAMES = new Set(Object.keys(PYTHON_PRELUDE));
+
+// ---------------------------------------------------------------------------
+// IonType → Python type string
+// ---------------------------------------------------------------------------
+
+function ionTypeToPy(t: IonType): string {
+  switch (t.kind) {
+    case 'Int': return 'int';
+    case 'Float': return 'float';
+    case 'Bool': return 'bool';
+    case 'Str': return 'str';
+    case 'Unit': return 'None';
+    case 'Null': return 'None';
+    case 'List': return `list[${ionTypeToPy(t.elem)}]`;
+    case 'Map': return `dict[${ionTypeToPy(t.key)}, ${ionTypeToPy(t.value)}]`;
+    case 'Option': return `${ionTypeToPy(t.inner)} | None`;
+    case 'User': return t.name;
+    case 'TypeVar': return 'object';
+    case 'Fn': return 'object';
+    case 'Result': return 'object';
+    case 'Tuple': return `tuple[${t.elements.map(ionTypeToPy).join(', ')}]`;
+    case 'Never': return 'object';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Emit helpers
@@ -267,7 +292,7 @@ function emitPyCase(node: CaseNode): string {
 
 function emitPyPatCond(pat: import('../../src/ir/nodes.js').CasePattern, scrutinee: string): string {
   if (pat.kind === 'Wildcard' || pat.kind === 'Var') return 'True';
-  if (pat.kind === 'Constructor') return `${scrutinee}["_tag"] == "${pat.ctorName}"`;
+  if (pat.kind === 'Constructor') return `isinstance(${scrutinee}, ${pat.ctorName})`;
   if (pat.kind === 'Tuple') return `len(${scrutinee}) == ${pat.fields.length}`;
   const v = pat.value;
   if (v.kind === 'Bool') return `${scrutinee} == ${v.value ? 'True' : 'False'}`;
@@ -278,13 +303,17 @@ function emitPyPatCond(pat: import('../../src/ir/nodes.js').CasePattern, scrutin
 
 function emitPyAdtMatch(node: AdtMatchNode): string {
   const s = emitPyExpr(node.scrutinee);
-  const parts = node.arms.map(arm => {
-    const bindings = arm.bindings.map(b => `${b.name} = _s["${b.name}"]`).join('; ');
+  const arms = node.arms.map(arm => {
     const body = emitPyExpr(arm.body);
-    const guard = `_s["_tag"] == "${arm.tag}"`;
-    return `(lambda _s: (exec('${bindings}') or ${body}) if ${guard} else None)(_s)`;
+    const guard = `isinstance(_s, ${arm.tag})`;
+    if (arm.bindings.length === 0) {
+      return `(lambda _s: ${body} if ${guard} else None)(_s)`;
+    }
+    const bindingParams = arm.bindings.map(b => b.name).join(', ');
+    const bindingArgs = arm.bindings.map(b => `_s.${b.name}`).join(', ');
+    return `(lambda _s: (lambda ${bindingParams}: ${body})(${bindingArgs}) if ${guard} else None)(_s)`;
   });
-  return `(lambda _s: ${parts.join(' or ')})(${s})`;
+  return `(lambda _s: ${arms.join(' or ')})(${s})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +532,33 @@ export function emitPython(irModule: IonIRModule): string {
   const module = shakePreludeDecls(irModule);
   const parts: string[] = [];
 
+  // Emit ADT data declarations as dataclasses
+  if (module.data.length > 0) {
+    const hasMultiCtor = module.data.some(d => (d as AdtDeclNode).variants.length > 1);
+    const preambleLines: string[] = ['from dataclasses import dataclass'];
+    if (hasMultiCtor) preambleLines.push('from typing import Union');
+    parts.push(preambleLines.join('\n'));
+
+    for (const d of module.data) {
+      const adt = d as AdtDeclNode;
+      for (const v of adt.variants) {
+        const classLines = ['@dataclass', `class ${v.tag}:`];
+        if (v.fields.length === 0) {
+          classLines.push('    pass');
+        } else {
+          for (const f of v.fields) {
+            classLines.push(`    ${f.name}: ${ionTypeToPy(f.type)}`);
+          }
+        }
+        parts.push(classLines.join('\n'));
+      }
+      if (adt.variants.length > 1) {
+        const tags = adt.variants.map(v => v.tag).join(', ');
+        parts.push(`${adt.name} = Union[${tags}]`);
+      }
+    }
+  }
+
   for (const d of module.decls) {
     if (d.kind === 'OopClass') {
       parts.push(emitPyClass(d as OopClassNode));
@@ -523,21 +579,6 @@ export function emitPython(irModule: IonIRModule): string {
       parts.push(`def ${lt.name}(${params}):\n${body}`);
     } else {
       parts.push(`${lt.name} = ${emitPyExpr(lt.value)}`);
-    }
-  }
-
-  // ADT constructors as dict factories
-  for (const d of module.data) {
-    const adt = d as AdtDeclNode;
-    parts.push(`# ADT: ${adt.name}`);
-    for (const v of adt.variants) {
-      if (v.fields.length === 0) {
-        parts.push(`${v.tag} = {"_tag": "${v.tag}"}`);
-      } else {
-        const ps = v.fields.map(f => f.name).join(', ');
-        const fs = v.fields.map(f => `"${f.name}": ${f.name}`).join(', ');
-        parts.push(`def ${v.tag}(${ps}):\n    return {"_tag": "${v.tag}", ${fs}}`);
-      }
     }
   }
 

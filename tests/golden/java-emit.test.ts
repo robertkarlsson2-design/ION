@@ -138,3 +138,21 @@ describe('emitJava — output is roughly idiomatic Java', () => {
     expect(out).not.toContain(' = (n) =>');
   });
 });
+
+describe('emitJava — data declarations', () => {
+  it('emits a single-ctor data type as a plain record (no sealed interface)', () => {
+    const out = compile('data User = User { id: Int; email: Str }');
+    expect(out).toContain('public record User(');
+    expect(out).not.toContain('sealed interface User');
+    expect(out).toContain('Long id');
+    expect(out).toContain('String email');
+  });
+
+  it('emits a multi-ctor data type as a sealed interface with records', () => {
+    const out = compile('data Shape = Circle { r: Float } | Rect { w: Float; h: Float }');
+    expect(out).toContain('sealed interface Shape');
+    expect(out).toContain('record Circle(');
+    expect(out).toContain('record Rect(');
+    expect(out).toContain('implements Shape');
+  });
+});

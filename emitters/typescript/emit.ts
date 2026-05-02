@@ -644,6 +644,21 @@ export function emitTS(irModule: IonIRModule): string {
     }
   }
 
+  // Emit ADT data declarations
+  for (const d of module.data) {
+    if (d.variants.length === 1) {
+      const v = d.variants[0]!;
+      if (v.fields.length === 0) {
+        parts.push(`interface ${d.name} {}`);
+      } else {
+        const fields = v.fields.map(f => `${f.name}: ${ionTypeToTs(f.type)}`).join('; ');
+        parts.push(`interface ${d.name} { ${fields} }`);
+      }
+    } else {
+      parts.push(emitTsAdtType(d));
+    }
+  }
+
   // Emit user declarations (skip prelude stubs)
   for (const d of module.decls) {
     if (d.kind === 'Let') {
