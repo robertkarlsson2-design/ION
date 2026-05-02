@@ -82,9 +82,9 @@ function makeShapeModule(): IonIRModule {
 }
 
 describe('emitPython — constructor pattern bindings', () => {
-  it('emits _tag check for Circle', () => {
+  it('emits isinstance check for Circle', () => {
     const out = emitPython(makeShapeModule());
-    expect(out).toContain('["_tag"] == "Circle"');
+    expect(out).toContain('isinstance(s, Circle)');
   });
 
   it('emits lambda with field access for Circle(r)', () => {
@@ -93,9 +93,9 @@ describe('emitPython — constructor pattern bindings', () => {
     expect(out).toContain('["radius"]');
   });
 
-  it('emits _tag check for Rect', () => {
+  it('emits isinstance check for Rect', () => {
     const out = emitPython(makeShapeModule());
-    expect(out).toContain('["_tag"] == "Rect"');
+    expect(out).toContain('isinstance(s, Rect)');
   });
 
   it('emits lambda with two field bindings for Rect(w, h)', () => {
