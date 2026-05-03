@@ -623,7 +623,10 @@ function parseJsx(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
     propPairs.push({ kind: 'Literal', value: { kind: 'Str', value: name }, span: WIRE_SPAN, type: { kind: 'Str' } });
     propPairs.push(val);
   }
-  // Build props: __obj__ App, or null literal if no props
+  // Build props: __obj__ App, or null literal if no props.
+  // The propsNode is intentionally NOT marked sugarForm='obj' — when emitting
+  // JSX the encoder unpacks props inline as `attr=v` pairs, so the inner
+  // __obj__ shouldn't be re-emitted as a `{k:v}` literal.
   const propsNode: IonIRNode = propPairs.length > 0
     ? { kind: 'App',
         callee: { kind: 'Var', name: '__obj__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
@@ -683,6 +686,7 @@ function parseJsx(cur: Cursor, ctx: DecoderContext, depth: number): IonIRNode {
               span: WIRE_SPAN, type: { kind: 'Unit' } },
     args: [tagNode, propsNode, ...children],
     span: WIRE_SPAN, type: { kind: 'Unit' },
+    sugarForm: 'jsx',
   };
 }
 
@@ -728,6 +732,7 @@ function applyInfix(left: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: nu
         args: [left,
           { kind: 'Literal', value: { kind: 'Str', value: f }, span: WIRE_SPAN, type: { kind: 'Str' } }],
         span: WIRE_SPAN, type: { kind: 'Unit' },
+        sugarForm: 'optchain',
       };
       continue;
     }
@@ -754,7 +759,7 @@ function applyInfix(left: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: nu
       cur.pos++;
       const args = parseNodeArgs(cur, ctx, depth + 1);
       consume(cur, ')');
-      left = { kind: 'App', callee: left, args, span: WIRE_SPAN, type: { kind: 'Unit' } };
+      left = { kind: 'App', callee: left, args, span: WIRE_SPAN, type: { kind: 'Unit' }, sugarForm: 'postcall' };
       continue;
     }
     break;
@@ -796,16 +801,22 @@ function applyInfix(left: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: nu
     // Right-associate would need higher minPrec; we use left-associate (minPrec+1).
     const right = parseInfixPrimary(cur, ctx, depth + 1);
     const rightFolded = applyInfix(right, cur, ctx, depth + 1, prec + 1);
+    // `??` carries a sugar marker so the encoder emits `x??y` rather than the
+    // canonical `__nullish__(x,y)`. Other infix operators do not (today) get
+    // a roundtrip emit-form — they round-trip via the canonical App shape.
+    const sugarForm = name === '__nullish__' ? 'nullish' as const : undefined;
     left = {
       kind: 'App',
       callee: { kind: 'Var', name, symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
       args: [left, rightFolded], span: WIRE_SPAN, type: { kind: 'Unit' },
+      ...(sugarForm ? { sugarForm } : {}),
     };
   }
 
   // Ternary `cond?a:b` — lowest precedence, only at outer level (minPrec=0).
   // Lowers to `match(cond){true->a;_->b}` which the TS emitter renders as
-  // `cond ? a : b` ternary.
+  // `cond ? a : b` ternary. Tagged with sugarForm='ternary' so the wire
+  // encoder can emit it back as `?:` rather than `match()`.
   if (minPrec <= 0 && peek(cur) === '?' && cur.text[cur.pos + 1] !== '.' && cur.text[cur.pos + 1] !== '?') {
     cur.pos++;
     const thenBranch = parseNode(cur, ctx, depth + 1);
@@ -819,6 +830,7 @@ function applyInfix(left: IonIRNode, cur: Cursor, ctx: DecoderContext, depth: nu
         { pattern: { kind: 'Wildcard', span: WIRE_SPAN }, body: elseBranch, span: WIRE_SPAN },
       ],
       span: WIRE_SPAN, type: { kind: 'Unit' },
+      sugarForm: 'ternary',
     };
   }
 
@@ -961,6 +973,7 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
         kind: 'App',
         callee: { kind: 'Var', name: '__obj__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
         args: [], span: WIRE_SPAN, type: { kind: 'Unit' },
+        sugarForm: 'obj',
       };
     }
 
@@ -1023,6 +1036,7 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
         kind: 'App',
         callee: { kind: 'Var', name: '__obj__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
         args, span: WIRE_SPAN, type: { kind: 'Unit' },
+        sugarForm: 'obj',
       };
     }
 
@@ -1042,6 +1056,7 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
       kind: 'App',
       callee: { kind: 'Var', name: '__do__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
       args: stmts, span: WIRE_SPAN, type: { kind: 'Unit' },
+      sugarForm: 'doblock',
     };
   }
 
@@ -1505,6 +1520,7 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
       kind: 'App',
       callee: { kind: 'Var', name: '__throw__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
       args: [expr], span: WIRE_SPAN, type: { kind: 'Unit' },
+      sugarForm: 'throw',
     };
   }
 
@@ -1524,7 +1540,8 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
     if (stmts.length === 1) return stmts[0]!;
     return { kind: 'App',
       callee: { kind: 'Var', name: '__do__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
-      args: stmts, span: WIRE_SPAN, type: { kind: 'Unit' } };
+      args: stmts, span: WIRE_SPAN, type: { kind: 'Unit' },
+      sugarForm: 'doblock' };
   };
   if (cur.text.startsWith('try{', cur.pos)) {
     cur.pos += 4;
@@ -1545,17 +1562,20 @@ function parseNodeNoInfix(cur: Cursor, ctx: DecoderContext, depth: number): IonI
     if (catchExpr !== null && finExpr !== null) {
       return { kind: 'App',
         callee: { kind: 'Var', name: '__tryfin__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
-        args: [tryExpr, catchExpr, finExpr], span: WIRE_SPAN, type: { kind: 'Unit' } };
+        args: [tryExpr, catchExpr, finExpr], span: WIRE_SPAN, type: { kind: 'Unit' },
+        sugarForm: 'tryfin' };
     }
     if (catchExpr !== null) {
       return { kind: 'App',
         callee: { kind: 'Var', name: '__try__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
-        args: [tryExpr, catchExpr], span: WIRE_SPAN, type: { kind: 'Unit' } };
+        args: [tryExpr, catchExpr], span: WIRE_SPAN, type: { kind: 'Unit' },
+        sugarForm: 'try' };
     }
     if (finExpr !== null) {
       return { kind: 'App',
         callee: { kind: 'Var', name: '__finally__', symbolId: makeSymbolId(''), span: WIRE_SPAN, type: { kind: 'Unit' } },
-        args: [tryExpr, finExpr], span: WIRE_SPAN, type: { kind: 'Unit' } };
+        args: [tryExpr, finExpr], span: WIRE_SPAN, type: { kind: 'Unit' },
+        sugarForm: 'finally' };
     }
     throw new WireDecodeError(`try{...} requires catch{...} and/or finally{...} at pos ${cur.pos}`);
   }

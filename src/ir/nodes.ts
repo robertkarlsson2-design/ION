@@ -107,6 +107,30 @@ export interface LiteralNode {
   readonly type: IonType;
 }
 
+/**
+ * Marker for an `App` node that originated as a wire-format sugar form
+ * (e.g. `try{...}catch{...}`, `expr?.field`, `{k:v}`, `<Tag/>`).
+ *
+ * Set by the wire decoder when it lowers a sugar form to the canonical
+ * `App(__name__, ...args)` shape, and consumed by the wire encoder's
+ * sugar-preserving roundtrip path so that `decode → encode` is byte-stable.
+ *
+ * Emitters MAY ignore this field — the canonical `App` shape is sufficient
+ * for code generation. It's metadata for the wire-format roundtrip only.
+ */
+export type AppSugarForm =
+  | 'nullish'   // App(__nullish__, x, y)        — `x??y`
+  | 'optchain'  // App(__optchain__, recv, "f")  — `recv?.f`
+  | 'postcall'  // App(callee, args)             — postfix `expr(args)` call
+  | 'obj'       // App(__obj__, k1, v1, ...)     — `{k1:v1, ...}` object literal
+  | 'doblock'   // App(__do__, s1, s2, ...)      — `{s1;s2;...}` do-block
+  | 'try'       // App(__try__, body, handler)   — `try{...}catch{...}`
+  | 'tryfin'    // App(__tryfin__, body, h, fin) — `try{...}catch{...}finally{...}`
+  | 'finally'   // App(__finally__, body, fin)   — `try{...}finally{...}` (no catch)
+  | 'throw'     // App(__throw__, val)           — `throw val`
+  | 'jsx'       // App(ffi:js:react:createElement, tag, props, ...kids) — `<Tag .../>`
+  | 'spread';   // App(__spread__, target)       — `...x` (reserved; not actively decoded today)
+
 export interface AppNode {
   readonly kind: 'App';
   readonly callee: IonIRNode;
@@ -114,6 +138,13 @@ export interface AppNode {
   readonly propDict?: readonly { readonly key: string; readonly value: IonIRNode }[];
   readonly span: Span;
   readonly type: IonType;
+  /**
+   * Optional sugar marker. Set by the wire decoder when this `App` was
+   * produced by lowering a sugar form. Encoder dispatches on this to emit
+   * the original sugar form back. Missing (`undefined`) ⇒ canonical
+   * `callee(args)` encoding.
+   */
+  readonly sugarForm?: AppSugarForm;
 }
 
 export interface AbsNode {
@@ -137,12 +168,26 @@ export interface LetNode {
   readonly type: IonType;
 }
 
+/**
+ * Marker for a `Case` node that originated as a wire-format sugar form.
+ *
+ * Today only `'ternary'` is used — the wire decoder lowers `cond?then:else`
+ * to a 2-arm `Case(scrutinee=cond, [true→then; _→else])` and tags it with
+ * `sugarForm: 'ternary'` so the encoder can emit it back as `?:` instead of
+ * the canonical `match(...){true->...;_->...}` form.
+ *
+ * Emitters MAY ignore this field — the existing `Case` shape is sufficient
+ * for the if/else/ternary code-generation paths. It's wire-format metadata.
+ */
+export type CaseSugarForm = 'ternary';
+
 export interface CaseNode {
   readonly kind: 'Case';
   readonly scrutinee: IonIRNode;
   readonly arms: readonly CaseArm[];
   readonly span: Span;
   readonly type: IonType;
+  readonly sugarForm?: CaseSugarForm;
 }
 
 export interface ConstructorNode {

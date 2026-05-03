@@ -743,6 +743,180 @@ function encodeParam(p: Param, ctx: EncoderContext, depth = 0): string {
   return `${prefix}${encodeName(p.name, ctx.sym)}:${encodeType(p.type, ctx, depth)}`;
 }
 
+/**
+ * Sugar-preserving emit for an `App` node carrying a `sugarForm` marker.
+ *
+ * Returns the original sugar form's wire string (e.g. `try{a}catch{b}`,
+ * `<Tag attr=v/>`, `{k:v}`, `x??y`, `recv?.f`, `throw e`, `expr(args)`,
+ * `{s1;s2;result}`), or `null` when the App's shape doesn't match its
+ * claimed sugarForm — the caller then falls back to the canonical
+ * `callee(args)` encoding.
+ *
+ * Mirrors the sugar lowerings in `decoder.ts`. Each branch must be the
+ * inverse of its decoder counterpart; if you change one, change both.
+ */
+function encodeAppSugar(node: import('../ir/nodes.js').AppNode, ctx: EncoderContext, depth: number): string | null {
+  const sf = node.sugarForm;
+  if (sf === undefined) return null;
+  switch (sf) {
+    case 'nullish': {
+      // App(__nullish__, x, y) → `x??y`
+      if (node.args.length !== 2) return null;
+      const [x, y] = node.args;
+      return `${encodeNode(x!, ctx, depth + 1)}??${encodeNode(y!, ctx, depth + 1)}`;
+    }
+    case 'optchain': {
+      // App(__optchain__, recv, "f") → `recv?.f`
+      if (node.args.length !== 2) return null;
+      const recv = node.args[0]!;
+      const fieldNode = node.args[1]!;
+      if (fieldNode.kind !== 'Literal' || fieldNode.value.kind !== 'Str') return null;
+      return `${encodeNode(recv, ctx, depth + 1)}?.${fieldNode.value.value}`;
+    }
+    case 'postcall': {
+      // App(callee, args) where source had postfix `(`. Emit canonical
+      // `callee(args)` shape — but for `callee=Accessor(recv, m)` we MUST
+      // emit `recv.m(args)` (postfix `.field` then postfix `(`) NOT
+      // `recv->m(args)` (which would round-trip as OopVirtualCall and lose
+      // the sugar). The decoder's parseChain + applyInfix postfix-`(`
+      // handles this exact form.
+      const args = node.args.map(a => encodeNode(a, ctx, depth + 1)).join(',');
+      if (node.callee.kind === 'Accessor') {
+        const recv = encodeNode(node.callee.receiver, ctx, depth + 1);
+        const meth = encodeName(node.callee.member, ctx.sym);
+        return `${recv}.${meth}(${args})`;
+      }
+      return `${encodeNode(node.callee, ctx, depth + 1)}(${args})`;
+    }
+    case 'obj': {
+      // App(__obj__, k1, v1, k2, v2, ...) → `{k1:v1,k2:v2,...}`
+      // Args must be even-length and each odd-indexed arg is a string-literal key.
+      if (node.args.length % 2 !== 0) return null;
+      const parts: string[] = [];
+      for (let i = 0; i < node.args.length; i += 2) {
+        const keyNode = node.args[i]!;
+        const valNode = node.args[i + 1]!;
+        if (keyNode.kind !== 'Literal' || keyNode.value.kind !== 'Str') return null;
+        const key = keyNode.value.value;
+        const val = encodeNode(valNode, ctx, depth + 1);
+        // The "..." key is the spread shorthand: `...:expr`.
+        // Emit keys verbatim — the decoder reads bare idents OR JSON-string literals.
+        // For keys containing wire-delimiter characters we must JSON-quote.
+        const safeKey = key === '...' ? '...' :
+          (mustPool(key) ? JSON.stringify(key) : key);
+        parts.push(`${safeKey}:${val}`);
+      }
+      return `{${parts.join(',')}}`;
+    }
+    case 'doblock': {
+      // App(__do__, s1, s2, ..., sN) → `{s1;s2;...;sN}`
+      if (node.args.length === 0) return null;
+      const stmts = node.args.map(s => encodeNode(s, ctx, depth + 1)).join(';');
+      return `{${stmts}}`;
+    }
+    case 'try': {
+      // App(__try__, body, catchHandler) → `try{body}catch{catchHandler}`
+      if (node.args.length !== 2) return null;
+      const [body, handler] = node.args;
+      return `try{${encodeNode(body!, ctx, depth + 1)}}catch{${encodeNode(handler!, ctx, depth + 1)}}`;
+    }
+    case 'tryfin': {
+      // App(__tryfin__, body, catchHandler, finallyBlock) → `try{body}catch{h}finally{f}`
+      if (node.args.length !== 3) return null;
+      const [body, handler, fin] = node.args;
+      return `try{${encodeNode(body!, ctx, depth + 1)}}catch{${encodeNode(handler!, ctx, depth + 1)}}finally{${encodeNode(fin!, ctx, depth + 1)}}`;
+    }
+    case 'finally': {
+      // App(__finally__, body, finallyBlock) → `try{body}finally{f}`
+      if (node.args.length !== 2) return null;
+      const [body, fin] = node.args;
+      return `try{${encodeNode(body!, ctx, depth + 1)}}finally{${encodeNode(fin!, ctx, depth + 1)}}`;
+    }
+    case 'throw': {
+      // App(__throw__, val) → `throw val`
+      if (node.args.length !== 1) return null;
+      return `throw ${encodeNode(node.args[0]!, ctx, depth + 1)}`;
+    }
+    case 'jsx': {
+      // App(ffi:js:react:createElement, tag, props, ...children) → `<Tag attr=v ...>...</Tag>`
+      // tag is either Literal(Str) (HTML lowercase) or Var (component reference).
+      // props is either Literal(Null) (no props) or App(__obj__, k1, v1, ...) with
+      // string-literal keys interleaved with values.
+      if (node.args.length < 2) return null;
+      const tagNode = node.args[0]!;
+      const propsNode = node.args[1]!;
+      const children = node.args.slice(2);
+      let tagName: string;
+      if (tagNode.kind === 'Literal' && tagNode.value.kind === 'Str') {
+        tagName = tagNode.value.value;
+      } else if (tagNode.kind === 'Var') {
+        tagName = encodeName(tagNode.name, ctx.sym);
+      } else {
+        return null;
+      }
+      // Props
+      let propsStr = '';
+      if (propsNode.kind === 'Literal' && propsNode.value.kind === 'Null') {
+        propsStr = '';
+      } else if (propsNode.kind === 'App' && propsNode.callee.kind === 'Var' &&
+                 propsNode.callee.name === '__obj__') {
+        if (propsNode.args.length % 2 !== 0) return null;
+        const parts: string[] = [];
+        for (let i = 0; i < propsNode.args.length; i += 2) {
+          const keyN = propsNode.args[i]!;
+          const valN = propsNode.args[i + 1]!;
+          if (keyN.kind !== 'Literal' || keyN.value.kind !== 'Str') return null;
+          const key = keyN.value.value;
+          if (key === '...') {
+            // Spread attr: `{...expr}`
+            parts.push(`{...${encodeNode(valN, ctx, depth + 1)}}`);
+            continue;
+          }
+          // Boolean-true shorthand: just `name` means `name={true}`
+          if (valN.kind === 'Literal' && valN.value.kind === 'Bool' && valN.value.value === true) {
+            parts.push(key);
+            continue;
+          }
+          // String-literal value: emit `name="str"` (JSON-encoded), no braces
+          if (valN.kind === 'Literal' && valN.value.kind === 'Str') {
+            parts.push(`${key}=${JSON.stringify(valN.value.value)}`);
+            continue;
+          }
+          // Everything else: `name={expr}`
+          parts.push(`${key}={${encodeNode(valN, ctx, depth + 1)}}`);
+        }
+        propsStr = parts.length > 0 ? ' ' + parts.join(' ') : '';
+      } else {
+        return null;
+      }
+      // Children: nested JSX → emit nested form; everything else → `{expr}`
+      if (children.length === 0) {
+        return `<${tagName}${propsStr}/>`;
+      }
+      const childParts = children.map(child => {
+        if (child.kind === 'App' && child.sugarForm === 'jsx') {
+          // Nested JSX: emit recursively (encodeNode hits the App→sugar fast path)
+          return encodeNode(child, ctx, depth + 1);
+        }
+        return `{${encodeNode(child, ctx, depth + 1)}}`;
+      }).join('');
+      return `<${tagName}${propsStr}>${childParts}</${tagName}>`;
+    }
+    case 'spread': {
+      // Reserved — no decoder path produces this today. Fall through.
+      return null;
+    }
+    default: {
+      // Exhaustiveness: if a new sugarForm is added but not handled, fall
+      // back to canonical encoding rather than crash. (TS will flag missing
+      // case if AppSugarForm is extended without updating here.)
+      const _exhaustive: never = sf;
+      void _exhaustive;
+      return null;
+    }
+  }
+}
+
 /** Encodes an IonIRNode to its compact wire representation. */
 function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
   if (depth > MAX_ENCODE_DEPTH)
@@ -755,6 +929,16 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
       return encodeLiteral(node.value);
 
     case 'App': {
+      // Sugar-preserving fast path: if the App was produced by lowering a
+      // wire-format sugar form (e.g. `try{...}catch{...}`, `<Tag/>`, `{k:v}`),
+      // emit the original sugar form back so `decode → encode` is byte-stable.
+      if (node.sugarForm !== undefined) {
+        const sugared = encodeAppSugar(node, ctx, depth);
+        if (sugared !== null) return sugared;
+        // sugared===null means the App is mis-shaped for its claimed sugar
+        // (e.g. wrong arg count) — fall through to the canonical encoding,
+        // which is still semantically correct, just not byte-equivalent.
+      }
       const args = node.args.map(a => encodeNode(a, ctx, depth + 1)).join(',');
       // When callee is Accessor(receiver, member), encode as OopVirtualCall syntax
       // (receiver->member(args)) so the decoder can round-trip it. The decoder does
@@ -779,6 +963,21 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
     }
 
     case 'Case': {
+      // Sugar-preserving fast path: ternary `cond?then:else` is decoded as a
+      // 2-arm Case with sugarForm='ternary'. Emit it back as `?:` rather
+      // than the canonical `match()` form.
+      if (node.sugarForm === 'ternary' &&
+          node.arms.length === 2 &&
+          node.arms[0]!.pattern.kind === 'Literal' &&
+          node.arms[0]!.pattern.value.kind === 'Bool' &&
+          node.arms[0]!.pattern.value.value === true &&
+          node.arms[1]!.pattern.kind === 'Wildcard' &&
+          node.arms[0]!.guard === undefined) {
+        const c = encodeNode(node.scrutinee, ctx, depth + 1);
+        const t = encodeNode(node.arms[0]!.body, ctx, depth + 1);
+        const e = encodeNode(node.arms[1]!.body, ctx, depth + 1);
+        return `${c}?${t}:${e}`;
+      }
       const arms = node.arms.map(arm => {
         const guard = arm.guard !== undefined ? ` if ${encodeNode(arm.guard, ctx, depth + 1)}` : '';
         return `${encodePattern(arm.pattern, ctx, depth + 1)}${guard}->${encodeNode(arm.body, ctx, depth + 1)}`;
