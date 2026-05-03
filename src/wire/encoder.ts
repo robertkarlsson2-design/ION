@@ -704,10 +704,52 @@ function mustPool(name: string): boolean {
  * `a` would emit `a x:int=...;` which the decoder cannot parse as a let
  * binding.
  *
- * Mirrors the KEYWORDS set in OTOURENV2's `scripts/ion-compress-text.mjs`.
- * Keep the two in sync if either grows.
+ * Originally mirrored OTOURENV2's text-level compressor KEYWORDS set;
+ * that compressor was removed once the encoder learned to do its own
+ * pooling. The list is now self-contained.
+ *
+ * Also includes the full set of JavaScript / TypeScript reserved words.
+ * Why: the TS emitter passes Var names and member names through verbatim
+ * in many positions (e.g. `let <name> = ...`, `(<name>) => ...`,
+ * destructuring patterns). If a JS reserved word appears as a Var/member
+ * in the IR (which is legal — `delete` is a perfectly valid object method
+ * name in modern JS) and the encoder pools it, the alias text replaces
+ * occurrences across the wire form. On decode the alias resolves back to
+ * the reserved word, but at intermediate inspection points (and in the
+ * old text-level compressor that helped corrupt OTOURENV2-113 .ion files)
+ * the alias can be misapplied. Defence-in-depth: never pool reserved words.
+ *
+ * In addition to the explicit list, ALL IR meta-symbols matching the
+ * regex `/^__\w+__$/` (e.g. `__not__`, `__obj__`, `__try__`, `__throw__`,
+ * `__cond__`, `__optchain__`, `__nullish__`, `__add__`, `__eq__`, …) are
+ * excluded. These are emitter-special-cased: the TS / React emitters
+ * recognize `Var('__not__')` as the prefix `!` operator, `Var('__obj__')`
+ * as an object literal constructor, etc., and emit them as syntactic sugar
+ * rather than as a function call to `__not__`. Pooling them is wasted
+ * (the alias adds bytes for no gain — meta-symbols never need to be read
+ * raw from the wire as Var names, only resolved through the pool) and
+ * actively dangerous: it expands the surface area for alias-collision
+ * bugs. The text-level compressor that ran in OTOURENV2's hybrid
+ * pipeline (commit f0881a2, since reverted) corrupted `crew.ion` by
+ * conflating `__not__` and `status` aliases, baking `res.__not__(200)`
+ * into the emitted TS where `res.status(200)` was the source intent.
+ * Excluding `__*__` from the pool eliminates that whole class of bug.
  */
+const JS_RESERVED_WORDS: readonly string[] = [
+  // Strict & non-strict reserved words (ES2022 + TS)
+  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger',
+  'default', 'delete', 'do', 'else', 'enum', 'export', 'extends',
+  'false', 'finally', 'for', 'function', 'if', 'import', 'in',
+  'instanceof', 'new', 'null', 'return', 'super', 'switch', 'this',
+  'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with',
+  'yield',
+  // Strict-mode reserved
+  'await', 'implements', 'interface', 'let', 'package', 'private',
+  'protected', 'public', 'static',
+];
+
 const POOL_EXCLUDED_KEYWORDS: ReadonlySet<string> = new Set([
+  // Wire-format reserved words / core builtins
   'let', 'if', 'then', 'else', 'match', 'case', 'do',
   'async', 'await', 'try', 'catch', 'finally', 'throw',
   'handle', 'resume', 'perform', 'raw', 'null', 'true', 'false',
@@ -715,7 +757,26 @@ const POOL_EXCLUDED_KEYWORDS: ReadonlySet<string> = new Set([
   'class', 'iface', 'extends', 'with', 'return',
   'any', 'int', 'float', 'str', 'bool', 'void', 'unit',
   'opt', 'list', 'map', 'tuple', 'fn', 'self',
+  // JS/TS reserved words (some overlap with the above; Set dedups)
+  ...JS_RESERVED_WORDS,
 ]);
+
+/**
+ * Matches IR meta-symbol names that the emitters special-case (`__not__`,
+ * `__obj__`, `__try__`, `__throw__`, `__optchain__`, `__nullish__`,
+ * `__add__`, `__eq__`, …). Future-proof: any new builtin following the
+ * `__name__` convention is automatically excluded.
+ *
+ * Note: requires at least one character between the underscores, so
+ * `____` (four underscores) is not matched. In practice no IR builtin
+ * uses that form.
+ */
+const IR_META_SYMBOL_RE = /^__\w+__$/;
+
+/** Returns true when `name` is an IR meta-symbol like `__not__`. */
+function isIrMetaSymbol(name: string): boolean {
+  return IR_META_SYMBOL_RE.test(name);
+}
 
 /**
  * Walks the IR collecting any name that appears as a JSX tag (a `Var`
@@ -865,7 +926,9 @@ function buildSymbolPool(
   jsxTagNames: ReadonlySet<string> = new Set(),
 ): SymbolPool {
   const isExcluded = (name: string): boolean =>
-    POOL_EXCLUDED_KEYWORDS.has(name) || jsxTagNames.has(name);
+    POOL_EXCLUDED_KEYWORDS.has(name) ||
+    jsxTagNames.has(name) ||
+    isIrMetaSymbol(name);
 
   // Split into two groups:
   // 1. shouldPool entries: sorted by firstPos for token savings (stable through JSON serde
