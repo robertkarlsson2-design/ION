@@ -38,9 +38,15 @@ interface TypePool {
   readonly entries: ReadonlyArray<PoolEntry>;
 }
 
+interface LiteralPool {
+  readonly toAlias: ReadonlyMap<string, Alias>;
+  readonly entries: ReadonlyArray<PoolEntry>;
+}
+
 interface EncoderContext {
   readonly sym: SymbolPool;
   readonly typ: TypePool;
+  readonly lit: LiteralPool;
 }
 
 function assertNever(x: never): never {
@@ -325,6 +331,111 @@ function collectNamesFromNode(node: IonIRNode, c: NameCollector, depth = 0): voi
   }
 }
 
+/** Walks the IR collecting all string literal values from expression nodes (NOT from
+ *  case patterns, which the decoder reads via parseLiteral without pool resolution).
+ *  Records first-encounter position for stable ordering. */
+class StrLitCollector {
+  private map = new Map<string, { count: number; firstPos: number }>();
+  private pos = 0;
+  record(v: string): void {
+    const existing = this.map.get(v);
+    if (existing) existing.count++;
+    else this.map.set(v, { count: 1, firstPos: this.pos++ });
+  }
+  result(): Map<string, { count: number; firstPos: number }> { return this.map; }
+}
+
+function collectStrLitsFromNode(node: IonIRNode, c: StrLitCollector, depth = 0): void {
+  if (depth > MAX_ENCODE_DEPTH) return;
+  switch (node.kind) {
+    case 'Literal':
+      if (node.value.kind === 'Str') c.record(node.value.value);
+      break;
+    case 'App':
+      collectStrLitsFromNode(node.callee, c, depth + 1);
+      for (const a of node.args) collectStrLitsFromNode(a, c, depth + 1);
+      break;
+    case 'Abs':
+      collectStrLitsFromNode(node.body, c, depth + 1);
+      break;
+    case 'Let':
+      collectStrLitsFromNode(node.value, c, depth + 1);
+      collectStrLitsFromNode(node.body, c, depth + 1);
+      break;
+    case 'Case':
+      collectStrLitsFromNode(node.scrutinee, c, depth + 1);
+      for (const arm of node.arms) {
+        // Pattern literals are NOT decoder-pool-aware; skip them.
+        if (arm.guard !== undefined) collectStrLitsFromNode(arm.guard, c, depth + 1);
+        collectStrLitsFromNode(arm.body, c, depth + 1);
+      }
+      break;
+    case 'Constructor':
+      for (const a of node.args) collectStrLitsFromNode(a, c, depth + 1);
+      break;
+    case 'Accessor':
+      collectStrLitsFromNode(node.receiver, c, depth + 1);
+      break;
+    case 'Effect':
+      collectStrLitsFromNode(node.body, c, depth + 1);
+      break;
+    case 'OopClass':
+      for (const m of node.methods) {
+        if (m.body !== undefined) collectStrLitsFromNode(m.body, c, depth + 1);
+      }
+      for (const ctor of (node.constructors ?? [])) {
+        if (ctor.body !== undefined) collectStrLitsFromNode(ctor.body, c, depth + 1);
+      }
+      break;
+    case 'OopNew':
+      for (const a of node.args) collectStrLitsFromNode(a, c, depth + 1);
+      break;
+    case 'OopVirtualCall':
+      collectStrLitsFromNode(node.receiver, c, depth + 1);
+      for (const a of node.args) collectStrLitsFromNode(a, c, depth + 1);
+      break;
+    case 'AsyncBlock':
+      collectStrLitsFromNode(node.body, c, depth + 1);
+      break;
+    case 'Await':
+      collectStrLitsFromNode(node.expr, c, depth + 1);
+      break;
+    case 'AdtMatch':
+      collectStrLitsFromNode(node.scrutinee, c, depth + 1);
+      for (const arm of node.arms) collectStrLitsFromNode(arm.body, c, depth + 1);
+      break;
+    case 'Perform':
+      for (const a of node.args) collectStrLitsFromNode(a, c, depth + 1);
+      break;
+    case 'Handle':
+      collectStrLitsFromNode(node.body, c, depth + 1);
+      for (const h of node.handlers) collectStrLitsFromNode(h.body, c, depth + 1);
+      if (node.returnClause !== undefined) collectStrLitsFromNode(node.returnClause, c, depth + 1);
+      break;
+    case 'Resume':
+      collectStrLitsFromNode(node.value, c, depth + 1);
+      break;
+    case 'ListLit':
+      for (const el of node.elements) collectStrLitsFromNode(el, c, depth + 1);
+      break;
+    case 'MapLit':
+      for (const e of node.entries) {
+        collectStrLitsFromNode(e.key, c, depth + 1);
+        collectStrLitsFromNode(e.value, c, depth + 1);
+      }
+      break;
+    // Var, ModuleRef, ForeignRef, OopThis, OopInterface, AdtDecl, EffectDecl, RawInject: no string literals to collect
+    default: break;
+  }
+}
+
+function collectStrLits(module: IonIRModule): Map<string, { count: number; firstPos: number }> {
+  const c = new StrLitCollector();
+  for (const d of module.data) collectStrLitsFromNode(d, c);
+  for (const decl of module.decls) collectStrLitsFromNode(decl, c);
+  return c.result();
+}
+
 /** Depth-first traversal; records occurrence count and first-encounter position for every name. */
 function collectNames(module: IonIRModule): Map<string, NameRecord> {
   const c = new NameCollector();
@@ -600,6 +711,47 @@ function buildSymbolPool(names: Map<string, NameRecord>): SymbolPool {
 }
 
 /**
+ * Literal pool: deduplicate repeated string literals across the module.
+ * Heuristic: pool when total wire bytes saved > pool overhead.
+ *   Without pool: count * (length + 2)         // each occurrence is "value"
+ *   With pool:    length + alias.length + 3    // entry: alias="value"
+ *               + count * (alias.length + 1)   // each ref: &alias
+ *   Pool when count * (length + 2) > length + alias.length + 3 + count * (alias.length + 1)
+ *   Estimating alias as 1 char: pool when count * (length + 1) > length + 4
+ *   → count >= 2 and length >= 3 covers most useful cases.
+ * Sort entries by firstPos ascending for stable, predictable output.
+ */
+function buildLiteralPool(literals: Map<string, { count: number; firstPos: number }>): LiteralPool {
+  const candidates = [...literals.entries()]
+    .filter(([value, rec]) => shouldPoolLiteral(value.length, rec.count))
+    .sort(([, a], [, b]) => a.firstPos - b.firstPos);
+
+  const toAlias = new Map<string, Alias>();
+  const entries: PoolEntry[] = [];
+  const gen = aliasSequence();
+
+  for (const [value] of candidates) {
+    const next = gen.next();
+    const alias = next.value as Alias;
+    toAlias.set(value, alias);
+    entries.push({ alias, value: JSON.stringify(value) });
+  }
+
+  return { toAlias, entries };
+}
+
+function shouldPoolLiteral(len: number, count: number): boolean {
+  // Conservative: assume 1-char alias. Pool when bytes saved positive.
+  // Bytes without pool: count * (len + 2)
+  // Bytes with pool:    (len + 4) + count * 2     // entry "a=\"v\"" + " " separator amortized, ref "&a"
+  // Save when: count * len > len + 4 + count * 0  (since (len+2) - 2 = len)
+  // Simplified: count >= 2 and len >= 5, OR count >= 3.
+  if (count < 2) return false;
+  if (count >= 3) return true;
+  return len >= 5;
+}
+
+/**
  * Type pool: deduplicate all non-primitive type expressions.
  * Sort entries alphabetically by typeExpr.
  * Pooling heuristic same formula applied to serialized type expression length.
@@ -651,6 +803,12 @@ function encodeSymbolLine(pool: SymbolPool): string {
 function encodeTypeLine(pool: TypePool): string {
   if (pool.entries.length === 0) return '';
   return `T ${pool.entries.map(e => `${e.alias}=${e.value}`).join(' ')}`;
+}
+
+/** Returns `L a="value" b="value"` or "" when pool is empty. */
+function encodeLiteralLine(pool: LiteralPool): string {
+  if (pool.entries.length === 0) return '';
+  return `L ${pool.entries.map(e => `${e.alias}=${e.value}`).join(' ')}`;
 }
 
 /** Returns "X import <sid> from <module>:<sid> [; ...]" or "" when no imports. */
@@ -711,6 +869,15 @@ function encodeLiteral(v: LiteralValue): string {
     case 'Null':  return 'null';
     default: return assertNever(v);
   }
+}
+
+/** Like encodeLiteral but for expression-context: uses L-pool aliases for repeated strings. */
+function encodeLiteralWithPool(v: LiteralValue, ctx: EncoderContext): string {
+  if (v.kind === 'Str') {
+    const alias = ctx.lit.toAlias.get(v.value);
+    if (alias !== undefined) return `&${alias}`;
+  }
+  return encodeLiteral(v);
 }
 
 function encodePattern(p: CasePattern, ctx: EncoderContext, depth = 0): string {
@@ -926,7 +1093,7 @@ function encodeNode(node: IonIRNode, ctx: EncoderContext, depth = 0): string {
       return encodeName(node.name, ctx.sym);
 
     case 'Literal':
-      return encodeLiteral(node.value);
+      return encodeLiteralWithPool(node.value, ctx);
 
     case 'App': {
       // Sugar-preserving fast path: if the App was produced by lowering a
@@ -1165,9 +1332,12 @@ export function encodeModule(module: IonIRModule): string {
   for (const name of names.keys()) assertValidName(name);
   const types = collectTypes(module);
 
+  const literals = collectStrLits(module);
+
   const sym = buildSymbolPool(names);
   const typ = buildTypePool(types);
-  const ctx: EncoderContext = { sym, typ };
+  const lit = buildLiteralPool(literals);
+  const ctx: EncoderContext = { sym, typ, lit };
 
   const lines: string[] = [];
   lines.push(encodeVersionLine());
@@ -1178,6 +1348,9 @@ export function encodeModule(module: IonIRModule): string {
 
   const typLine = encodeTypeLine(typ);
   if (typLine) lines.push(typLine);
+
+  const litLine = encodeLiteralLine(lit);
+  if (litLine) lines.push(litLine);
 
   const importLine = encodeImportLines(module.imports, ctx);
   if (importLine) lines.push(importLine);
