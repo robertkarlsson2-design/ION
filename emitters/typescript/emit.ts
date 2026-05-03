@@ -67,10 +67,22 @@ const BUILTIN_BINARY_OPS: Record<string, string> = {
 };
 const BUILTIN_UNARY_OPS: Record<string, string> = { __neg__: '-', __not__: '!' };
 
+// JS globals that should NEVER produce an `import` statement. The call-site
+// emitter for ForeignRef (see `case 'ForeignRef'` below) compiles these to
+// either `<module>.<symbol>` (e.g. `console.log`) or a bare identifier (e.g.
+// `parseInt`); either way no `import { x } from '<module>'` line should be
+// emitted. Keep this in sync with the local `JS_GLOBAL_NAMESPACES` set inside
+// the ForeignRef branch — the two MUST agree, otherwise the import-collection
+// pass emits `import { parseInt } from 'globalThis'` while the call site
+// produces a bare `parseInt(...)` — the resulting `from 'globalThis'` is a
+// TypeScript compile error.
 const JS_GLOBAL_NAMESPACES = new Set([
   'Math', 'Array', 'String', 'Number', 'Boolean', 'Object',
   'JSON', 'console', 'Set', 'Map', 'Promise', 'process', 'Buffer',
   'Symbol', 'RegExp', 'Error', 'Date',
+  // Browser/Node hosts and the universal `globalThis` — references to these
+  // never produce a real import in TypeScript output.
+  'globalThis', 'window', 'document',
 ]);
 
 /**
@@ -192,6 +204,60 @@ function needsParens(node: IonIRNode): boolean {
      BUILTIN_UNARY_OPS[(node.callee as VarNode).name] !== undefined);
 }
 
+/**
+ * Walks `node`'s subtree looking for an `Await` that belongs to it directly
+ * (i.e. is not nested inside its own function/async boundary). Used to decide
+ * whether a generated IIFE wrapper needs to be `async () => ...` instead of
+ * plain `() => ...`.
+ *
+ * Crossing into an `Abs` or `AsyncBlock` stops the recursion: an `await`
+ * inside a nested lambda belongs to that lambda, not to the outer IIFE.
+ *
+ * Background: the do-block sugar `{stmt;stmt;...;result}` and let-chains both
+ * lower to `(() => { ... })()`-style IIFEs in the TS emitter. When the body
+ * contains an `await` (e.g. an `await client.query(...)` inside a transaction
+ * helper) the IIFE itself must be `async () => ...` or tsc rejects with
+ * TS1308: `'await' expressions are only allowed within async functions and
+ * at the top levels of modules`.
+ */
+function containsAwait(node: IonIRNode | undefined | null): boolean {
+  if (!node || typeof node !== 'object') return false;
+  switch (node.kind) {
+    case 'Await': return true;
+    case 'Abs':
+    case 'AsyncBlock':
+      // New function/async boundary — any `await` inside belongs to that
+      // function, not to the IIFE we're checking.
+      return false;
+    case 'Let':
+      return containsAwait(node.value) || containsAwait(node.body);
+    case 'App':
+      return containsAwait(node.callee) || node.args.some(containsAwait);
+    case 'Case':
+      return containsAwait(node.scrutinee) ||
+        node.arms.some(a => containsAwait(a.guard) || containsAwait(a.body));
+    case 'AdtMatch':
+      return containsAwait(node.scrutinee) ||
+        node.arms.some(a => containsAwait(a.body));
+    case 'Accessor': return containsAwait(node.receiver);
+    case 'ListLit': return node.elements.some(containsAwait);
+    case 'MapLit':
+      return node.entries.some(e => containsAwait(e.key) || containsAwait(e.value));
+    case 'Constructor': return node.args.some(containsAwait);
+    case 'OopNew': return node.args.some(containsAwait);
+    case 'OopVirtualCall':
+      return containsAwait(node.receiver) || node.args.some(containsAwait);
+    case 'Perform': return node.args.some(containsAwait);
+    case 'Handle':
+      return containsAwait(node.body) ||
+        (node.returnClause !== undefined && containsAwait(node.returnClause)) ||
+        node.handlers.some(h => containsAwait(h.body));
+    case 'Resume': return containsAwait(node.value);
+    case 'Effect': return containsAwait(node.body);
+    default: return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // OopClass emitter — produces a full TypeScript class declaration string
 // ---------------------------------------------------------------------------
@@ -278,7 +344,8 @@ function emitTsClass(node: OopClassNode): string {
 
     const params = m.params.map(p => {
       const t = ionTypeToTs(p.type);
-      return t === 'unknown' ? p.name : `${p.name}: ${t}`;
+      // Class methods: unknown → any to avoid TS7006 implicit-any errors.
+      return t === 'unknown' ? `${p.name}: any` : `${p.name}: ${t}`;
     }).join(', ');
     const retT = ionTypeToTs(m.retType);
     const retAnnotation = retT !== 'unknown' ? `: ${retT}` : '';
@@ -360,7 +427,9 @@ function emitTsEffectDecl(node: EffectDeclNode): string {
   const opSigs = node.operations.map(op => {
     const params = op.params.map(p => {
       const t = ionTypeToTs(p.type);
-      return t === 'unknown' ? p.name : `${p.name}: ${t}`;
+      // Effect operations: unknown → any so the generated TypeScript type
+      // alias compiles cleanly under strict mode.
+      return t === 'unknown' ? `${p.name}: any` : `${p.name}: ${t}`;
     }).join(', ');
     const retT = ionTypeToTs(op.retType);
     return `${op.name}(${params}): ${retT}`;
@@ -393,7 +462,7 @@ function emitTsHandle(node: HandleNode): string {
       `(() => {`,
       `  class EffectPerform { constructor(public op: string, public args: unknown[]) {} }`,
       `  try { const _result = ${bodyExpr}; return ${returnExpr}; }`,
-      `  catch (_e) {`,
+      `  catch (_e: any) {`,
       handlerClauses,
       `    throw _e;`,
       `  }`,
@@ -523,6 +592,11 @@ function emitTsExpr(node: IonIRNode): string {
         // Helper: emit an arg as either an inline statement-block (when it's a
         // Let chain or a __do__) or as a single return-expression. Used for
         // try/catch/finally arms so awaits inside the arm body work.
+        //
+        // Cat 3 (ION-209): when the arm body is a `__do__(...)`, individual
+        // args may themselves be Let chains that introduce bindings used by
+        // sibling args. Hoist those bindings into the arm's `try {}` block
+        // so the siblings actually see them.
         const emitArmBody = (n: IonIRNode): string => {
           if (n.kind === 'Let') {
             const blk = emitTsLetBlock(n as LetNode);
@@ -537,7 +611,22 @@ function emitTsExpr(node: IonIRNode): string {
             const dargs = (n as AppNode).args;
             if (dargs.length >= 1) {
               const last = dargs[dargs.length - 1]!;
-              const stmts = dargs.slice(0, -1).map(a => `${emitTsExpr(a)};`);
+              const allButLast = dargs.slice(0, -1);
+              const stmts: string[] = [];
+              for (const a of allButLast) {
+                if (a.kind === 'Let') {
+                  const blk = emitTsLetBlock(a as LetNode);
+                  for (const s of blk.stmts) stmts.push(s);
+                  stmts.push(`${blk.ret};`);
+                } else {
+                  stmts.push(`${emitTsExpr(a)};`);
+                }
+              }
+              if (last.kind === 'Let') {
+                const blk = emitTsLetBlock(last as LetNode);
+                for (const s of blk.stmts) stmts.push(s);
+                return `${stmts.join(' ')} return ${blk.ret};`;
+              }
               return `${stmts.join(' ')} return ${emitTsExpr(last)};`;
             }
           }
@@ -549,28 +638,75 @@ function emitTsExpr(node: IonIRNode): string {
         // context the result is a Promise that resolves to the value.
         // catchExpr can reference `e` (the caught error binding).
         if (calleeName === '__try__' && app.args.length === 2) {
-          return `(async () => { try { ${emitArmBody(app.args[0])} } catch (e) { ${emitArmBody(app.args[1])} } })()`;
+          return `(async () => { try { ${emitArmBody(app.args[0])} } catch (e: any) { ${emitArmBody(app.args[1])} } })()`;
         }
         // __tryfin__(tryExpr, catchExpr, finallyExpr) — try/catch/finally as expression.
         if (calleeName === '__tryfin__' && app.args.length === 3) {
-          return `(async () => { try { ${emitArmBody(app.args[0])} } catch (e) { ${emitArmBody(app.args[1])} } finally { ${emitTsExpr(app.args[2])}; } })()`;
+          return `(async () => { try { ${emitArmBody(app.args[0])} } catch (e: any) { ${emitArmBody(app.args[1])} } finally { ${emitTsExpr(app.args[2])}; } })()`;
         }
         // __finally__(tryExpr, finallyExpr) — try/finally with no catch.
         if (calleeName === '__finally__' && app.args.length === 2) {
           return `(async () => { try { ${emitArmBody(app.args[0])} } finally { ${emitTsExpr(app.args[1])}; } })()`;
         }
-        // __do__(s1, s2, ..., resultExpr) — synchronous IIFE wrapping multiple
-        // side-effect statements followed by a return. Use this for router
-        // setup chains and other sync side-effect sequences. For async chains,
-        // use a let-chain inside async{...} or wrap inside __try__/__tryfin__
-        // which provide their own async IIFE.
+        // __do__(s1, s2, ..., resultExpr) — IIFE wrapping multiple side-effect
+        // statements followed by a return. Use this for router setup chains
+        // and other side-effect sequences.
+        //
+        // Two important behaviours below, both fixes for ION-209:
+        //
+        // 1. **Let-chain hoisting (Cat 3 — sibling-IIFE scoping).**
+        //    The wire encoder lowers source like
+        //
+        //      { let r = Router(); let auth = mw(); r.get(...); r.put(...); r }
+        //
+        //    into `__do__(Let(r=Router(), Let(auth=mw(), OVC(r.get,...))),
+        //    OVC(r.put,...), ..., Var(r))`. If we naively emit each arg as an
+        //    expression statement, the bindings introduced by the inner Let
+        //    chain are wrapped in their own IIFE — the subsequent `r.put(...)`
+        //    siblings reference `r` from outside that IIFE and tsc errors with
+        //    `Cannot find name 'r'`. Fix: when a do-block argument is itself a
+        //    Let chain, hoist its bindings into the outer IIFE's `stmts` list
+        //    so every sibling shares the same scope.
+        //
+        // 2. **Async-IIFE detection (Cat 2 — `await` in non-async IIFE).**
+        //    If any do-block argument contains an `Await` (not nested in an
+        //    inner `Abs` / `AsyncBlock`), the IIFE itself must be `async`,
+        //    otherwise tsc rejects with TS1308. We use `containsAwait` to
+        //    check the entire arg list.
         if (calleeName === '__do__' && app.args.length >= 1) {
           const last = app.args[app.args.length - 1]!;
-          const stmts = app.args.slice(0, -1).map(a => `${emitTsExpr(a)};`);
-          if (stmts.length === 0) {
+          const allButLast = app.args.slice(0, -1);
+          if (allButLast.length === 0) {
             return emitTsExpr(last);
           }
-          return `(() => { ${stmts.join(' ')} return ${emitTsExpr(last)}; })()`;
+          // Walk each non-final arg. If it is a Let chain, lift its bindings
+          // into the outer stmt list, then emit the chain's eventual non-Let
+          // body as a regular expression statement. Other args are emitted
+          // as plain `expr;` statements.
+          const stmts: string[] = [];
+          for (const a of allButLast) {
+            if (a.kind === 'Let') {
+              const blk = emitTsLetBlock(a as LetNode);
+              // emitTsLetBlock returns the binding `const ...;` strings
+              // already terminated, plus the inner ret-expression. Push both.
+              for (const s of blk.stmts) stmts.push(s);
+              stmts.push(`${blk.ret};`);
+            } else {
+              stmts.push(`${emitTsExpr(a)};`);
+            }
+          }
+          // The result expression may itself be a Let chain — same hoist.
+          let retCode: string;
+          if (last.kind === 'Let') {
+            const blk = emitTsLetBlock(last as LetNode);
+            for (const s of blk.stmts) stmts.push(s);
+            retCode = blk.ret;
+          } else {
+            retCode = emitTsExpr(last);
+          }
+          const isAsync = app.args.some(containsAwait);
+          const arrow = isAsync ? 'async () =>' : '() =>';
+          return `(${arrow} { ${stmts.join(' ')} return ${retCode}; })()`;
         }
         // __seq__(a, b, c, ...) → (a, b, c, ...) — comma-sequenced expressions
         // Useful for side-effect chains. Result is the last expression.
@@ -613,7 +749,13 @@ function emitTsExpr(node: IonIRNode): string {
       const abs = node as AbsNode;
       const params = abs.params.map(p => {
         const t = ionTypeToTs(p.type);
-        return t === 'unknown' ? p.name : `${p.name}: ${t}`;
+        // Unknown-typed Abs params get a `: any` annotation rather than being
+        // emitted bare. Under tsconfig `strict: true` + `noImplicitAny: true`
+        // (defaults), `(err) => ...` triggers TS7006 ("Parameter 'err'
+        // implicitly has an 'any' type"). The Ion source intent is "I don't
+        // care about the type" which maps to `any`, not the strict
+        // implicit-any.
+        return t === 'unknown' ? `${p.name}: any` : `${p.name}: ${t}`;
       }).join(', ');
       const retT = abs.type.kind === 'Fn' ? ionTypeToTs(abs.type.ret) : null;
       const retAnnotation = retT !== null && retT !== 'unknown' ? `: ${retT}` : '';
@@ -631,11 +773,25 @@ function emitTsExpr(node: IonIRNode): string {
     }
 
     case 'Let': {
-      // Expression-level let: use IIFE
+      // Expression-level let: use IIFE.
+      //
+      // Cat 2 (ION-209): if the binding values OR the body contain a top-
+      // level `await` (not nested in an inner Abs/AsyncBlock), the IIFE
+      // itself must be `async () => ...` — otherwise tsc rejects with
+      // TS1308: `'await' expressions are only allowed within async
+      // functions and at the top levels of modules`. Common shape:
+      //
+      //   `let r = await query("X", [id]); r.rows[0] ?? null`
+      //
+      // appearing inside an async outer block, where the wire decoder
+      // produces a `Let` whose value is an `Await`. The IIFE wrapper has to
+      // mark itself async so the await is legal.
       const letNode = node as LetNode;
       const { stmts, ret } = emitTsLetBlock(letNode);
       if (stmts.length > 0) {
-        return `(() => {\n  ${stmts.join('\n  ')}\n  return ${ret};\n})()`;
+        const isAsync = containsAwait(letNode);
+        const arrow = isAsync ? '(async () =>' : '(() =>';
+        return `${arrow} {\n  ${stmts.join('\n  ')}\n  return ${ret};\n})()`;
       }
       return ret;
     }
@@ -654,12 +810,17 @@ function emitTsExpr(node: IonIRNode): string {
         // `ffi:js:console:log` need the full `<module>.<symbol>` member path.
         // Heuristic: well-known JS globals get member access; everything else
         // is assumed to be imported by name.
-        const JS_GLOBAL_NAMESPACES = new Set([
-          'console', 'Math', 'JSON', 'Object', 'Array', 'String', 'Number',
-          'Boolean', 'Date', 'RegExp', 'Promise', 'Symbol', 'Error',
-          'window', 'document', 'globalThis', 'process',
-        ]);
+        //
+        // The set of "globals to never import" is the module-level
+        // `JS_GLOBAL_NAMESPACES` constant (see top of file). Keep this branch
+        // and the import-collection pass walking the same predicate so a
+        // foreign ref against a global never leaves an `import { x } from
+        // 'globalThis'` line behind.
         if (fr.target === 'js' && JS_GLOBAL_NAMESPACES.has(fr.module)) {
+          // For `globalThis`-style globals where the symbol is itself a
+          // bare global (parseInt, Number, etc.), emit the member form
+          // `globalThis.parseInt` so the call site is unambiguous; the
+          // import-collection pass still skips it.
           return `${fr.module}.${fr.symbol}`;
         }
         // `default` is a reserved word and cannot be used as a JS identifier.
@@ -676,7 +837,9 @@ function emitTsExpr(node: IonIRNode): string {
       const pnames = fr.sig.params.map((pt, i) => {
         const n = fr.sig.paramNames[i] ?? `_p${i + 1}`;
         const t = ionTypeToTs(pt);
-        return t === 'unknown' ? n : `${n}: ${t}`;
+        // Annotate unknown-typed FFI signature params as `any` (see Abs branch
+        // for rationale — strict mode rejects implicit-any params).
+        return t === 'unknown' ? `${n}: any` : `${n}: ${t}`;
       });
       const args = pnames.map((_, i) => wrapEmitted(fr.sig.paramNames[i] ?? `_p${i + 1}`));
       const retT = ionTypeToTs(fr.sig.ret);
@@ -804,7 +967,10 @@ function emitTsCase(node: CaseNode): string {
       const bindings = buildTsCtorBindings(pat, scrutinee);
       if (bindings.length > 0) {
         const decls = bindings.map(b => `const ${b.name} = ${scrutinee}.${b.member};`).join(' ');
-        parts.push(`${cond} ? (() => { ${decls} return ${emitTsExpr(arm.body)}; })()`);
+        // Cat 2 (ION-209): match arms with await in their body need an async IIFE.
+        const armAsync = containsAwait(arm.body);
+        const arrow = armAsync ? 'async () =>' : '() =>';
+        parts.push(`${cond} ? (${arrow} { ${decls} return ${emitTsExpr(arm.body)}; })()`);
       } else {
         parts.push(`${cond} ? ${emitTsExpr(arm.body)}`);
       }
@@ -832,7 +998,11 @@ function emitTsAdtMatch(node: AdtMatchNode): string {
     const bindings = arm.bindings.map(b => `const ${b.name} = _s.${b.name};`).join(' ');
     return `  case "${arm.tag}": { ${bindings} return ${emitTsExpr(arm.body)}; }`;
   }).join('\n');
-  return `(() => { const _s = ${s}; switch (_s._tag) {\n${cases}\n  default: return undefined; } })()`;
+  // Cat 2 (ION-209): async IIFE if any arm body or the scrutinee contains a
+  // direct `await` (not nested in a function boundary).
+  const isAsync = containsAwait(node);
+  const arrow = isAsync ? 'async () =>' : '() =>';
+  return `(${arrow} { const _s = ${s}; switch (_s._tag) {\n${cases}\n  default: return undefined; } })()`;
 }
 
 // ---------------------------------------------------------------------------

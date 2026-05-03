@@ -43,6 +43,50 @@ function reactDefaultImportLocalName(moduleName: string): string {
   return /^[0-9]/.test(ident) ? `_${ident}` : ident;
 }
 
+/**
+ * Walk `node`'s subtree looking for an `Await` that belongs to it directly
+ * (not nested inside its own `Abs` / `AsyncBlock` boundary). Used by the
+ * React emitter's IIFE-generating sites (Let-chain, __do__, etc.) to decide
+ * whether the wrapper must be `async () => ...` to allow the inner await.
+ *
+ * Mirror of `containsAwait` in `emitters/typescript/emit.ts` — keep in sync.
+ */
+function reactContainsAwait(node: IonIRNode | undefined | null): boolean {
+  if (!node || typeof node !== 'object') return false;
+  switch (node.kind) {
+    case 'Await': return true;
+    case 'Abs':
+    case 'AsyncBlock':
+      return false;
+    case 'Let':
+      return reactContainsAwait(node.value) || reactContainsAwait(node.body);
+    case 'App':
+      return reactContainsAwait(node.callee) || node.args.some(reactContainsAwait);
+    case 'Case':
+      return reactContainsAwait(node.scrutinee) ||
+        node.arms.some(a => reactContainsAwait(a.guard) || reactContainsAwait(a.body));
+    case 'AdtMatch':
+      return reactContainsAwait(node.scrutinee) ||
+        node.arms.some(a => reactContainsAwait(a.body));
+    case 'Accessor': return reactContainsAwait(node.receiver);
+    case 'ListLit': return node.elements.some(reactContainsAwait);
+    case 'MapLit':
+      return node.entries.some(e => reactContainsAwait(e.key) || reactContainsAwait(e.value));
+    case 'Constructor': return node.args.some(reactContainsAwait);
+    case 'OopNew': return node.args.some(reactContainsAwait);
+    case 'OopVirtualCall':
+      return reactContainsAwait(node.receiver) || node.args.some(reactContainsAwait);
+    case 'Perform': return node.args.some(reactContainsAwait);
+    case 'Handle':
+      return reactContainsAwait(node.body) ||
+        (node.returnClause !== undefined && reactContainsAwait(node.returnClause)) ||
+        node.handlers.some(h => reactContainsAwait(h.body));
+    case 'Resume': return reactContainsAwait(node.value);
+    case 'Effect': return reactContainsAwait(node.body);
+    default: return false;
+  }
+}
+
 let _reactCtorFields: Map<string, readonly string[]> = new Map();
 
 function buildReactCtorBindings(pat: CasePattern, scrutinee: string): Array<{ name: string; member: string }> {
@@ -450,19 +494,55 @@ export function emitTsExprForReact(node: IonIRNode): string {
             : `new RegExp(${emitTsExprForReact(app.args[0]!)}, ${emitTsExprForReact(app.args[1]!)})`;
         }
         if (name === '__try__' && app.args.length === 2) {
-          return `(async () => { try { return ${emitTsExprForReact(app.args[0]!)}; } catch (e) { return ${emitTsExprForReact(app.args[1]!)}; } })()`;
+          // Cat 4 (ION-209): annotate caught error as `: any` so `e` is usable
+          // under strict mode (`useUnknownInCatchVariables` is on by default).
+          return `(async () => { try { return ${emitTsExprForReact(app.args[0]!)}; } catch (e: any) { return ${emitTsExprForReact(app.args[1]!)}; } })()`;
         }
         if (name === '__tryfin__' && app.args.length === 3) {
-          return `(async () => { try { return ${emitTsExprForReact(app.args[0]!)}; } catch (e) { return ${emitTsExprForReact(app.args[1]!)}; } finally { ${emitTsExprForReact(app.args[2]!)}; } })()`;
+          return `(async () => { try { return ${emitTsExprForReact(app.args[0]!)}; } catch (e: any) { return ${emitTsExprForReact(app.args[1]!)}; } finally { ${emitTsExprForReact(app.args[2]!)}; } })()`;
         }
         if (name === '__finally__' && app.args.length === 2) {
           return `(async () => { try { return ${emitTsExprForReact(app.args[0]!)}; } finally { ${emitTsExprForReact(app.args[1]!)}; } })()`;
         }
         if (name === '__do__' && app.args.length >= 1) {
+          // Mirror of the TS emitter's __do__ handling (see ION-209). Two
+          // behaviours:
+          //   1. Hoist Let-chain bindings out of any do-block argument so
+          //      sibling statements share the same scope (Cat 3).
+          //   2. Mark the wrapper IIFE async if any arg contains a top-level
+          //      `await` (Cat 2).
           const last = app.args[app.args.length - 1]!;
-          const stmts = app.args.slice(0, -1).map(a => `${emitTsExprForReact(a)};`);
-          if (stmts.length === 0) return emitTsExprForReact(last);
-          return `(() => { ${stmts.join(' ')} return ${emitTsExprForReact(last)}; })()`;
+          const allButLast = app.args.slice(0, -1);
+          if (allButLast.length === 0) return emitTsExprForReact(last);
+          const stmts: string[] = [];
+          for (const a of allButLast) {
+            if (a.kind === 'Let') {
+              let cur: IonIRNode = a;
+              while (cur.kind === 'Let') {
+                const lt = cur as LetNode;
+                stmts.push(`const ${lt.name} = ${emitTsExprForReact(lt.value)};`);
+                cur = lt.body;
+              }
+              stmts.push(`${emitTsExprForReact(cur)};`);
+            } else {
+              stmts.push(`${emitTsExprForReact(a)};`);
+            }
+          }
+          let retCode: string;
+          if (last.kind === 'Let') {
+            let cur: IonIRNode = last;
+            while (cur.kind === 'Let') {
+              const lt = cur as LetNode;
+              stmts.push(`const ${lt.name} = ${emitTsExprForReact(lt.value)};`);
+              cur = lt.body;
+            }
+            retCode = emitTsExprForReact(cur);
+          } else {
+            retCode = emitTsExprForReact(last);
+          }
+          const isAsync = app.args.some(reactContainsAwait);
+          const arrow = isAsync ? 'async () =>' : '() =>';
+          return `(${arrow} { ${stmts.join(' ')} return ${retCode}; })()`;
         }
         if (name === '__seq__' && app.args.length >= 1) return `(${app.args.map(emitTsExprForReact).join(', ')})`;
         if (name === '__spread__' && app.args.length === 1) return `...${emitTsExprForReact(app.args[0]!)}`;
@@ -526,6 +606,8 @@ export function emitTsExprForReact(node: IonIRNode): string {
     case 'Let': {
       // Emit a let-chain expression as an IIFE that runs the bindings as
       // statements then returns the final body. Mirrors the TS emitter.
+      // Cat 2 (ION-209): if the chain contains a direct `await`, mark the
+      // wrapper async so the await is legal.
       const stmts: string[] = [];
       let cur: IonIRNode = node;
       while (cur.kind === 'Let') {
@@ -533,7 +615,9 @@ export function emitTsExprForReact(node: IonIRNode): string {
         stmts.push(`const ${lt.name} = ${emitTsExprForReact(lt.value)};`);
         cur = lt.body;
       }
-      return `(() => { ${stmts.join(' ')} return ${emitTsExprForReact(cur)}; })()`;
+      const isAsync = reactContainsAwait(node);
+      const arrow = isAsync ? 'async () =>' : '() =>';
+      return `(${arrow} { ${stmts.join(' ')} return ${emitTsExprForReact(cur)}; })()`;
     }
     case 'Case': {
       const c = node as CaseNode;
@@ -563,7 +647,10 @@ export function emitTsExprForReact(node: IonIRNode): string {
           const bindings = buildReactCtorBindings(pat, scrutinee);
           if (bindings.length > 0) {
             const decls = bindings.map(b => `const ${b.name} = ${scrutinee}.${b.member};`).join(' ');
-            parts.push(`${cond} ? (() => { ${decls} return ${emitTsExprForReact(arm.body)}; })()`);
+            // Cat 2 (ION-209): async IIFE if the arm body contains an `await`.
+            const armAsync = reactContainsAwait(arm.body);
+            const arrow = armAsync ? 'async () =>' : '() =>';
+            parts.push(`${cond} ? (${arrow} { ${decls} return ${emitTsExprForReact(arm.body)}; })()`);
           } else {
             parts.push(`${cond} ? ${emitTsExprForReact(arm.body)}`);
           }
