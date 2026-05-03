@@ -110,6 +110,34 @@ export function defaultImportLocalName(moduleName: string): string {
   return /^[0-9]/.test(ident) ? `_${ident}` : ident;
 }
 
+/**
+ * Normalize a module specifier for ESM-compatible emission.
+ *
+ * Node 22 in pure-ESM mode requires explicit file extensions on relative
+ * imports — `from './foo.js'`, not `from './foo'`. Bundlers and TS resolvers
+ * with `moduleResolution: Bundler` are happy either way, so appending `.js`
+ * is a strict superset.
+ *
+ * Rules:
+ *   - Only relative paths (`./X` or `../X`) are touched. Bare specifiers
+ *     (`'express'`, `'@scope/pkg'`, `'pg'`) are package imports that resolve
+ *     via node_modules and must be left alone.
+ *   - If the path already ends in `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, or
+ *     `.json`, it's already extensioned — leave it alone.
+ *   - Otherwise, append `.js`. The TypeScript compiler with `module: NodeNext`
+ *     or `module: ESNext` will resolve `./foo.js` to `./foo.ts` at build time
+ *     and emit `./foo.js` in the output, which is what Node ESM needs.
+ */
+export function normalizeModuleSpecifier(moduleName: string): string {
+  if (!moduleName.startsWith('./') && !moduleName.startsWith('../')) {
+    return moduleName;
+  }
+  if (/\.(js|mjs|cjs|ts|tsx|json)$/i.test(moduleName)) {
+    return moduleName;
+  }
+  return `${moduleName}.js`;
+}
+
 let _tsCtorFields: Map<string, readonly string[]> = new Map();
 
 function buildTsCtorBindings(pat: CasePattern, scrutinee: string): Array<{ name: string; member: string }> {
@@ -1064,14 +1092,19 @@ export function emitTS(irModule: IonIRModule): string {
     //   import <localName>, { a, b } from 'm';
     // form. The local default-import name is derived from the module
     // specifier (see `defaultImportLocalName`).
+    //
+    // Module specifiers are normalized for ESM compat: relative paths get
+    // `.js` appended (Node 22 ESM requires explicit extensions). Bare
+    // package specifiers are left alone. See `normalizeModuleSpecifier`.
+    const specifier = normalizeModuleSpecifier(mod);
     const hasDefault = syms.has('default');
     const named = [...syms].filter(s => s !== 'default').sort();
     if (hasDefault && named.length === 0) {
-      importLines.push(`import ${defaultImportLocalName(mod)} from '${mod}';`);
+      importLines.push(`import ${defaultImportLocalName(mod)} from '${specifier}';`);
     } else if (hasDefault) {
-      importLines.push(`import ${defaultImportLocalName(mod)}, { ${named.join(', ')} } from '${mod}';`);
+      importLines.push(`import ${defaultImportLocalName(mod)}, { ${named.join(', ')} } from '${specifier}';`);
     } else {
-      importLines.push(`import { ${named.join(', ')} } from '${mod}';`);
+      importLines.push(`import { ${named.join(', ')} } from '${specifier}';`);
     }
   }
   const parts: string[] = [...importLines, '"use strict";'];
