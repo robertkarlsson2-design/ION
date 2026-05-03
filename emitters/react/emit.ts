@@ -27,6 +27,22 @@ import {
 } from '../ui-shared.js';
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
 
+/**
+ * Local binding name for a default-imported module. `default` is a reserved
+ * word and cannot appear as a bare JS identifier, so `ffi:js:<m>:default`
+ * call sites compile to a synthesized name derived from the module
+ * specifier. Mirrors `defaultImportLocalName` in `emitters/typescript/emit.ts`
+ * — keep the two in sync.
+ */
+function reactDefaultImportLocalName(moduleName: string): string {
+  const segments = moduleName.split(/[^A-Za-z0-9_$]+/).filter(s => s.length > 0);
+  if (segments.length === 0) return '_default';
+  const head = segments[0]!;
+  const tail = segments.slice(1).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('');
+  const ident = head + tail;
+  return /^[0-9]/.test(ident) ? `_${ident}` : ident;
+}
+
 let _reactCtorFields: Map<string, readonly string[]> = new Map();
 
 function buildReactCtorBindings(pat: CasePattern, scrutinee: string): Array<{ name: string; member: string }> {
@@ -456,7 +472,15 @@ export function emitTsExprForReact(node: IonIRNode): string {
         const fr = app.callee as ForeignRefNode;
         if (fr.sig.template === '' && fr.sig.params.length === 0) {
           const JS_GLOBALS = new Set(['console','Math','JSON','Object','Array','String','Number','Boolean','Date','RegExp','Promise','Symbol','Error','window','document','globalThis','process']);
-          const calleeStr = (fr.target === 'js' && JS_GLOBALS.has(fr.module)) ? `${fr.module}.${fr.symbol}` : fr.symbol;
+          // `default` is a reserved word and cannot be used as a JS identifier.
+          // Default imports are conventionally bound to a name derived from
+          // the module specifier (mirrors the TS emitter's
+          // `defaultImportLocalName`).
+          const calleeStr = (fr.target === 'js' && JS_GLOBALS.has(fr.module))
+            ? `${fr.module}.${fr.symbol}`
+            : (fr.target === 'js' && fr.symbol === 'default')
+              ? reactDefaultImportLocalName(fr.module)
+              : fr.symbol;
           return `${calleeStr}(${app.args.map(emitTsExprForReact).join(', ')})`;
         }
       }
