@@ -7,29 +7,26 @@ Wire format is the compact, zero-whitespace encoding of ION IR. It is designed f
 ```
 I1
 M <module-name> <version>
-S <alias1> <name1> <alias2> <name2> ...
-F <alias1>.<type1> <alias2>.<type2> ...
-<node>
-<node>
+S <alias1>=<name1> <alias2>=<name2> ...
+T <alias1>=<typeExpr1> <alias2>=<typeExpr2> ...
+L <alias1>="<string1>" <alias2>="<string2>" ...
+X import <symbolId> from <module>:<symbolId> [; ...]
+D <typeName> <constructor>{<field>:<type>,...}
+F <decl1>
+F <decl2>
 ...
 ```
 
-Line 1 (`I1`) is the format sentinel.  
-Line 2 (`M`) is the module header.  
-Line 3 (`S`) is the name pool — repeated pairs of `alias name`.  
-Line 4 (`F`) is the type pool — repeated `alias.typeExpr` entries.  
-Subsequent lines are top-level IR nodes.
+Line 1 (`I1`) is the format sentinel.
+Line 2 (`M`) is the module header.
+Line 3 (`S`) is the **symbol pool** — repeated identifier names aliased to short tokens.
+Line 4 (`T`) is the **type pool** — repeated type expressions aliased.
+Line 5 (`L`) is the **literal pool** — repeated string literals aliased; reference as `&alias` in node positions.
+Line 6 (`X`) is the import line.
+Line 7+ (`D`) are data type declarations.
+Line 8+ (`F`) are top-level declarations (one per line, or multiple per line space-separated).
 
-## Name and type pools
-
-Rather than repeating long names, assign short aliases in the pools and reference them by alias in nodes.
-
-```
-S a Int b Float c greet d name
-F a.Int b.Float c.(Int->Int) d.Str
-```
-
-Then use `a`, `b`, `c`, `d` in nodes instead of full names.
+**You generally don't write S, T, or L lines by hand.** The build pipeline's `npm run ion:compress` walks each `.ion` file, decodes it, re-encodes via the ION compiler, and auto-hoists every name/type/string repeated enough times to be worth pooling. Write naturally with full identifier names and inline string literals; the compressor takes care of pool optimization on save. See "Build-time auto-compression" below.
 
 ## Type expressions in the F pool
 
@@ -221,17 +218,54 @@ stage will reject as not idiomatic.
 Operator precedence (high → low): postfix `[]` `?.`, prefix `!`, `* / %`,
 `+ -`, `< > <= >=`, `=== !==`, `&&`, `||`, `??`, ternary `?:`.
 
-### `L` literal pool
+### `L` literal pool and `S` symbol pool — usually written by the auto-compressor
 
-Long string literals (SQL queries, error codes, format strings) repeated across a file dedupe via the `L` line:
+The wire decoder resolves two kinds of pool aliases at parse time:
+
+- **`&alias`** in any expression position resolves to the string in the `L` (literal) pool. Used for repeated SQL queries, error codes, format strings.
+- **bare alias** identifier in any name position resolves through the `S` (symbol) pool. Used to dedupe repeated long identifiers — function names, FFI symbols, parameter names.
+
+Example file with both pools active:
 
 ```
-L q1="SELECT id, email, display_name FROM users WHERE id = $1 AND deleted_at IS NULL" code401="UNAUTHORIZED" msg401="Missing Authorization header"
-F let findUser=(p,id)->async{let r=@p->query(&q1,[id]);r.rows[0]??null}
-F let unauth=(res)->res->status(401)->json({error:{code:&code401,message:&msg401}})
+I1
+M org.example.routes
+S a=createCoursesRouter b=req c=res d=courseId e=valUuid
+L p1="/courses/:courseId" p2="INVALID_COURSE_ID" m1="Invalid courseId format"
+F let a=()->{let r=app(ffi:js:express:Router);r->get(&p1,(b,c)->async{let d=b.params.courseId;!e(d)?er(c,400,&p2,&m1):...});r}
 ```
 
-The L line maps short aliases (`q1`, `code401`) to string-literal values; reference them as `&alias` in any expression position. Worth doing when a string is ≥40 bytes AND used ≥2 times.
+The `S` pool aliases `createCoursesRouter` → `a`, etc. The `L` pool aliases the path string and error texts.
+
+**Don't write pool entries by hand.** The build pipeline runs `scripts/ion-compress.mjs` which calls the ION compiler's `decodeModule(text) → encodeModule(ir)` roundtrip. The encoder uses aggressive heuristics:
+
+- L pool: hoist any string literal of length ≥ 3 used ≥ 3 times, OR length ≥ 8 used ≥ 2 times.
+- S pool: hoist any identifier of length ≥ 4 used ≥ 3 times.
+- T pool: similar for repeated type expressions.
+
+Three things the encoder is careful about — they're documented here so you understand why some identifiers are NOT pooled:
+
+1. **Wire keywords are excluded:** `let`, `if`, `then`, `else`, `match`, `case`, `do`, `async`, `await`, `try`, `catch`, `finally`, `throw`, `handle`, `resume`, `perform`, `raw`, `null`, `true`, `false`, `app`, `ffi`, `ret`, `this`, `import`, `from`, `new`, `class`, `iface`, `extends`, `with`, `return`, `any`, `int`, `float`, `str`, `bool`, `void`, `unit`, `opt`, `list`, `map`, `tuple`, `fn`, `self`. The decoder treats them as literal syntax, not identifiers.
+
+2. **JSX tag names are excluded.** `parseJsx` reads the tag with direct `readIdent` (no symbol-pool lookup), so aliasing a name that's used as a JSX tag would break decoding. The encoder walks the IR for any `Var` reachable as a JSX tag and skip-lists those names.
+
+3. **Names inside `raw("...")` are not pooled** — the literal-pool lookup is also skipped inside `raw(...)` arguments because the decoder treats raw bodies as opaque target-language source.
+
+Pool aliases use the namespace `a, b, c, ..., z, aa, ab, ...` — the encoder picks fresh aliases per pool. `S` and `L` namespaces are independent (an `S a=...` and `L a=...` in the same file are distinct).
+
+### Build-time auto-compression
+
+Every `.ion` file in this project is run through `npm run ion:compress` before commit. That script:
+
+1. Decodes each file via the ION wire decoder.
+2. Re-encodes via the sugar-preserving encoder (which auto-applies the L/S/T pool optimizations described above).
+3. Writes the result back if it changed.
+
+**Practical implication for authoring:** write naturally. Use full identifier names. Inline your string literals. The auto-compressor will hoist anything worth pooling on save. You only need to understand the pool syntax to *read* compressed files — not to author them.
+
+That said, **the wire decoder fully supports hand-written `&alias` and S-pool aliases** if you want to author already-compressed form (e.g. for a specific token-budget target). Both forms produce identical IR.
+
+The encoder's roundtrip is **byte-stable on canonicalised input and IR-equivalent on any input** — every wire-format sugar (`try{}catch{}`, ternary, `<JSX/>`, `async{}`, `?.`, `??`, `throw`, `{k:v}`, `expr(args)` postfix call, `{stmt;...;result}` do-block) is preserved across `decode → encode`. Sugar IS the canonical form; the encoder does not lower it to verbose `app(__sugar_name__, ...)` when re-emitting.
 
 ### Example — a complete async pg query function
 

@@ -76,6 +76,7 @@ Priority order — try in sequence:
 - **`raw()` is line-level only.** A whole-function `raw()` is a code smell.
 - **Use `data` types.** They cost almost nothing (a single `D` line in wire, a `data X { ... }` line in surface) and earn the type checker's protection. Emission idioms per target: single-ctor → TS `interface`, Python `@dataclass`, Java `record`; multi-ctor → TS discriminated union (`type T = A | B`), Python `@dataclass` classes + `Union[A, B]` alias, Java `sealed interface` + `record` variants.
 - **Use FFI annotations** for every third-party call — never inline `import` statements via `raw()`.
+- **Don't hand-write `S` / `T` / `L` pool lines or `&alias` references.** Projects with the auto-compressor (e.g. Otouren v2 — `npm run ion:compress`) will hoist them on save. Write naturally with full names + inline string literals; the compressor handles deduplication. You only need to read pool aliases when reviewing already-compressed files. See `wire-format` skill, "Build-time auto-compression" section.
 
 ## What's wired today
 
