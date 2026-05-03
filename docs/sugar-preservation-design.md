@@ -198,3 +198,17 @@ Without sugar preservation, those optimizations require duplicating the
 analysis at the text level (what `scripts/ion-compress.mjs` in OTOURENV2
 does today). With sugar preservation, the text-level tool becomes a
 redundant fallback.
+
+## Heuristic update (2026-05-03 — `feat/aggressive-pool-heuristics`)
+
+The encoder's `shouldPool` and `shouldPoolLiteral` were tuned to match
+the OTOURENV2 text-level compressor's aggression: pool S when count >= 3
+AND length >= 4; pool L when count >= 3 AND length >= 3 (or count == 2
+AND length >= 8). `buildSymbolPool` now also skip-lists wire-format
+keywords (`let`, `if`, `match`, ...) and any name that ever appears as
+a JSX tag in the module — `parseJsx` reads tag names with bare
+`readIdent` and does not consult the symbol pool, so aliasing them
+would break the JSX roundtrip. Together these changes let the encoder
+alone produce the same pool savings the text-level pass produced,
+making the OTOURENV2 hybrid pipeline collapsible to a single-step
+encoder roundtrip.
