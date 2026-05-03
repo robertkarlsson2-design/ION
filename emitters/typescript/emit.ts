@@ -73,6 +73,31 @@ const JS_GLOBAL_NAMESPACES = new Set([
   'Symbol', 'RegExp', 'Error', 'Date',
 ]);
 
+/**
+ * Local TS binding name used for a default-imported module.
+ *
+ * `ffi:js:<module>:default` references compile to `import <name> from
+ * '<module>'`. The wire format does not record an explicit local name, so we
+ * derive one from the module specifier: keep alphanumerics + `_`/`$`, split
+ * the rest on non-identifier chars, and camelCase the segments. Examples:
+ *
+ *   express              → express
+ *   react-dom/client     → reactDomClient
+ *   @scope/pkg-name      → scopePkgName
+ *
+ * The result is guaranteed to start with a letter (or `_`/`$`); if the input
+ * starts with a digit we prepend `_` to keep the identifier syntactically
+ * valid.
+ */
+export function defaultImportLocalName(moduleName: string): string {
+  const segments = moduleName.split(/[^A-Za-z0-9_$]+/).filter(s => s.length > 0);
+  if (segments.length === 0) return '_default';
+  const head = segments[0]!;
+  const tail = segments.slice(1).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('');
+  const ident = head + tail;
+  return /^[0-9]/.test(ident) ? `_${ident}` : ident;
+}
+
 let _tsCtorFields: Map<string, readonly string[]> = new Map();
 
 function buildTsCtorBindings(pat: CasePattern, scrutinee: string): Array<{ name: string; member: string }> {
@@ -637,6 +662,13 @@ function emitTsExpr(node: IonIRNode): string {
         if (fr.target === 'js' && JS_GLOBAL_NAMESPACES.has(fr.module)) {
           return `${fr.module}.${fr.symbol}`;
         }
+        // `default` is a reserved word and cannot be used as a JS identifier.
+        // Default imports are bound to a synthesized local name derived from
+        // the module specifier (matches what the import-emission pass below
+        // writes out: `import <localName> from '<module>'`).
+        if (fr.target === 'js' && fr.symbol === 'default') {
+          return defaultImportLocalName(fr.module);
+        }
         return fr.symbol;
       }
       const arity = fr.sig.params.length;
@@ -855,7 +887,22 @@ export function emitTS(irModule: IonIRModule): string {
 
   const importLines: string[] = [];
   for (const [mod, syms] of foreignImports) {
-    importLines.push(`import { ${[...syms].sort().join(', ')} } from '${mod}';`);
+    // `default` is a reserved word and cannot appear as a named-import binding
+    // (`import { default } from 'm'` is a TypeScript syntax error). Split the
+    // symbol set into the default-import (if any) and the named imports, then
+    // emit them on a single line in the canonical
+    //   import <localName>, { a, b } from 'm';
+    // form. The local default-import name is derived from the module
+    // specifier (see `defaultImportLocalName`).
+    const hasDefault = syms.has('default');
+    const named = [...syms].filter(s => s !== 'default').sort();
+    if (hasDefault && named.length === 0) {
+      importLines.push(`import ${defaultImportLocalName(mod)} from '${mod}';`);
+    } else if (hasDefault) {
+      importLines.push(`import ${defaultImportLocalName(mod)}, { ${named.join(', ')} } from '${mod}';`);
+    } else {
+      importLines.push(`import { ${named.join(', ')} } from '${mod}';`);
+    }
   }
   const parts: string[] = [...importLines, '"use strict";'];
 
