@@ -730,13 +730,15 @@ const moduleArb: fc.Arbitrary<IonIRModule> = fc.record({
 // ---------------------------------------------------------------------------
 
 describe('wire encoder — import path pool symmetry', () => {
-  // organizationService: 19 chars, tokenCost=ceil(19/4)=5
-  // shouldPool: count*(5-1) > 2+5 → count*4 > 7 → count>=2
+  // organizationService: 19 chars
+  // Aggressive pooling heuristic (matches OTOURENV2 text-level compressor):
+  // shouldPool requires count >= 3 AND length >= 4. We construct a module
+  // with 3 occurrences (1 import + 2 decls) so the segment crosses the
+  // pool threshold and the X/F alias-consistency invariant can be checked.
   const orgSvcSegment = 'organizationService';
   const orgSvcSid = makeSymbolId('svc:0');
 
   function makePooledPathModule(): IonIRModule {
-    // import uses the segment once, ModuleRef decl uses it once → 2 total → pooled
     const importRef: IonIRNode & { kind: 'ModuleRef' } = {
       kind: 'ModuleRef',
       modulePath: [orgSvcSegment],
@@ -751,7 +753,8 @@ describe('wire encoder — import path pool symmetry', () => {
       dialects: ['core'],
       imports: [{ kind: 'ModuleRef', modulePath: [orgSvcSegment], symbolId: orgSvcSid, span, type: intType }],
       data: [],
-      decls: [importRef],
+      // 2 decls × 1 import = 3 total occurrences of orgSvcSegment.
+      decls: [importRef, importRef],
     };
   }
 
@@ -803,7 +806,8 @@ describe('wire encoder — import path pool symmetry', () => {
   });
 
   it('F3: multi-segment path — pooled segment aliased, unpooled segment raw, in both X and F', () => {
-    // organizationService pooled (2 occurrences), io not pooled (2 chars, cost 1)
+    // organizationService pooled (3 occurrences, length 19),
+    // io not pooled (2 chars, length < 4 — fails aggressive heuristic).
     const mixedSid = makeSymbolId('mixed:0');
     const importRef: IonIRNode & { kind: 'ModuleRef' } = {
       kind: 'ModuleRef',
@@ -819,7 +823,8 @@ describe('wire encoder — import path pool symmetry', () => {
       dialects: ['core'],
       imports: [{ kind: 'ModuleRef', modulePath: [orgSvcSegment, 'io'], symbolId: mixedSid, span, type: intType }],
       data: [],
-      decls: [importRef],
+      // 2 decls + 1 import = 3 total occurrences of orgSvcSegment.
+      decls: [importRef, importRef],
     };
     const out = encodeModule(mod);
     const lines = out.split('\n').filter(l => l.length > 0);

@@ -1,6 +1,6 @@
 I1
 M org.acme.users v=1.0.0 d=core,ion-adt,ion-oop
 S a=UserStatus b=UserRole
-T a=fn(str,str,UserRole)->UserStatus b=UserStatus
+T a=UserRole b=UserStatus
 D a Active{} Inactive{} Banned{} b Admin{} Moderator{} User{}
-F (email:str,password:str,role:UserRole)->null iface UserRepository{create:a,getById:fn(int)->UserStatus,delete:fn(int)->bool} class UserService{repository:UserRepository}{create(email:str,password:str,role:UserRole)->b{null};getById(id:int)->b{null}}
+F (email:str,password:str,role:a)->null iface UserRepository{create:fn(str,str,UserRole)->UserStatus,getById:fn(int)->UserStatus,delete:fn(int)->bool} class UserService{repository:UserRepository}{create(email:str,password:str,role:a)->b{null};getById(id:int)->b{null}}

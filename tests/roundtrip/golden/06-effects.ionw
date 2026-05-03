@@ -1,3 +1,4 @@
 I1
 M org.example.logging v=0.1.0 d=core,ion-effects
-F effect Log{info(msg:str)->unit;warn(msg:str)->unit} handle(perf!logging:Log:0:info("hello")){info(msg:str)->resume(null)}
+S a=info
+F effect Log{a(msg:str)->unit;warn(msg:str)->unit} handle(perf!logging:Log:0:a("hello")){a(msg:str)->resume(null)}

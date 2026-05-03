@@ -1,4 +1,5 @@
 I1
 M org.example.consumer v=0.1.0 d=core
-X import consumer:math:0 from org.example.math:consumer:math:0; import consumer:strings:1 from org.example.strings:consumer:strings:1; import consumer:collections:2 from org.example.collections:consumer:collections:2
+S a=example
+X import consumer:math:0 from org.a.math:consumer:math:0; import consumer:strings:1 from org.a.strings:consumer:strings:1; import consumer:collections:2 from org.a.collections:consumer:collections:2
 F result

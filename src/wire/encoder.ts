@@ -643,13 +643,19 @@ function collectTypes(module: IonIRModule): Map<string, number> {
 // Phase 2: pool construction
 // ---------------------------------------------------------------------------
 
-/** Infinite generator: a–z, then aa–zz. */
-function* aliasSequence(): Generator<Alias, never, undefined> {
+/** Infinite generator: a–z, then aa–zz. Optionally skip aliases that
+ *  would collide with names that are emitted raw elsewhere in the module
+ *  (otherwise the decoder would resolve the raw name through the S pool
+ *  and substitute the pooled value, corrupting the IR). */
+function* aliasSequence(skip: ReadonlySet<string> = new Set()): Generator<Alias, never, undefined> {
   const chars = 'abcdefghijklmnopqrstuvwxyz';
-  for (const c of chars) yield c;
+  for (const c of chars) {
+    if (!skip.has(c)) yield c;
+  }
   for (const c1 of chars) {
     for (const c2 of chars) {
-      yield c1 + c2;
+      const a = c1 + c2;
+      if (!skip.has(a)) yield a;
     }
   }
   // unreachable in practice; satisfies Generator return type
@@ -660,9 +666,26 @@ function tokenCost(len: number): number {
   return Math.ceil(len / 4);
 }
 
+/**
+ * Aggressive symbol/type pooling heuristic — matches the OTOURENV2
+ * text-level compressor's `shouldPoolIdent` (`scripts/ion-compress-text.mjs`).
+ *
+ * Pool when count >= 3 AND length >= 4. This is more aggressive than the
+ * earlier `count*(tokenCost-1) > 2+tokenCost` formula, which only pooled
+ * names where the bytewise saving cleared a relatively high break-even
+ * threshold derived from tiktoken's average token-cost-per-char.
+ *
+ * The wire format is read by LLMs (the dominant consumer); the relevant
+ * cost model is "characters of context window", not "tokens after tiktoken
+ * folding". Aliasing a 4-char name that occurs 3 times saves
+ * (3 * 4) - (3 * 1) - (4 + 4 for "a=NAME ") = 1 char per occurrence
+ * even before counting that the alias frees up space the LLM can spend on
+ * actual code. The text-level compressor proved this in practice on
+ * OTOURENV2 — see commit 9359a2d's token measurements.
+ */
 function shouldPool(len: number, count: number): boolean {
-  const cost = tokenCost(len);
-  return count * (cost - 1) > 2 + cost;
+  if (count < 3) return false;
+  return len >= 4;
 }
 
 // Characters that would break the decoder if present verbatim in an identifier.
@@ -675,30 +698,215 @@ function mustPool(name: string): boolean {
 }
 
 /**
- * Pooling heuristic:
- *   tokenCost(name) = ceil(name.length / 4)
- *   pool if: count * (tokenCost(name) - 1) > 2 + tokenCost(name)
- *   Always pool names containing wire-format delimiter characters (operators, spaces, etc.)
- *   so the decoder can read them back via their alias.
+ * Wire-format reserved words and core builtins. These MUST NOT be pooled in
+ * the S section — the wire decoder treats them as syntactic keywords and
+ * relies on the literal token, not on a Var-name lookup. Aliasing `let` to
+ * `a` would emit `a x:int=...;` which the decoder cannot parse as a let
+ * binding.
+ *
+ * Mirrors the KEYWORDS set in OTOURENV2's `scripts/ion-compress-text.mjs`.
+ * Keep the two in sync if either grows.
+ */
+const POOL_EXCLUDED_KEYWORDS: ReadonlySet<string> = new Set([
+  'let', 'if', 'then', 'else', 'match', 'case', 'do',
+  'async', 'await', 'try', 'catch', 'finally', 'throw',
+  'handle', 'resume', 'perform', 'raw', 'null', 'true', 'false',
+  'app', 'ffi', 'ret', 'this', 'import', 'from', 'new',
+  'class', 'iface', 'extends', 'with', 'return',
+  'any', 'int', 'float', 'str', 'bool', 'void', 'unit',
+  'opt', 'list', 'map', 'tuple', 'fn', 'self',
+]);
+
+/**
+ * Walks the IR collecting any name that appears as a JSX tag (a `Var`
+ * argument to an `App` whose `sugarForm` is `'jsx'`, in tag position).
+ * The wire decoder reads JSX tag names with a bare `readIdent` (see
+ * `parseJsx` in `decoder.ts`) and does NOT consult the symbol pool — so
+ * a name pooled in S that's also used as a JSX tag would round-trip as
+ * the alias text, not the original name. Excluding ever-JSX-tag names
+ * from the S pool matches what the OTOURENV2 text-level compressor
+ * does (`findJsxTagNames`).
+ *
+ * The shape we look for matches what `parseJsx` produces:
+ *   App(callee=ForeignRef(target='js', module='react', symbol='createElement'),
+ *       args=[Var(tagName) | Literal(Str), props, ...children],
+ *       sugarForm='jsx')
+ *
+ * Lowercase tag names lower to `Literal(Str)` (HTML element) — those
+ * never need exclusion because they don't pass through the symbol pool
+ * anyway. Uppercase and dotted (`Foo.Bar`) tag names lower to `Var` —
+ * those are the ones we must skip-list.
+ */
+function collectJsxTagNames(module: IonIRModule): Set<string> {
+  const tags = new Set<string>();
+  const visit = (node: IonIRNode, depth = 0): void => {
+    if (depth > MAX_ENCODE_DEPTH) return;
+    if (node.kind === 'App' && node.sugarForm === 'jsx' && node.args.length >= 1) {
+      const tagNode = node.args[0]!;
+      if (tagNode.kind === 'Var') {
+        // Dotted names like `Context.Provider` are stored as a single Var
+        // with name 'Context.Provider' in the IR. Add both the full name
+        // and each segment so the encoder skip-list catches a S-pool
+        // candidate matching either form.
+        tags.add(tagNode.name);
+        for (const seg of tagNode.name.split('.')) tags.add(seg);
+      }
+    }
+    // Recurse over all child IR nodes.
+    switch (node.kind) {
+      case 'App':
+        visit(node.callee, depth + 1);
+        for (const a of node.args) visit(a, depth + 1);
+        break;
+      case 'Abs':
+        visit(node.body, depth + 1);
+        break;
+      case 'Let':
+        visit(node.value, depth + 1);
+        visit(node.body, depth + 1);
+        break;
+      case 'Case':
+        visit(node.scrutinee, depth + 1);
+        for (const arm of node.arms) {
+          if (arm.guard !== undefined) visit(arm.guard, depth + 1);
+          visit(arm.body, depth + 1);
+        }
+        break;
+      case 'Constructor':
+        for (const a of node.args) visit(a, depth + 1);
+        break;
+      case 'Accessor':
+        visit(node.receiver, depth + 1);
+        break;
+      case 'Effect':
+        visit(node.body, depth + 1);
+        break;
+      case 'OopClass':
+        for (const m of node.methods) {
+          if (m.body !== undefined) visit(m.body, depth + 1);
+        }
+        for (const ctor of (node.constructors ?? [])) {
+          if (ctor.body !== undefined) visit(ctor.body, depth + 1);
+        }
+        break;
+      case 'OopNew':
+        for (const a of node.args) visit(a, depth + 1);
+        break;
+      case 'OopVirtualCall':
+        visit(node.receiver, depth + 1);
+        for (const a of node.args) visit(a, depth + 1);
+        break;
+      case 'AsyncBlock':
+        visit(node.body, depth + 1);
+        break;
+      case 'Await':
+        visit(node.expr, depth + 1);
+        break;
+      case 'AdtMatch':
+        visit(node.scrutinee, depth + 1);
+        for (const arm of node.arms) visit(arm.body, depth + 1);
+        break;
+      case 'Perform':
+        for (const a of node.args) visit(a, depth + 1);
+        break;
+      case 'Handle':
+        visit(node.body, depth + 1);
+        for (const h of node.handlers) visit(h.body, depth + 1);
+        if (node.returnClause !== undefined) visit(node.returnClause, depth + 1);
+        break;
+      case 'Resume':
+        visit(node.value, depth + 1);
+        break;
+      case 'ListLit':
+        for (const el of node.elements) visit(el, depth + 1);
+        break;
+      case 'MapLit':
+        for (const e of node.entries) { visit(e.key, depth + 1); visit(e.value, depth + 1); }
+        break;
+      // No nested IR nodes to recurse into for these:
+      case 'Var':
+      case 'Literal':
+      case 'ModuleRef':
+      case 'ForeignRef':
+      case 'OopThis':
+      case 'OopInterface':
+      case 'AdtDecl':
+      case 'EffectDecl':
+      case 'RawInject':
+        break;
+      default:
+        // Fall through for any future node kinds; they won't carry JSX.
+        break;
+    }
+  };
+  for (const d of module.data) visit(d);
+  for (const decl of module.decls) visit(decl);
+  return tags;
+}
+
+/**
+ * Pooling heuristic (aggressive — matches OTOURENV2 text-level compressor):
+ *   pool if count >= 3 AND length >= 4
+ *   Always pool names containing wire-format delimiter characters (operators,
+ *   spaces, etc.) so the decoder can read them back via their alias.
+ *
+ * Skip-lists:
+ *   - keywords: wire-format reserved words that the decoder reads as
+ *     syntactic tokens, never as Var names.
+ *   - jsxTagNames: names that ever appear as a JSX tag in this module —
+ *     `parseJsx` reads tag names with a bare `readIdent` and does NOT
+ *     consult the symbol pool, so aliasing them would break the JSX
+ *     roundtrip.
+ *
  * Sort entries by firstPos ascending.
  */
-function buildSymbolPool(names: Map<string, NameRecord>): SymbolPool {
+function buildSymbolPool(
+  names: Map<string, NameRecord>,
+  jsxTagNames: ReadonlySet<string> = new Set(),
+): SymbolPool {
+  const isExcluded = (name: string): boolean =>
+    POOL_EXCLUDED_KEYWORDS.has(name) || jsxTagNames.has(name);
+
   // Split into two groups:
   // 1. shouldPool entries: sorted by firstPos for token savings (stable through JSON serde
   //    as long as module structure traversal order is consistent).
   // 2. mustPool-only entries: sorted alphabetically, so they're deterministic regardless
   //    of collection order (e.g., Set<EffectTag> iteration order changes after JSON sort).
+  //
+  // Excluded names (keywords, JSX tag names) are skipped from both groups
+  // UNLESS they contain wire-delimiter characters, in which case we have
+  // no choice — the decoder cannot read them otherwise. (In practice no
+  // keyword and no valid JSX tag name contains a delimiter, so this is
+  // a defence-in-depth check.)
   const shouldPoolEntries = [...names.entries()]
-    .filter(([name, rec]) => shouldPool(name.length, rec.count))
+    .filter(([name, rec]) => shouldPool(name.length, rec.count) && !isExcluded(name))
     .sort(([, a], [, b]) => a.firstPos - b.firstPos);
   const mustPoolOnlyEntries = [...names.entries()]
-    .filter(([name, rec]) => !shouldPool(name.length, rec.count) && mustPool(name))
+    .filter(([name, rec]) =>
+      mustPool(name) && !shouldPool(name.length, rec.count) && !isExcluded(name),
+    )
     .sort(([a], [b]) => a.localeCompare(b));
   const candidates = [...shouldPoolEntries, ...mustPoolOnlyEntries];
 
+  // Alias-collision skip-list: any name that's emitted raw elsewhere in the
+  // module must not be reused as a pool alias, or the decoder will resolve
+  // the raw occurrence through the pool and substitute a different value.
+  // Concretely: if the IR has both `Var("r")` (1 occurrence, not pooled)
+  // and `Var("userId")` (5 occurrences, pooled), the alias generator must
+  // skip `r` so userId doesn't get aliased to `r` (which the decoder would
+  // misresolve in the let-binding `let r:any=...`).
+  //
+  // Build the candidate-name set first so we can remove pooled names from
+  // the collision skip-list.
+  const candidateNames = new Set(candidates.map(([n]) => n));
+  const collisionSkip = new Set<string>();
+  for (const name of names.keys()) {
+    if (!candidateNames.has(name)) collisionSkip.add(name);
+  }
+
   const toAlias = new Map<string, Alias>();
   const entries: PoolEntry[] = [];
-  const gen = aliasSequence();
+  const gen = aliasSequence(collisionSkip);
 
   for (const [name] of candidates) {
     const next = gen.next();
@@ -740,15 +948,24 @@ function buildLiteralPool(literals: Map<string, { count: number; firstPos: numbe
   return { toAlias, entries };
 }
 
+/**
+ * Aggressive literal-pool heuristic — matches OTOURENV2 text-level
+ * compressor's `shouldPoolStr` (`scripts/ion-compress-text.mjs`).
+ *
+ *   pool if count >= 3 AND len >= 3
+ *   OR     count == 2 AND len >= 8
+ *
+ * Lowering the count==2 threshold to len>=8 (was len>=5) catches a class
+ * of medium-length strings that the conservative formula declined to pool
+ * but are net-positive in chars saved. Lowering the count>=3 length floor
+ * from "any" to len>=3 prevents tiny 1-2 char literals (rare but they
+ * do happen for status codes etc.) from pushing the pool past its useful
+ * width — pooling `"x"` is a wash because `&a` is already 2 chars.
+ */
 function shouldPoolLiteral(len: number, count: number): boolean {
-  // Conservative: assume 1-char alias. Pool when bytes saved positive.
-  // Bytes without pool: count * (len + 2)
-  // Bytes with pool:    (len + 4) + count * 2     // entry "a=\"v\"" + " " separator amortized, ref "&a"
-  // Save when: count * len > len + 4 + count * 0  (since (len+2) - 2 = len)
-  // Simplified: count >= 2 and len >= 5, OR count >= 3.
   if (count < 2) return false;
-  if (count >= 3) return true;
-  return len >= 5;
+  if (count >= 3) return len >= 3;
+  return len >= 8;
 }
 
 /**
@@ -1333,8 +1550,9 @@ export function encodeModule(module: IonIRModule): string {
   const types = collectTypes(module);
 
   const literals = collectStrLits(module);
+  const jsxTagNames = collectJsxTagNames(module);
 
-  const sym = buildSymbolPool(names);
+  const sym = buildSymbolPool(names, jsxTagNames);
   const typ = buildTypePool(types);
   const lit = buildLiteralPool(literals);
   const ctx: EncoderContext = { sym, typ, lit };
