@@ -81,11 +81,13 @@ function findIonFiles(dir, results = []) {
 
 function postProcess(ts, sourceRel) {
   const lines = ts.split('\n');
-  const out = lines.map(line => {
-    if (/^const /.test(line)) return 'export ' + line;
-    if (/^type /.test(line)) return 'export ' + line;
-    return line;
-  });
+  const out = lines
+    .filter(line => !/^export\s*\{/.test(line))
+    .map(line => {
+      if (/^const /.test(line)) return 'export ' + line;
+      if (/^type /.test(line)) return 'export ' + line;
+      return line;
+    });
 
   const header = [
     `/* @generated — do not edit */`,

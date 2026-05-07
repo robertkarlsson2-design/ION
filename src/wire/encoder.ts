@@ -662,10 +662,6 @@ function* aliasSequence(skip: ReadonlySet<string> = new Set()): Generator<Alias,
   throw new Error('alias space exhausted');
 }
 
-function tokenCost(len: number): number {
-  return Math.ceil(len / 4);
-}
-
 /**
  * Aggressive symbol/type pooling heuristic — matches the OTOURENV2
  * text-level compressor's `shouldPoolIdent` (`scripts/ion-compress-text.mjs`).

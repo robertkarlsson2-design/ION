@@ -23,6 +23,7 @@ import { emitVue } from '../../emitters/vue/emit.js';
 import { emitApex } from '../../emitters/apex/emit.js';
 import { emitLWC } from '../../emitters/lwc/emit.js';
 import type { LwcOutput } from '../../emitters/lwc/emit.js';
+import { emitReactNative } from '../../emitters/react-native/emit.js';
 import { loadConfig } from './config.js';
 import type { IonConfig } from './config.js';
 import { generateSourceMap } from '../emit/sourcemap.js';
@@ -69,6 +70,7 @@ const TARGET_LABEL: Record<string, string> = {
   vue: 'Vue',
   apex: 'Apex',
   lwc: 'LWC',
+  'react-native': 'TSX-RN',
 };
 
 interface BuildDiagnostic {
@@ -113,6 +115,7 @@ const TARGET_EXT: Record<string, string> = {
   python: '.py',
   java: '.java',
   react: '.tsx',
+  'react-native': '.tsx',
   html: '.html',
   vue: '.vue',
   apex: '.cls',
@@ -131,6 +134,7 @@ function getEmitter(target: string): EmitFn | null {
   if (target === 'html') return emitHTML;
   if (target === 'vue') return emitVue;
   if (target === 'apex') return emitApex;
+  if (target === 'react-native') return emitReactNative;
   return null;
 }
 
@@ -868,7 +872,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
   const multiEmitter = getMultiFileEmitter(target);
   if (emitter === null && multiEmitter === null) {
     process.stderr.write(`error: unsupported target: ${target}\n`);
-    process.stderr.write('supported targets: javascript, typescript, typescript-dts, python, java, react, html, vue, apex, lwc\n');
+    process.stderr.write('supported targets: javascript, typescript, typescript-dts, python, java, react, html, vue, apex, lwc, react-native\n');
     return { exitCode: 2 };
   }
 
