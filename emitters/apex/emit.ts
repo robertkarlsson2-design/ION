@@ -115,6 +115,9 @@ export function emitApexExpr(node: IonIRNode): string {
         if ((name === 'map' || name === 'filter' || name === 'reduce') && app.args.length >= 1) {
           return `/* ${name}: */ ${emitApexExpr(app.args[0]!)}`;
         }
+        if ((name === '__platform__' || name === '__platform_select__') && app.args.length >= 2) {
+          return `/* __platform__ requires --target react-native */ ${emitApexExpr(app.args[1]!)}`;
+        }
 
         // Regular function call
         const args = app.args.map(emitApexExpr).join(', ');

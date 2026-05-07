@@ -769,6 +769,9 @@ function emitTsExpr(node: IonIRNode): string {
           }
           return `new RegExp(${emitTsExpr(app.args[0])}, ${emitTsExpr(app.args[1])})`;
         }
+        if ((calleeName === '__platform__' || calleeName === '__platform_select__') && app.args.length >= 2) {
+          return `/* __platform__ requires --target react-native */ ${emitTsExpr(app.args[1]!)}`;
+        }
       }
       return `${emitTsExpr(app.callee)}(${app.args.map(emitTsExpr).join(', ')})`;
     }

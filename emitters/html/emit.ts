@@ -104,6 +104,11 @@ function emitJsExpr(node: IonIRNode): string {
     case 'Var': return node.name;
     case 'App': {
       const app = node as AppNode;
+      if (app.callee.kind === 'Var') {
+        const _n = (app.callee as { kind: 'Var'; name: string }).name;
+        if ((_n === '__platform__' || _n === '__platform_select__') && app.args.length >= 2)
+          return `/* __platform__ requires --target react-native */ ${emitJsExpr(app.args[1]!)}`;
+      }
       const callee = emitJsExpr(app.callee);
       const args = app.args.map(emitJsExpr).join(', ');
       return `${callee}(${args})`;

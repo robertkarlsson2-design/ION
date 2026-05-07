@@ -144,3 +144,11 @@ describe('emitTS — constructor pattern bindings', () => {
     expect(out2).not.toContain('.radius');
   });
 });
+
+describe('emitTS — platform builtin fallback', () => {
+  it('__platform__ does not crash TS emitter and emits comment fallback', () => {
+    const node = appNode('__platform__', intLit(0), intLit(1), intLit(2), intLit(3));
+    const out = emitTS(makeModule([letNode('x', node)]));
+    expect(out).toContain('__platform__ requires --target react-native');
+  });
+});

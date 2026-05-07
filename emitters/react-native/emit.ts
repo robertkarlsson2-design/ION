@@ -16,24 +16,28 @@ export function emitReactNative(irModule: IonIRModule): string {
     }
   }
 
-  const parts: string[] = [
-    '"use strict";',
-    "import React from 'react';",
-    "import { View, Text } from 'react-native';",
-    '',
-  ];
+  const rnImports = new Set<string>(['View', 'Text']);
+  const declParts: string[] = [];
 
   for (const d of irModule.decls) {
     if (d.kind === 'Let') {
       const lt = d as LetNode;
       const { name, value } = lt;
       if (value.kind === 'Abs' || isHtmlElement(value)) {
-        parts.push(`const ${name}: React.FC = () => ();`);
+        declParts.push(`const ${name}: React.FC = () => ();`);
       } else {
-        parts.push(`const ${name} = ${emitTsExpr(value, { ctorFields })};`);
+        declParts.push(`const ${name} = ${emitTsExpr(value, { ctorFields, rnImports })};`);
       }
     }
   }
+
+  const parts: string[] = [
+    '"use strict";',
+    "import React from 'react';",
+    `import { ${[...rnImports].join(', ')} } from 'react-native';`,
+    '',
+    ...declParts,
+  ];
 
   return parts.join('\n') + '\n';
 }

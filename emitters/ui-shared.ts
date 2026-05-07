@@ -100,6 +100,12 @@ export interface EmitTsExprOpts {
   jsxEmitter?: (n: IonIRNode) => string;
   /** ADT constructor field names, keyed by constructor name. */
   ctorFields?: Map<string, readonly string[]>;
+  /** When set, platform builtin handlers add 'Platform' (and others) to this set for dynamic import-line construction. */
+  rnImports?: Set<string>;
+}
+
+function isSimpleExpr(node: IonIRNode): boolean {
+  return node.kind === 'Literal' || node.kind === 'Var';
 }
 
 function defaultImportLocalName(moduleName: string): string {
@@ -278,6 +284,45 @@ export function emitTsExpr(node: IonIRNode, opts: EmitTsExprOpts): string {
         }
         if (name === '__seq__' && app.args.length >= 1) return `(${app.args.map(a => emitTsExpr(a, opts)).join(', ')})`;
         if (name === '__spread__' && app.args.length === 1) return `...${emitTsExpr(app.args[0]!, opts)}`;
+        if ((name === '__platform__' || name === '__platform_select__') && app.args.length >= 4 && app.args.length % 2 === 0) {
+          const VALID_ARMS = new Set(['ios', 'android', 'default']);
+          for (let i = 0; i < app.args.length; i += 2) {
+            const armNameNode = app.args[i]!;
+            const isStrLit = armNameNode.kind === 'Literal' &&
+              (armNameNode as { value: { kind: string } }).value.kind === 'Str';
+            const armName = isStrLit
+              ? (armNameNode as { value: { value: string } }).value.value
+              : null;
+            if (!isStrLit || armName === null || !VALID_ARMS.has(armName)) {
+              throw new Error(
+                `${name}: arm name at position ${i} must be a string literal ('ios', 'android', or 'default') — at ${armNameNode.span.file}:${armNameNode.span.startLine}`,
+              );
+            }
+          }
+          opts.rnImports?.add('Platform');
+          const pairs: Array<{ key: string; val: IonIRNode }> = [];
+          for (let i = 0; i < app.args.length; i += 2) {
+            pairs.push({
+              key: (app.args[i] as { value: { value: string } }).value.value,
+              val: app.args[i + 1]!,
+            });
+          }
+          if (name === '__platform_select__') {
+            const entries = pairs.map(p => `${p.key}: ${emitTsExpr(p.val, opts)}`).join(', ');
+            return `Platform.select({ ${entries} })`;
+          }
+          // __platform__: ternary form when no default arm and all values are simple
+          const hasDefault = pairs.some(p => p.key === 'default');
+          const allSimple = pairs.every(p => isSimpleExpr(p.val));
+          if (!hasDefault && allSimple) {
+            const iosPair = pairs.find(p => p.key === 'ios')!;
+            const androidPair = pairs.find(p => p.key === 'android')!;
+            return `(Platform.OS === "ios" ? ${emitTsExpr(iosPair.val, opts)} : ${emitTsExpr(androidPair.val, opts)})`;
+          }
+          // IIFE form
+          const entries = pairs.map(p => `${p.key}: () => ${emitTsExpr(p.val, opts)}`).join(', ');
+          return `Platform.select({ ${entries} })()`;
+        }
       }
       if (app.callee.kind === 'ForeignRef') {
         const fr = app.callee as ForeignRefNode;

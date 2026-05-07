@@ -59,6 +59,10 @@ function makeModule(decls: IonIRNode[]): IonIRModule {
   };
 }
 
+function platformApp(builtin: string, ...args: IonIRNode[]): IonIRNode {
+  return { kind: 'App', callee: varNode(builtin), args, span: SPAN, type: UNIT };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -96,5 +100,50 @@ describe('emitTsExpr (shared)', () => {
       type: { kind: 'Int' },
     };
     expect(emitTsExpr(node, {})).toBe('(1 + 2)');
+  });
+
+  it('__platform__ with ios/android simple arms emits ternary form', () => {
+    const node = platformApp('__platform__', strLit('ios'), strLit('light'), strLit('android'), strLit('dark'));
+    expect(emitTsExpr(node, {})).toBe('(Platform.OS === "ios" ? "light" : "dark")');
+  });
+
+  it('__platform__ with non-simple arm emits Platform.select IIFE form', () => {
+    const node = platformApp(
+      '__platform__',
+      strLit('ios'), strLit('light'),
+      strLit('android'), platformApp('__add__', intLit(1), intLit(2)),
+    );
+    const out = emitTsExpr(node, {});
+    expect(out).toContain('Platform.select({');
+    expect(out).toContain('ios: () =>');
+    expect(out).toContain('android: () =>');
+    expect(out.trimEnd().endsWith('()')).toBe(true);
+  });
+
+  it('__platform__ with default arm forces IIFE form', () => {
+    const node = platformApp(
+      '__platform__',
+      strLit('ios'), strLit('a'),
+      strLit('android'), strLit('b'),
+      strLit('default'), strLit('c'),
+    );
+    const out = emitTsExpr(node, {});
+    expect(out).toContain('Platform.select({');
+    expect(out).toContain('default: () =>');
+    expect(out.trimEnd().endsWith('()')).toBe(true);
+  });
+
+  it('__platform_select__ emits Platform.select without IIFE call', () => {
+    const node = platformApp('__platform_select__', strLit('ios'), intLit(1), strLit('android'), intLit(2));
+    expect(emitTsExpr(node, {})).toBe('Platform.select({ ios: 1, android: 2 })');
+  });
+});
+
+describe('emitReactNative platform import', () => {
+  it('includes Platform in import when __platform__ builtin is used', () => {
+    const out = emitReactNative(makeModule([
+      letNode('theme', platformApp('__platform__', strLit('ios'), strLit('light'), strLit('android'), strLit('dark'))),
+    ]));
+    expect(out).toContain("import { View, Text, Platform } from 'react-native'");
   });
 });
