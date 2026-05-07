@@ -235,7 +235,6 @@ export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): s
   }
 
   _rnImports = new Set<string>(['View', 'Text']);
-  _styleReplacements = new Map();
 
   const threshold = Math.max(2, config?.reactNative?.styleHoistThreshold ?? 3);
   const { replacements, hoisted } = collectAndHoistStyles(irModule, threshold);
