@@ -259,7 +259,7 @@ describe('primitives/sets', () => {
 function absNode(params: string[], body: IonIRNode): IonIRNode {
   return {
     kind: 'Abs',
-    params: params.map(name => ({ name, symbolId: SYM, type: UNIT })),
+    params: params.map(name => ({ name, symbolId: SYM, type: UNIT, span: SPAN })),
     body,
     captures: [],
     span: SPAN,
@@ -353,6 +353,13 @@ describe('emitReactNative/tag-emission', () => {
     );
     expect(out).toContain('keyboardType="email-address"');
     expect(out).not.toContain('type=');
+  });
+
+  it('attribute value with embedded double-quote → escaped in JSX prop', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', appNode('div', 'title=foo"bar'))]),
+    );
+    expect(out).toContain('title="foo\\"bar"');
   });
 });
 
