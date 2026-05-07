@@ -23,7 +23,7 @@ import {
   isHtmlElement,
   parseAttrString,
   getAttrRaw,
-} from '../ui-shared.js';
+} from '../ui-shared/index.js';
 
 let _htmlCtorFields: Map<string, readonly string[]> = new Map();
 

@@ -65,7 +65,7 @@ Confirmed by `tests/emit/vue.test.ts:87-104`.
 
 The template content comes from the **last** `irModule.decls` entry whose value is an HTML element call (`isHtmlElement(value)`) or whose value is an `Abs` whose body is an HTML element. The emitter calls `emitHtmlNode` to render it, which means:
 
-- **Same tag set as HTML/React targets** (see `emitters/ui-shared.ts::HTML_TAGS`).
+- **Same tag set as HTML/React targets** (see `emitters/ui-shared/html-tags.ts::HTML_TAGS`).
 - **Attribute remapping is HTML-style** (`class="foo"`, NOT React's `className`).
 - **Var refs in template positions become `${name}` template strings** — the HTML emitter convention.
 

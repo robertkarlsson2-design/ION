@@ -14,7 +14,7 @@ falls through `raw("...")` so the agent always has a way to reach the output.
 ## 1. HTML element handling
 
 An `App` node whose callee is a `Var` with a name in `HTML_TAGS` (see
-`emitters/ui-shared.ts`) renders as a JSX element:
+`emitters/ui-shared/`) renders as a JSX element:
 
 ```
 div("class=app", h1("", "Hello"))

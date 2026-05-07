@@ -17,7 +17,7 @@ import type {
   RawInjectNode,
 } from '../../src/ir/nodes.js';
 import type { IonType } from '../../src/ir/types.js';
-import { isHtmlElement } from '../ui-shared.js';
+import { isHtmlElement } from '../ui-shared/index.js';
 import { emitHtmlNode } from '../html/emit.js';
 
 let _vueCtorFields: Map<string, readonly string[]> = new Map();

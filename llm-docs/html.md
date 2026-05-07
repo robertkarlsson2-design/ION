@@ -25,7 +25,7 @@ It does **NOT** produce a `<head>`, `<title>`, `<meta charset>`, `<body>`, or `<
 
 ## Tag set + attribute conventions
 
-Same as the React target — see `writing-ion-for-react.md` for the full list. Both targets share `emitters/ui-shared.ts` for tag recognition and attribute parsing.
+Same as the React target — see `writing-ion-for-react.md` for the full list. Both targets share `emitters/ui-shared/` for tag recognition and attribute parsing.
 
 Key differences vs. React:
 

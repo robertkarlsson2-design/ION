@@ -16,7 +16,7 @@ See `README.md` for the full language reference.
 
 ## Project rules
 
-- **Every emitter under `emitters/` is a self-contained module.** It exports one entry function (e.g. `emitReact(irModule) → string`) and consumes only `IonIRNode` / `IonType` from `src/ir/`. Emitters do NOT import from other emitters except `emitters/ui-shared.ts` (the shared HTML-tag set + attribute parser).
+- **Every emitter under `emitters/` is a self-contained module.** It exports one entry function (e.g. `emitReact(irModule) → string`) and consumes only `IonIRNode` / `IonType` from `src/ir/`. Emitters do NOT import from other emitters except `emitters/ui-shared/` (the shared HTML-tag set + attribute parser).
 - **Adding a new emitter** is documented in `contributor-skills/new-emitter.md`. Follow that file step-by-step.
 - **Wiring an existing emitter into the CLI** is a one-line addition to `getEmitter(target)` in `src/cli/build.ts`. After that, `target: "<name>"` works in `ion.config.json` and `ion build --target <name>` works on the command line.
 - **Don't bypass IonIR.** The compiler frontend (lexer → parser → binder → checker → desugarer) feeds IonIR; emitters consume IonIR. Adding new "shortcuts" that skip the IR is rejected.

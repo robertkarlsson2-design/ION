@@ -34,7 +34,7 @@ src/                          # Compiler frontend + CLI
   wire/                       # .ion / .ionw encode + decode
   types.ts                    # shared CLI / IR helpers
 emitters/                     # backends (one folder per target)
-  ui-shared.ts                # shared HTML tag / attribute helpers
+  ui-shared/               # shared HTML tag / attribute helpers (index, html-tags, attrs, emit-ts-expr)
   javascript/emit.ts          # IonIR → JS         [WIRED IN CLI]
   typescript/emit.ts          # IonIR → TS         [WIRED IN CLI]
   python/emit.ts              # IonIR → Py         [WIRED IN CLI]
@@ -83,7 +83,7 @@ ARCHITECTURE.md  CLAUDE.md
 3. **`src/parser/`** — depends on `src/lexer/`, `src/ir/`.
 4. **`src/binder/`, `src/checker/`, `src/desugar/`** — depend on `src/parser/`, `src/ir/`.
 5. **`src/cli/`** — depends on everything in `src/` AND on `emitters/`.
-6. **`emitters/<target>/`** — depend on `src/ir/` (types only) and `emitters/ui-shared.ts`. **Emitters do NOT import from `src/cli/`, `src/checker/`, etc.** They are pure functions of `IonIRModule → string` (or structured output for multi-file targets).
+6. **`emitters/<target>/`** — depend on `src/ir/` (types only) and `emitters/ui-shared/`. **Emitters do NOT import from `src/cli/`, `src/checker/`, etc.** They are pure functions of `IonIRModule → string` (or structured output for multi-file targets).
 
 The Architecture stage rejects PRs that violate these import boundaries. Concretely: an `emitters/foo/emit.ts` that imports anything from `../../src/checker/` is a blocker.
 
@@ -111,7 +111,7 @@ For multi-file emitters (LWC and similar), register via `getMultiFileEmitter(tar
 
 - **`emit.ts` exports one entry function** matching `(irModule: IonIRModule) → string` (or structured object for multi-file).
 - **Per-node emit functions are non-exported helpers** with discriminated-union dispatch on `node.kind`.
-- **`emitters/ui-shared.ts`** is the only shared module across emitters. It contains `HTML_TAGS`, `VOID_ELEMENTS`, `isHtmlElement(node)`, and `getAttrRaw(node)`. Reuse it; don't re-implement.
+- **`emitters/ui-shared/`** is the only shared module across emitters. It contains `HTML_TAGS`, `VOID_ELEMENTS`, `isHtmlElement(node)`, `getAttrRaw(node)`, `parseAttrString()`, `emitTsExpr()`, and related helpers. Import via `../ui-shared/index.js`. Reuse it; don't re-implement.
 - **Test the emitter against synthetic IR nodes** (see `tests/emit/react.test.ts` for the canonical pattern — synthesise IR nodes directly, no parser involvement, then assert the output).
 - **Snapshot tests are OK** for golden output, but every snapshot has a written assertion describing what it's testing.
 

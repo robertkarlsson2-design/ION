@@ -25,7 +25,7 @@ import {
   isHtmlElement,
   getAttrRaw,
   emitTsExpr,
-} from '../ui-shared.js';
+} from '../ui-shared/index.js';
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
 
 let _reactCtorFields: Map<string, readonly string[]> = new Map();
