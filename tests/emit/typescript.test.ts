@@ -74,7 +74,7 @@ function makeShapeModule(): IonIRModule {
     ],
     span: SPAN,
     symbolId: SYM,
-    typeParams: [],
+    type: UNIT,
   }];
 
   const areaBody = caseNode(varNode('s'), [
@@ -124,7 +124,7 @@ describe('emitTS — constructor pattern bindings', () => {
       ],
       span: SPAN,
       symbolId: SYM,
-      typeParams: [],
+      type: UNIT,
     }];
     const body = caseNode(varNode('c'), [
       { pattern: ctorPat('Red', []), body: intLit(1) },

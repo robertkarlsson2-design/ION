@@ -3,6 +3,11 @@ import { emitReactNative } from '../../emitters/react-native/emit.js';
 import { emitTsExpr } from '../../emitters/ui-shared.js';
 import type { IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
 import { makeSymbolId } from '../../src/types.js';
+import {
+  RN_PRIMITIVES, RN_ATTR_MAP, RN_STRIPPED_TAGS, RN_NATIVE_IMPORTS,
+  coerceInputProps,
+} from '../../emitters/react-native/primitives.js';
+import { HTML_TAGS } from '../../emitters/ui-shared.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -145,5 +150,159 @@ describe('emitReactNative platform import', () => {
       letNode('theme', platformApp('__platform__', strLit('ios'), strLit('light'), strLit('android'), strLit('dark'))),
     ]));
     expect(out).toContain("import { View, Text, Platform } from 'react-native'");
+  });
+});
+
+describe('primitives/RN_PRIMITIVES', () => {
+  it('covers every HTML_TAGS entry (exhaustiveness)', () => {
+    for (const tag of HTML_TAGS) {
+      const covered =
+        (RN_PRIMITIVES[tag] !== undefined && RN_PRIMITIVES[tag] !== '') ||
+        RN_STRIPPED_TAGS.has(tag);
+      expect(covered).toBe(true);
+    }
+  });
+
+  it('div → View', () => expect(RN_PRIMITIVES['div']).toBe('View'));
+  it('span → Text', () => expect(RN_PRIMITIVES['span']).toBe('Text'));
+  it('button → Pressable', () => expect(RN_PRIMITIVES['button']).toBe('Pressable'));
+  it('a → Pressable', () => expect(RN_PRIMITIVES['a']).toBe('Pressable'));
+  it('input → TextInput', () => expect(RN_PRIMITIVES['input']).toBe('TextInput'));
+  it('img → Image', () => expect(RN_PRIMITIVES['img']).toBe('Image'));
+  it('dialog → Modal', () => expect(RN_PRIMITIVES['dialog']).toBe('Modal'));
+
+  it('br is in RN_STRIPPED_TAGS', () => expect(RN_STRIPPED_TAGS.has('br')).toBe(true));
+  it('hr is in RN_STRIPPED_TAGS', () => expect(RN_STRIPPED_TAGS.has('hr')).toBe(true));
+  it('select is in RN_STRIPPED_TAGS', () => expect(RN_STRIPPED_TAGS.has('select')).toBe(true));
+});
+
+describe('primitives/RN_ATTR_MAP', () => {
+  it('onclick → onPress', () => expect(RN_ATTR_MAP['onclick']).toBe('onPress'));
+  it('onlongpress → onLongPress', () => expect(RN_ATTR_MAP['onlongpress']).toBe('onLongPress'));
+  it('class → ""', () => expect(RN_ATTR_MAP['class']).toBe(''));
+  it('for → ""', () => expect(RN_ATTR_MAP['for']).toBe(''));
+  it('tabindex → ""', () => expect(RN_ATTR_MAP['tabindex']).toBe(''));
+  it('maxlength → maxLength', () => expect(RN_ATTR_MAP['maxlength']).toBe('maxLength'));
+});
+
+describe('primitives/coerceInputProps', () => {
+  it('type=email → keyboardType=email-address + type removed', () => {
+    const result = coerceInputProps({ type: 'email' }, 'input');
+    expect(result['keyboardType']).toBe('email-address');
+    expect(result['type']).toBeUndefined();
+  });
+
+  it('type=password → secureTextEntry={true} + type removed', () => {
+    const result = coerceInputProps({ type: 'password' }, 'input');
+    expect(result['secureTextEntry']).toBe('{true}');
+    expect(result['type']).toBeUndefined();
+  });
+
+  it('type=number → keyboardType=numeric + type removed', () => {
+    const result = coerceInputProps({ type: 'number' }, 'input');
+    expect(result['keyboardType']).toBe('numeric');
+    expect(result['type']).toBeUndefined();
+  });
+
+  it('type=tel → keyboardType=phone-pad + type removed', () => {
+    const result = coerceInputProps({ type: 'tel' }, 'input');
+    expect(result['keyboardType']).toBe('phone-pad');
+    expect(result['type']).toBeUndefined();
+  });
+
+  it('readonly → editable={false} + readonly removed', () => {
+    const result = coerceInputProps({ readonly: '' }, 'input');
+    expect(result['editable']).toBe('{false}');
+    expect(result['readonly']).toBeUndefined();
+  });
+
+  it('non-input parent → same object reference (no-op)', () => {
+    const attrs = { class: 'foo' };
+    expect(coerceInputProps(attrs, 'div')).toBe(attrs);
+  });
+});
+
+describe('primitives/sets', () => {
+  it('RN_NATIVE_IMPORTS has View, Text, Pressable, TextInput, Image, StyleSheet, Platform', () => {
+    expect(RN_NATIVE_IMPORTS.has('View')).toBe(true);
+    expect(RN_NATIVE_IMPORTS.has('Text')).toBe(true);
+    expect(RN_NATIVE_IMPORTS.has('Pressable')).toBe(true);
+    expect(RN_NATIVE_IMPORTS.has('TextInput')).toBe(true);
+    expect(RN_NATIVE_IMPORTS.has('Image')).toBe(true);
+    expect(RN_NATIVE_IMPORTS.has('StyleSheet')).toBe(true);
+    expect(RN_NATIVE_IMPORTS.has('Platform')).toBe(true);
+  });
+});
+
+describe('emitReactNative/tag-emission', () => {
+  it('div → <View>...</View>', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp', appNode('div', '', strLit('hello')))]));
+    expect(out).toContain('<View>');
+    expect(out).toContain('</View>');
+    expect(out).toContain('"hello"');
+  });
+
+  it('button onclick=handlePress → onPress={handlePress}, no onclick', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', appNode('button', 'onclick=handlePress', strLit('Click me')))]),
+    );
+    expect(out).toContain('onPress={handlePress}');
+    expect(out).not.toContain('onclick');
+  });
+
+  it('a href=url → <Pressable> with href comment, no href prop', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', appNode('a', 'href=url', strLit('link')))]),
+    );
+    expect(out).toContain('<Pressable');
+    expect(out).toContain('{/* href=url (use onPress + navigation) */}');
+    expect(out).not.toContain('href="');
+    expect(out).not.toContain('href={');
+  });
+
+  it('class=container → comment child, no className prop', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', appNode('div', 'class=container', strLit('content')))]),
+    );
+    expect(out).toContain('{/* class=container (no-op on RN) */}');
+    expect(out).not.toContain('className');
+  });
+
+  it('select in div → picker comment, no <Select', () => {
+    const out = emitReactNative(
+      makeModule([
+        letNode(
+          'MyComp',
+          appNode('div', '', appNode('select', '', appNode('option', '', strLit('A')))),
+        ),
+      ]),
+    );
+    expect(out).toContain('{/* <select> not supported on RN — use @react-native-picker/picker */}');
+    expect(out).not.toContain('<Select');
+  });
+
+  it('br in div → no <br, outer View emitted', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', appNode('div', '', appNode('br', '')))]),
+    );
+    expect(out).not.toContain('<br');
+    expect(out).toContain('<View');
+  });
+
+  it('input type=password → secureTextEntry={true}, no type= or "password"', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', appNode('input', 'type=password'))]),
+    );
+    expect(out).toContain('secureTextEntry={true}');
+    expect(out).not.toContain('type=');
+    expect(out).not.toContain('password');
+  });
+
+  it('input type=email → keyboardType="email-address", no type=', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', appNode('input', 'type=email'))]),
+    );
+    expect(out).toContain('keyboardType="email-address"');
+    expect(out).not.toContain('type=');
   });
 });

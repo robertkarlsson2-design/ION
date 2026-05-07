@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { emitTS, normalizeModuleSpecifier } from '../../emitters/typescript/emit.js';
+import type { IonIRModule } from '../../src/ir/nodes.js';
 
 /**
  * Regression test for the relative-import-extension bug.
@@ -52,7 +53,7 @@ describe('TS emitter — relative imports get .js extension (Node ESM compat)', 
       // Reference a named export from a relative module path
       const wire =
         'I1\nM test v=0.1.0 d=core\nF let r:any=app(ffi:js:./routes/health:healthRouter)';
-      const ts = emitTS(decodeModule(wire));
+      const ts = emitTS(decodeModule(wire) as IonIRModule);
       expect(ts).toMatch(/import\s*\{\s*healthRouter\s*\}\s*from\s+'\.\/routes\/health\.js';/);
       expect(ts).not.toMatch(/import\s*\{\s*healthRouter\s*\}\s*from\s+'\.\/routes\/health';/);
     });
@@ -61,7 +62,7 @@ describe('TS emitter — relative imports get .js extension (Node ESM compat)', 
       const { decodeModule } = await import('../../src/wire/decoder.js');
       const wire =
         'I1\nM test v=0.1.0 d=core\nF let app:any=app(ffi:js:./routes/health:default)';
-      const ts = emitTS(decodeModule(wire));
+      const ts = emitTS(decodeModule(wire) as IonIRModule);
       // default-import binding name comes from the module path
       expect(ts).toMatch(/import\s+\w+\s+from\s+'\.\/routes\/health\.js';/);
     });
@@ -70,7 +71,7 @@ describe('TS emitter — relative imports get .js extension (Node ESM compat)', 
       const { decodeModule } = await import('../../src/wire/decoder.js');
       const wire =
         'I1\nM test v=0.1.0 d=core\nF let m:any=app(ffi:js:../../middleware/auth:createAuthMiddleware)';
-      const ts = emitTS(decodeModule(wire));
+      const ts = emitTS(decodeModule(wire) as IonIRModule);
       expect(ts).toMatch(/import\s*\{\s*createAuthMiddleware\s*\}\s*from\s+'\.\.\/\.\.\/middleware\/auth\.js';/);
     });
 
@@ -78,7 +79,7 @@ describe('TS emitter — relative imports get .js extension (Node ESM compat)', 
       const { decodeModule } = await import('../../src/wire/decoder.js');
       const wire =
         'I1\nM test v=0.1.0 d=core\nF let r:any=app(ffi:js:express:Router);let p:any=app(ffi:js:pg:Pool)';
-      const ts = emitTS(decodeModule(wire));
+      const ts = emitTS(decodeModule(wire) as IonIRModule);
       expect(ts).toMatch(/import\s*\{\s*Router\s*\}\s*from\s+'express';/);
       expect(ts).toMatch(/import\s*\{\s*Pool\s*\}\s*from\s+'pg';/);
       // Should NOT have appended .js to bare specifiers
@@ -90,7 +91,7 @@ describe('TS emitter — relative imports get .js extension (Node ESM compat)', 
       const { decodeModule } = await import('../../src/wire/decoder.js');
       const wire =
         'I1\nM test v=0.1.0 d=core\nF let r:any=app(ffi:js:./helpers:default);let h:any=app(ffi:js:./helpers:helperFn,0)';
-      const ts = emitTS(decodeModule(wire));
+      const ts = emitTS(decodeModule(wire) as IonIRModule);
       // Single combined line, with .js on the relative specifier
       expect(ts).toMatch(/import\s+\w+,\s*\{\s*helperFn\s*\}\s*from\s+'\.\/helpers\.js';/);
     });
