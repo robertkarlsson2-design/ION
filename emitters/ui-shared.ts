@@ -225,7 +225,7 @@ export function emitTsExpr(node: IonIRNode, opts: EmitTsExprOpts): string {
             return `${emitTsExpr(app.args[0]!, opts)}?.${(m as { value: { value: string } }).value.value}`;
           }
         }
-        if (name === '__throw__' && app.args.length === 1) return `(() => { throw new Error(${emitTsExpr(app.args[0]!, opts)}); })()`;
+        if (name === '__throw__' && app.args.length === 1) return `(() => { throw ${emitTsExpr(app.args[0]!, opts)}; })()`;
         if (name === '__env__' && app.args.length === 1) return `process.env[${emitTsExpr(app.args[0]!, opts)}]`;
         if (name === '__set__' && app.args.length === 3) {
           const f = app.args[1]!;
