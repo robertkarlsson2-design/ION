@@ -305,4 +305,15 @@ describe('emitTsExprForReact', () => {
     const node = absNode(['e'], asyncBlockNode(rawNode('{ e.preventDefault(); }')));
     expect(emitTsExprForReact(node)).toBe('async (e) => { e.preventDefault(); }');
   });
+
+  it('__throw__ emits throw EXPR directly', () => {
+    const node: IonIRNode = {
+      kind: 'App',
+      callee: varNode('__throw__'),
+      args: [varNode('err')],
+      span: SPAN,
+      type: UNIT,
+    };
+    expect(emitTsExprForReact(node)).toBe('(() => { throw err; })()');
+  });
 });

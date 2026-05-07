@@ -206,7 +206,7 @@ stage will reject as not idiomatic.
 | `obj->method(args)` | `obj.method(args)` | Method call. |
 | `async{body}` | `(async () => body)()` | Async block. Body can be a let-chain or a do-block. |
 | `await(expr)` or `@expr` | `await expr` | Must be inside `async{...}`. `@expr` saves 5 chars per use. |
-| `throw "msg"` or `throw EXPR` | `(() => { throw new Error(EXPR); })()` | Throw as expression. |
+| `throw EXPR` | `(() => { throw EXPR; })()` | Throw as expression — caller must supply an Error instance when needed (e.g. `throw raw("new Error('msg')")`). |
 | `try{T}catch{C}` | async-IIFE try/catch | Each `{...}` body parses as a do-block (semicolons separate statements). |
 | `try{T}catch{C}finally{F}` | async-IIFE try/catch/finally | For pg transactions with rollback + cleanup. |
 | `try{T}finally{F}` | async-IIFE try/finally | Rare. |

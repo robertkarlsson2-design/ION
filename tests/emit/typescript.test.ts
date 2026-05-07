@@ -152,3 +152,20 @@ describe('emitTS — platform builtin fallback', () => {
     expect(out).toContain('__platform__ requires --target react-native');
   });
 });
+
+describe('emitTS — __throw__ emission', () => {
+  it('emits throw EXPR directly, no new Error wrapper', () => {
+    const node = appNode('__throw__', varNode('err'));
+    const out = emitTS(makeModule([letNode('x', node)]));
+    expect(out).toContain('(() => { throw err; })()');
+    expect(out).not.toContain('new Error(err)');
+  });
+
+  it('with RawInject arg does not double-wrap', () => {
+    const raw: IonIRNode = { kind: 'RawInject', code: 'new Error("boom")', span: SPAN, type: UNIT };
+    const node = appNode('__throw__', raw);
+    const out = emitTS(makeModule([letNode('x', node)]));
+    expect(out).toContain('(() => { throw new Error("boom"); })()');
+    expect(out).not.toContain('new Error(new Error');
+  });
+});

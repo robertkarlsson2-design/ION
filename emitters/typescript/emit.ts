@@ -612,10 +612,10 @@ function emitTsExpr(node: IonIRNode): string {
         if (calleeName === '__fold__' && app.args.length === 3) {
           return `${emitTsExpr(app.args[0])}.reduce(${emitTsExpr(app.args[2])}, ${emitTsExpr(app.args[1])})`;
         }
-        // __throw__(msg) → throw new Error(msg)
-        // Wraps in IIFE so it's an expression: `(() => { throw ... })()`.
+        // __throw__(expr) → throw expr
+        // Wraps in IIFE so it is usable as an expression.
         if (calleeName === '__throw__' && app.args.length === 1) {
-          return `(() => { throw new Error(${emitTsExpr(app.args[0])}); })()`;
+          return `(() => { throw ${emitTsExpr(app.args[0])}; })()`;
         }
         // Helper: emit an arg as either an inline statement-block (when it's a
         // Let chain or a __do__) or as a single return-expression. Used for
