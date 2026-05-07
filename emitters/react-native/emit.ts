@@ -10,7 +10,7 @@ import { HTML_TAGS, isHtmlElement, getAttrRaw, emitTsExpr } from '../ui-shared.j
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
 import {
   RN_STRIPPED_TAGS, RN_ATTR_MAP,
-  RN_TEXT_PRIMITIVES, RN_CONTAINER_PRIMITIVES,
+  RN_TEXT_PRIMITIVES, RN_CONTAINER_PRIMITIVES, RN_NATIVE_IMPORTS,
   coerceInputProps, lookupPrimitive,
 } from './primitives.js';
 import type { ParsedAttrs } from './primitives.js';
@@ -178,6 +178,7 @@ function emitRnJsxNode(node: IonIRNode, indent = 0, inTextContext = false): stri
           }
           const { component, isContainer, isText } = lookupPrimitive(tagName);
           if (!component) return '';
+          if (RN_NATIVE_IMPORTS.has(component)) _rnImports.add(component);
           const attrRaw = app.args.length > 0 ? getAttrRaw(app.args[0]!) : '';
           const { attrStr, commentChildren } = parseRnAttrString(attrRaw, tagName);
           const attrPart = attrStr ? ` ${attrStr}` : '';
@@ -192,6 +193,7 @@ function emitRnJsxNode(node: IonIRNode, indent = 0, inTextContext = false): stri
           return `${pad}<${component}${allAttrs}>\n${childrenStrs.join('\n')}\n${pad}</${component}>`;
         }
         if (/^[A-Z]/.test(tagName)) {
+          if (RN_NATIVE_IMPORTS.has(tagName)) _rnImports.add(tagName);
           const first = app.args[0];
           const hasAttrStr = first !== undefined && first.kind === 'Literal' && first.value.kind === 'Str';
           const rawAttr = hasAttrStr ? (first.value as { value: string }).value : '';
@@ -221,7 +223,7 @@ function emitRnJsxNode(node: IonIRNode, indent = 0, inTextContext = false): stri
 }
 
 interface RnEmitConfig {
-  reactNative?: { entryComponent?: string | null; styleHoistThreshold?: number };
+  reactNative?: { entryComponent?: string | null; styleHoistThreshold?: number; safeAreaSource?: 'context' | 'rn-builtin' };
 }
 
 export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): string {
@@ -234,7 +236,7 @@ export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): s
     }
   }
 
-  _rnImports = new Set<string>(['View', 'Text']);
+  _rnImports = new Set<string>();
 
   const threshold = Math.max(2, config?.reactNative?.styleHoistThreshold ?? 3);
   const { replacements, hoisted } = collectAndHoistStyles(irModule, threshold);
@@ -286,13 +288,19 @@ export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): s
     declParts.push(`AppRegistry.registerComponent('${entryName}', () => ${entryName});`);
   }
 
-  const parts: string[] = [
-    '"use strict";',
-    "import React from 'react';",
-    `import { ${[..._rnImports].join(', ')} } from 'react-native';`,
-    '',
-    ...declParts,
-  ];
+  const safeAreaSource = config?.reactNative?.safeAreaSource ?? 'context';
+  const useSafeAreaContext = safeAreaSource === 'context' && _rnImports.has('SafeAreaView');
+  const rnImportNames = [..._rnImports]
+    .filter(n => !(useSafeAreaContext && n === 'SafeAreaView'))
+    .sort();
+  const parts: string[] = ['"use strict";', "import React from 'react';"];
+  if (rnImportNames.length > 0) {
+    parts.push(`import { ${rnImportNames.join(', ')} } from 'react-native';`);
+  }
+  if (useSafeAreaContext) {
+    parts.push(`import { SafeAreaView } from 'react-native-safe-area-context';`);
+  }
+  parts.push('', ...declParts);
 
   return parts.join('\n') + '\n';
 }
