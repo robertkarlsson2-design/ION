@@ -568,3 +568,128 @@ describe('emitReactNative/AppRegistry', () => {
     expect(out).not.toContain('AppRegistry');
   });
 });
+
+describe('emitReactNative/style-hoisting', () => {
+  // Case 1: 3 identical styles at default threshold=3 → hoisted as s1
+  it('3 identical styles at default threshold → hoisted, StyleSheet.create emitted', () => {
+    const styleObj = objLit(strLit('marginTop'), intLit(8));
+    const comp = absNode([], appNode('div', '',
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+    ));
+    const out = emitReactNative(makeModule([letNode('App', comp)]));
+    expect(out.match(/style=\{styles\.s1\}/g)?.length).toBe(3);
+    expect(out).toContain('StyleSheet.create(');
+    expect(out).toContain('s1: { marginTop: 8 }');
+    expect(out).toContain('StyleSheet');
+  });
+
+  // Case 2: 2 identical styles below default threshold=3 → inline, no StyleSheet
+  it('2 identical styles below default threshold → inline, no StyleSheet.create', () => {
+    const styleObj = objLit(strLit('marginTop'), intLit(8));
+    const comp = absNode([], appNode('div', '',
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+    ));
+    const out = emitReactNative(makeModule([letNode('App', comp)]));
+    expect(out).not.toContain('StyleSheet.create(');
+    expect(out).toContain('style={{ marginTop: 8 }}');
+  });
+
+  // Case 3: styleA ×2 + styleB ×1 → neither reaches threshold, both inline
+  it('two different styles neither reaching threshold → both inline', () => {
+    const styleA = objLit(strLit('marginTop'), intLit(8));
+    const styleB = objLit(strLit('padding'), intLit(4));
+    const comp = absNode([], appNode('div', '',
+      appNodeWithProps('div', '', [{ key: 'style', value: styleA }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleA }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleB }]),
+    ));
+    const out = emitReactNative(makeModule([letNode('App', comp)]));
+    expect(out).not.toContain('StyleSheet.create(');
+    expect(out).toContain('style={{ marginTop: 8 }}');
+    expect(out).toContain('style={{ padding: 4 }}');
+  });
+
+  // Case 4: 2 identical styles + styleHoistThreshold: 2 → hoisted
+  it('2 identical styles with threshold=2 → hoisted', () => {
+    const styleObj = objLit(strLit('color'), strLit('red'));
+    const comp = absNode([], appNode('div', '',
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+    ));
+    const out = emitReactNative(
+      makeModule([letNode('App', comp)]),
+      { reactNative: { styleHoistThreshold: 2 } },
+    );
+    expect(out).toContain('style={styles.s1}');
+    expect(out).toContain('s1: { color: "red" }');
+    expect(out).toContain('StyleSheet.create(');
+  });
+
+  // Case 5: confirms default threshold=3: styleA ×3 hoisted, styleB ×2 inline
+  it('default threshold is 3: 3 occurrences hoisted, 2 occurrences inline', () => {
+    const styleA = objLit(strLit('marginTop'), intLit(16));
+    const styleB = objLit(strLit('padding'), intLit(4));
+    const comp = absNode([], appNode('div', '',
+      appNodeWithProps('div', '', [{ key: 'style', value: styleA }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleA }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleA }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleB }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleB }]),
+    ));
+    const out = emitReactNative(makeModule([letNode('App', comp)]));
+    expect(out).toContain('StyleSheet.create(');
+    expect(out).toContain('s1: { marginTop: 16 }');
+    expect(out.match(/style=\{styles\.s1\}/g)?.length).toBe(3);
+    expect(out).toContain('style={{ padding: 4 }}');
+    expect(out).not.toContain('s2:');
+  });
+
+  // Case 6: style with Var value (non-literal) × 3 → not hoistable, rendered inline
+  it('style with Var value × 3 → not hoisted (non-literal value)', () => {
+    const styleObj = objLit(strLit('color'), varNode('theme'));
+    const comp = absNode([], appNode('div', '',
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+    ));
+    const out = emitReactNative(makeModule([letNode('App', comp)]));
+    expect(out).not.toContain('StyleSheet.create(');
+    expect(out).toContain('style={{ color: theme }}');
+  });
+
+  // Case 7: occurrences inside __platform__ subtree are not counted
+  it('style inside __platform__ subtree not counted: 2 inside + 1 outside → not hoisted', () => {
+    const styleObj = objLit(strLit('marginTop'), intLit(8));
+    const platformSubtree = platformApp('__platform__',
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+    );
+    const comp = absNode([], appNode('div', '',
+      platformSubtree,
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+    ));
+    const out = emitReactNative(makeModule([letNode('App', comp)]));
+    expect(out).not.toContain('StyleSheet.create(');
+  });
+
+  // Case 8: 5 identical styles with MAX_SAFE_INTEGER threshold → no hoisting
+  it('5 identical styles with MAX_SAFE_INTEGER threshold → inline, no StyleSheet.create', () => {
+    const styleObj = objLit(strLit('marginTop'), intLit(8));
+    const comp = absNode([], appNode('div', '',
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+      appNodeWithProps('div', '', [{ key: 'style', value: styleObj }]),
+    ));
+    const out = emitReactNative(
+      makeModule([letNode('App', comp)]),
+      { reactNative: { styleHoistThreshold: Number.MAX_SAFE_INTEGER } },
+    );
+    expect(out).not.toContain('StyleSheet.create(');
+    expect(out).toContain('style={{ marginTop: 8 }}');
+  });
+});
