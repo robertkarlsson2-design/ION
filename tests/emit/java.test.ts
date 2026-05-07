@@ -27,7 +27,7 @@ function absNode(params: string[], body: IonIRNode): IonIRNode {
     body,
     captures: [],
     span: SPAN,
-    type: { kind: 'Fn', params: params.map(() => ({ kind: 'Int' as const })), ret: { kind: 'Int' } },
+    type: { kind: 'Fn', params: params.map(() => ({ kind: 'Int' as const })), ret: { kind: 'Int' }, effects: new Set<never>() },
   };
 }
 
@@ -66,7 +66,7 @@ function makeShapeModule(): IonIRModule {
     ],
     span: SPAN,
     symbolId: SYM,
-    typeParams: [],
+    type: UNIT,
   }];
 
   const areaBody = caseNode(varNode('s'), [
@@ -103,7 +103,7 @@ describe('emitJava — constructor pattern bindings', () => {
       ],
       span: SPAN,
       symbolId: SYM,
-      typeParams: [],
+      type: UNIT,
     }];
     const body = caseNode(varNode('c'), [
       { pattern: ctorPat('Red', []), body: intLit(1) },

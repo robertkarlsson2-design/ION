@@ -208,7 +208,7 @@ describe('TS emitter — FFI ref as callee (fix for empty `app(, args)` bug)', (
   it('global FFI ref (console.log) emits as member access', async () => {
     const { decodeModule } = await import('../../src/wire/decoder.js');
     const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn(int)->unit=(x:int)->app(ffi:js:console:log,x);0';
-    const ir = decodeModule(wire);
+    const ir = decodeModule(wire) as IonIRModule;
     const ts = emitTS(ir);
     expect(ts).toContain('console.log(x)');
     expect(ts).not.toContain('app(, x)');
@@ -218,7 +218,7 @@ describe('TS emitter — FFI ref as callee (fix for empty `app(, args)` bug)', (
   it('npm-package FFI ref emits as bare symbol (import-resolved name)', async () => {
     const { decodeModule } = await import('../../src/wire/decoder.js');
     const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn(int)->any=(x:int)->app(ffi:js:pg:Pool,x);0';
-    const ir = decodeModule(wire);
+    const ir = decodeModule(wire) as IonIRModule;
     const ts = emitTS(ir);
     expect(ts).toContain('Pool(x)');
     expect(ts).not.toContain('pg.Pool');
@@ -230,28 +230,28 @@ describe('TS emitter — operator builtins (__obj__, __index__, __nullish__, __o
   it('__obj__ emits object literal with parens around arrow body', async () => {
     const { decodeModule } = await import('../../src/wire/decoder.js');
     const wire = 'I1\nM test v=0.1.0 d=core\nF let mk:fn()->any=()->app(__obj__,"status","ok","code",200)';
-    const ts = emitTS(decodeModule(wire));
+    const ts = emitTS(decodeModule(wire) as IonIRModule);
     expect(ts).toContain('() => ({ status: "ok", code: 200 })');
   });
 
   it('__index__ emits bracket access', async () => {
     const { decodeModule } = await import('../../src/wire/decoder.js');
     const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn(any)->any=(r:any)->app(__index__,r.rows,0)';
-    const ts = emitTS(decodeModule(wire));
+    const ts = emitTS(decodeModule(wire) as IonIRModule);
     expect(ts).toContain('r.rows[0]');
   });
 
   it('__nullish__ emits coalescing', async () => {
     const { decodeModule } = await import('../../src/wire/decoder.js');
     const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn(any)->any=(x:any)->app(__nullish__,x,"default")';
-    const ts = emitTS(decodeModule(wire));
+    const ts = emitTS(decodeModule(wire) as IonIRModule);
     expect(ts).toContain('?? "default"');
   });
 
   it('__optchain__ emits ?. member access', async () => {
     const { decodeModule } = await import('../../src/wire/decoder.js');
     const wire = 'I1\nM test v=0.1.0 d=core\nF let f:fn(any)->any=(o:any)->app(__optchain__,o,"foo")';
-    const ts = emitTS(decodeModule(wire));
+    const ts = emitTS(decodeModule(wire) as IonIRModule);
     expect(ts).toContain('o?.foo');
   });
 });

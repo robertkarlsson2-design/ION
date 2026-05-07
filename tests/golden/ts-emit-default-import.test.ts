@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { emitTS, defaultImportLocalName } from '../../emitters/typescript/emit.js';
+import type { IonIRModule } from '../../src/ir/nodes.js';
 
 /**
  * Regression test for the `ffi:js:<module>:default` emission bug.
@@ -17,7 +18,7 @@ describe('TS emitter — `ffi:js:<m>:default` default-import emission', () => {
     const { decodeModule } = await import('../../src/wire/decoder.js');
     // `ffi:js:express:default()` at top level — module-import path + callsite
     const wire = 'I1\nM test v=0.1.0 d=core\nF let app:any=app(ffi:js:express:default)';
-    const ts = emitTS(decodeModule(wire));
+    const ts = emitTS(decodeModule(wire) as IonIRModule);
 
     // Import line: must NOT use `{ default }` (reserved-word syntax error).
     expect(ts).not.toMatch(/import\s*\{\s*default\s*\}\s*from/);
@@ -34,7 +35,7 @@ describe('TS emitter — `ffi:js:<m>:default` default-import emission', () => {
     // Module references both `useState` (named) and `default` from `react`.
     const wire =
       'I1\nM test v=0.1.0 d=core\nF let r:any=app(ffi:js:react:default);let h:any=app(ffi:js:react:useState,0)';
-    const ts = emitTS(decodeModule(wire));
+    const ts = emitTS(decodeModule(wire) as IonIRModule);
 
     // Should be a single combined import line, not two.
     expect(ts).toMatch(/import\s+react,\s*\{\s*useState\s*\}\s*from\s+'react';/);
