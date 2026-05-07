@@ -259,7 +259,7 @@ describe('primitives/sets', () => {
 function absNode(params: string[], body: IonIRNode): IonIRNode {
   return {
     kind: 'Abs',
-    params: params.map(name => ({ name, symbolId: SYM, type: UNIT })),
+    params: params.map(name => ({ name, symbolId: SYM, type: UNIT, span: SPAN })),
     body,
     captures: [],
     span: SPAN,
