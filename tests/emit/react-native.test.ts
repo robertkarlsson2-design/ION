@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { emitReactNative } from '../../emitters/react-native/emit.js';
 import { emitTsExpr } from '../../emitters/ui-shared.js';
-import type { IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
+import { translateStyleObject } from '../../emitters/react-native/styles.js';
+import type { AppNode, IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
 import { makeSymbolId } from '../../src/types.js';
 import {
   RN_PRIMITIVES, RN_ATTR_MAP, RN_STRIPPED_TAGS, RN_NATIVE_IMPORTS,
@@ -66,6 +67,23 @@ function makeModule(decls: IonIRNode[]): IonIRModule {
 
 function platformApp(builtin: string, ...args: IonIRNode[]): IonIRNode {
   return { kind: 'App', callee: varNode(builtin), args, span: SPAN, type: UNIT };
+}
+
+function objLit(...kvPairs: IonIRNode[]): IonIRNode {
+  return { kind: 'App', callee: varNode('__obj__'), args: kvPairs, span: SPAN, type: UNIT };
+}
+
+function appNodeWithProps(
+  tag: string,
+  attrStr: string,
+  propDict: { key: string; value: IonIRNode }[],
+  ...children: IonIRNode[]
+): IonIRNode {
+  return { kind: 'App', callee: varNode(tag), args: [strLit(attrStr), ...children], propDict, span: SPAN, type: UNIT };
+}
+
+function accessorNode(receiver: IonIRNode, member: string): IonIRNode {
+  return { kind: 'Accessor', receiver, member, span: SPAN, type: UNIT };
 }
 
 // ---------------------------------------------------------------------------
@@ -304,5 +322,79 @@ describe('emitReactNative/tag-emission', () => {
     );
     expect(out).toContain('keyboardType="email-address"');
     expect(out).not.toContain('type=');
+  });
+});
+
+describe('translateStyleObject', () => {
+  it('kebab key is camelised', () => {
+    const result = translateStyleObject(objLit(strLit('margin-top'), intLit(8)) as AppNode);
+    expect(result.args[0]).toMatchObject({ kind: 'Literal', value: { kind: 'Str', value: 'marginTop' } });
+    expect(result.args[1]).toMatchObject({ kind: 'Literal', value: { kind: 'Int', value: 8 } });
+  });
+
+  it('"Npx" string value is coerced to Int', () => {
+    const result = translateStyleObject(objLit(strLit('marginTop'), strLit('8px')) as AppNode);
+    expect(result.args[1]).toMatchObject({ kind: 'Literal', value: { kind: 'Int', value: 8 } });
+  });
+
+  it('already-camelCase key is unchanged', () => {
+    const result = translateStyleObject(objLit(strLit('color'), strLit('red')) as AppNode);
+    expect(result.args[0]).toMatchObject({ kind: 'Literal', value: { kind: 'Str', value: 'color' } });
+  });
+
+  it('non-px string value passes through', () => {
+    const result = translateStyleObject(objLit(strLit('color'), strLit('red')) as AppNode);
+    expect(result.args[1]).toMatchObject({ kind: 'Literal', value: { kind: 'Str', value: 'red' } });
+  });
+
+  it('pairing is preserved for two pairs', () => {
+    const result = translateStyleObject(
+      objLit(strLit('margin-top'), intLit(4), strLit('padding'), intLit(2)) as AppNode,
+    );
+    expect(result.args).toHaveLength(4);
+    expect(result.args[0]).toMatchObject({ value: { value: 'marginTop' } });
+    expect(result.args[1]).toMatchObject({ value: { value: 4 } });
+    expect(result.args[2]).toMatchObject({ value: { value: 'padding' } });
+    expect(result.args[3]).toMatchObject({ value: { value: 2 } });
+  });
+});
+
+describe('emitReactNative/style-propDict', () => {
+  it('kebab→camel style key coercion', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp',
+      appNodeWithProps('div', '', [{ key: 'style', value: objLit(strLit('margin-top'), intLit(8)) }]),
+    )]));
+    expect(out).toContain('marginTop: 8');
+    expect(out).not.toContain('margin-top');
+  });
+
+  it('px-suffix value coercion', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp',
+      appNodeWithProps('div', '', [{ key: 'style', value: objLit(strLit('marginTop'), strLit('8px')) }]),
+    )]));
+    expect(out).toContain('marginTop: 8');
+    expect(out).not.toContain('"8px"');
+  });
+
+  it('style Var passthrough', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp',
+      appNodeWithProps('div', '', [{ key: 'style', value: varNode('myStyles') }]),
+    )]));
+    expect(out).toContain('style={myStyles}');
+  });
+
+  it('style Accessor (styles.x) passthrough', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp',
+      appNodeWithProps('div', '', [{ key: 'style', value: accessorNode(varNode('styles'), 'x') }]),
+    )]));
+    expect(out).toContain('style={styles.x}');
+  });
+
+  it('already-camelCase style key passes through without kebab comment', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp',
+      appNodeWithProps('div', '', [{ key: 'style', value: objLit(strLit('color'), strLit('red')) }]),
+    )]));
+    expect(out).toContain('color: "red"');
+    expect(out).not.toContain('kebab');
   });
 });
