@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { emitReactNative } from '../../emitters/react-native/emit.js';
-import { emitTsExpr } from '../../emitters/ui-shared.js';
+import { emitTsExpr } from '../../emitters/ui-shared/index.js';
 import type { IonIRModule, IonIRNode, AppNode } from '../../src/ir/nodes.js';
 import { translateStyleObject } from '../../emitters/react-native/styles.js';
 import { makeSymbolId } from '../../src/types.js';
@@ -8,7 +8,7 @@ import {
   RN_PRIMITIVES, RN_ATTR_MAP, RN_STRIPPED_TAGS, RN_NATIVE_IMPORTS,
   coerceInputProps,
 } from '../../emitters/react-native/primitives.js';
-import { HTML_TAGS } from '../../emitters/ui-shared.js';
+import { HTML_TAGS } from '../../emitters/ui-shared/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

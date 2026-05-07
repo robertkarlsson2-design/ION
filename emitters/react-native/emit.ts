@@ -6,7 +6,7 @@ import type {
   LetNode,
   VarNode,
 } from '../../src/ir/nodes.js';
-import { HTML_TAGS, isHtmlElement, getAttrRaw, emitTsExpr } from '../ui-shared.js';
+import { HTML_TAGS, isHtmlElement, getAttrRaw, emitTsExpr } from '../ui-shared/index.js';
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
 import {
   RN_STRIPPED_TAGS, RN_ATTR_MAP,

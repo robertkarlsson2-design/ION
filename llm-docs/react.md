@@ -39,7 +39,7 @@ The emitter never emits `import { useState } from 'react'` or any other named im
 
 ## Recognised HTML tag set
 
-From `emitters/ui-shared.ts::HTML_TAGS`. These are the tag names the emitter treats as JSX elements; any other call name becomes a function-call expression.
+From `emitters/ui-shared/html-tags.ts::HTML_TAGS`. These are the tag names the emitter treats as JSX elements; any other call name becomes a function-call expression.
 
 ```
 div span p h1 h2 h3 h4 h5 h6

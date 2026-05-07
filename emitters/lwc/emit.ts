@@ -22,7 +22,7 @@ import {
   VOID_ELEMENTS,
   isHtmlElement,
   getAttrRaw,
-} from '../ui-shared.js';
+} from '../ui-shared/index.js';
 
 let _lwcCtorFields: Map<string, readonly string[]> = new Map();
 
