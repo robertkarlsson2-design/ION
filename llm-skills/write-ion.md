@@ -30,6 +30,7 @@ Look at `ion.config.json`'s `target` field, or the `--target` CLI flag, or the p
 | `vue` | `writing-ion-for-vue` | Vue Single-File Components |
 | `apex` | `writing-ion-for-apex` | Salesforce Apex classes |
 | `lwc` | `writing-ion-for-lwc` | Lightning Web Components |
+| `react-native` | `writing-ion-for-react` (use as base; RN-specific notes below) | React Native mobile apps |
 
 If the project uses **multiple targets** (e.g., backend in TypeScript, frontend in React), load both. They mostly compose without conflict.
 
@@ -90,6 +91,7 @@ Wired emitters (callable via `--target <name>` or `target: "<name>"` in config):
 - `vue` ✅
 - `apex` ✅ (experimental)
 - `lwc` ✅ (multi-file output)
+- `react-native` ✅ — maps HTML tags to RN primitives (`div`→`View`, `span`→`Text`, `img`→`Image`, etc.); `src=require:./path` emits `source={require("./path")}`, any other `src=` value emits `source={{ uri: "..." }}`; auto-emits `AppRegistry.registerComponent` for the entry component (default `"App"`, suppress with `"reactNative": { "entryComponent": null }` in `ion.config.json`)
 
 Each has a corresponding `writing-ion-for-<target>` skill — load the relevant one in Step 2.
 

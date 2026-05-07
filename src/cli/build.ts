@@ -124,7 +124,7 @@ const TARGET_EXT: Record<string, string> = {
 type EmitFn = (module: IonIRModule) => string;
 type MultiFileEmitFn = (module: IonIRModule) => LwcOutput;
 
-function getEmitter(target: string): EmitFn | null {
+function getEmitter(target: string, config: IonConfig): EmitFn | null {
   if (target === 'javascript') return emitJS;
   if (target === 'typescript') return emitTS;
   if (target === 'typescript-dts') return emitTsDts;
@@ -134,7 +134,7 @@ function getEmitter(target: string): EmitFn | null {
   if (target === 'html') return emitHTML;
   if (target === 'vue') return emitVue;
   if (target === 'apex') return emitApex;
-  if (target === 'react-native') return emitReactNative;
+  if (target === 'react-native') return (ir) => emitReactNative(ir, config);
   return null;
 }
 
@@ -868,7 +868,7 @@ export async function runBuild(args: string[]): Promise<RunResult> {
   }
 
   const target = parsed.targetOverride ?? config.target;
-  const emitter = getEmitter(target);
+  const emitter = getEmitter(target, config);
   const multiEmitter = getMultiFileEmitter(target);
   if (emitter === null && multiEmitter === null) {
     process.stderr.write(`error: unsupported target: ${target}\n`);

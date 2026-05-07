@@ -256,6 +256,33 @@ describe('primitives/sets', () => {
   });
 });
 
+function absNode(params: string[], body: IonIRNode): IonIRNode {
+  return {
+    kind: 'Abs',
+    params: params.map(name => ({ name, symbolId: SYM, type: UNIT })),
+    body,
+    captures: [],
+    span: SPAN,
+    type: UNIT,
+  };
+}
+
+function appNodeWithPropDict(
+  tag: string,
+  attrStr: string,
+  propDict: { key: string; value: IonIRNode }[],
+  ...children: IonIRNode[]
+): IonIRNode {
+  return {
+    kind: 'App',
+    callee: varNode(tag),
+    args: [strLit(attrStr), ...children],
+    propDict,
+    span: SPAN,
+    type: UNIT,
+  };
+}
+
 describe('emitReactNative/tag-emission', () => {
   it('div → <View>...</View>', () => {
     const out = emitReactNative(makeModule([letNode('MyComp', appNode('div', '', strLit('hello')))]));
@@ -458,5 +485,86 @@ describe('emitReactNative/bare-text-auto-wrap', () => {
     expect(out).toContain('{"click"}');
     expect(out).toContain('<View');
     expect(out).not.toContain('{<View');
+  });
+});
+
+describe('emitReactNative/Image source', () => {
+  it('remote URL src → source={{ uri: "..." }}', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', absNode([], appNode('img', 'src=https://example.com/photo.jpg')))]),
+    );
+    expect(out).toContain('source={{ uri: "https://example.com/photo.jpg" }}');
+    expect(out).toContain('<Image');
+    expect(out).not.toContain('src=');
+    expect(out).toContain("import { View, Text, Image } from 'react-native'");
+  });
+
+  it('data: URI → source={{ uri: "data:..." }}', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', absNode([], appNode('img', 'src=data:image/png;base64,abc123==')))]),
+    );
+    expect(out).toContain('source={{ uri: "data:image/png;base64,abc123==" }}');
+    expect(out).not.toContain('src=');
+  });
+
+  it('require: prefix → source={require("./path")}', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', absNode([], appNode('img', 'src=require:./assets/logo.png')))]),
+    );
+    expect(out).toContain('source={require("./assets/logo.png")}');
+    expect(out).not.toContain('src=');
+    expect(out).not.toContain('uri:');
+  });
+
+  it('missing src → <Image with missing-src comment', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', absNode([], appNode('img', '')))]),
+    );
+    expect(out).toContain('<Image');
+    expect(out).toContain('{/* missing src on <Image> */}');
+    expect(out).not.toContain('source=');
+  });
+
+  it('propDict source passthrough → source={imgSrc}', () => {
+    const imgWithSource = appNodeWithPropDict('img', '', [{ key: 'source', value: varNode('imgSrc') }]);
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', absNode([], imgWithSource))]),
+    );
+    expect(out).toContain('source={imgSrc}');
+    expect(out).not.toContain('uri:');
+    expect(out).not.toContain('require(');
+  });
+});
+
+describe('emitReactNative/AppRegistry', () => {
+  it('default entry "App" → AppRegistry.registerComponent emitted', () => {
+    const out = emitReactNative(
+      makeModule([letNode('App', absNode([], appNode('div', '', strLit('Hello'))))]),
+    );
+    expect(out).toContain("AppRegistry.registerComponent('App', () => App)");
+    expect(out).toContain("AppRegistry");
+    expect(out).toContain("import { View, Text, AppRegistry } from 'react-native'");
+  });
+
+  it('entryComponent: null → AppRegistry suppressed', () => {
+    const out = emitReactNative(
+      makeModule([letNode('App', absNode([], appNode('div', '', strLit('Hello'))))]),
+      { reactNative: { entryComponent: null } },
+    );
+    expect(out).not.toContain('AppRegistry');
+  });
+
+  it('custom entryComponent name → registerComponent uses that name', () => {
+    const out = emitReactNative(
+      makeModule([letNode('Root', absNode([], appNode('div', '', strLit('Hello'))))]),
+      { reactNative: { entryComponent: 'Root' } },
+    );
+    expect(out).toContain("AppRegistry.registerComponent('Root', () => Root)");
+    expect(out).not.toContain("'App'");
+  });
+
+  it('non-JSX let App = 42 → no AppRegistry', () => {
+    const out = emitReactNative(makeModule([letNode('App', intLit(42))]));
+    expect(out).not.toContain('AppRegistry');
   });
 });
