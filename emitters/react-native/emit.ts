@@ -3,11 +3,18 @@ import type {
   IonIRNode,
   LetNode,
 } from '../../src/ir/nodes.js';
-import { isHtmlElement } from '../ui-shared.js';
+import { isHtmlElement, emitTsExpr } from '../ui-shared.js';
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
 
 export function emitReactNative(irModule: IonIRModule): string {
   irModule = shakePreludeDecls(irModule);
+
+  const ctorFields = new Map<string, readonly string[]>();
+  for (const d of irModule.data) {
+    for (const v of d.variants) {
+      ctorFields.set(v.tag, v.fields.map(f => f.name));
+    }
+  }
 
   const parts: string[] = [
     '"use strict";',
@@ -23,7 +30,7 @@ export function emitReactNative(irModule: IonIRModule): string {
       if (value.kind === 'Abs' || isHtmlElement(value)) {
         parts.push(`const ${name}: React.FC = () => ();`);
       } else {
-        parts.push(`const ${name} = /* TODO */;`);
+        parts.push(`const ${name} = ${emitTsExpr(value, { ctorFields })};`);
       }
     }
   }
