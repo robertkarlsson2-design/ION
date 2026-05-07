@@ -164,6 +164,16 @@ describe('emitTsExpr (shared)', () => {
     const node = platformApp('__platform_select__', strLit('ios'), intLit(1), strLit('android'), intLit(2));
     expect(emitTsExpr(node, {})).toBe('Platform.select({ ios: 1, android: 2 })');
   });
+
+  it('__platform__ missing ios arm (duplicate android) throws', () => {
+    const node = platformApp('__platform__', strLit('android'), strLit('x'), strLit('android'), strLit('y'));
+    expect(() => emitTsExpr(node, {})).toThrow('both "ios" and "android" arms are required');
+  });
+
+  it('__platform__ missing android arm (duplicate ios) throws', () => {
+    const node = platformApp('__platform__', strLit('ios'), strLit('x'), strLit('ios'), strLit('y'));
+    expect(() => emitTsExpr(node, {})).toThrow('both "ios" and "android" arms are required');
+  });
 });
 
 describe('emitReactNative platform import', () => {

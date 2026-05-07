@@ -311,12 +311,15 @@ export function emitTsExpr(node: IonIRNode, opts: EmitTsExprOpts): string {
             const entries = pairs.map(p => `${p.key}: ${emitTsExpr(p.val, opts)}`).join(', ');
             return `Platform.select({ ${entries} })`;
           }
+          const iosPair = pairs.find(p => p.key === 'ios');
+          const androidPair = pairs.find(p => p.key === 'android');
+          if (!iosPair || !androidPair) {
+            throw new Error(`__platform__: both "ios" and "android" arms are required (at ${app.span.file}:${app.span.startLine})`);
+          }
           // __platform__: ternary form when no default arm and all values are simple
           const hasDefault = pairs.some(p => p.key === 'default');
           const allSimple = pairs.every(p => isSimpleExpr(p.val));
           if (!hasDefault && allSimple) {
-            const iosPair = pairs.find(p => p.key === 'ios')!;
-            const androidPair = pairs.find(p => p.key === 'android')!;
             return `(Platform.OS === "ios" ? ${emitTsExpr(iosPair.val, opts)} : ${emitTsExpr(androidPair.val, opts)})`;
           }
           // IIFE form
