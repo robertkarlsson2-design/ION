@@ -14,7 +14,7 @@ export interface IonConfig {
   include?: string[];
   exclude?: string[];
   sourceMap?: boolean;
-  reactNative?: { entryComponent?: string | null; styleHoistThreshold?: number };
+  reactNative?: { entryComponent?: string | null; styleHoistThreshold?: number; safeAreaSource?: 'context' | 'rn-builtin' };
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@ export async function loadConfig(configPath: string): Promise<IonConfig | { erro
       return { error: `'${configPath}': "reactNative" must be an object` };
     }
     const rn = obj['reactNative'] as Record<string, unknown>;
-    const rnConfig: { entryComponent?: string | null; styleHoistThreshold?: number } = {};
+    const rnConfig: { entryComponent?: string | null; styleHoistThreshold?: number; safeAreaSource?: 'context' | 'rn-builtin' } = {};
     if (rn['entryComponent'] !== undefined) {
       if (typeof rn['entryComponent'] !== 'string' && rn['entryComponent'] !== null) {
         return { error: `'${configPath}': "reactNative.entryComponent" must be a string or null` };
@@ -122,6 +122,12 @@ export async function loadConfig(configPath: string): Promise<IonConfig | { erro
         return { error: `'${configPath}': "reactNative.styleHoistThreshold" must be an integer in [2, 100]` };
       }
       rnConfig.styleHoistThreshold = t;
+    }
+    if (rn['safeAreaSource'] !== undefined) {
+      if (rn['safeAreaSource'] !== 'context' && rn['safeAreaSource'] !== 'rn-builtin') {
+        return { error: `'${configPath}': "reactNative.safeAreaSource" must be "context" or "rn-builtin"` };
+      }
+      rnConfig.safeAreaSource = rn['safeAreaSource'] as 'context' | 'rn-builtin';
     }
     config.reactNative = rnConfig;
   }

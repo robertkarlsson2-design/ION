@@ -95,10 +95,10 @@ function accessorNode(receiver: string, member: string): IonIRNode {
 // ---------------------------------------------------------------------------
 
 describe('emitReactNative', () => {
-  it('empty module starts with "use strict" and has react-native import', () => {
+  it('empty module starts with "use strict" and emits no react-native import line', () => {
     const out = emitReactNative(makeModule([]));
     expect(out.startsWith('"use strict";')).toBe(true);
-    expect(out).toContain("import { View, Text } from 'react-native'");
+    expect(out).not.toContain("from 'react-native'");
   });
 
   it('emits React import', () => {
@@ -171,7 +171,7 @@ describe('emitReactNative platform import', () => {
     const out = emitReactNative(makeModule([
       letNode('theme', platformApp('__platform__', strLit('ios'), strLit('light'), strLit('android'), strLit('dark'))),
     ]));
-    expect(out).toContain("import { View, Text, Platform } from 'react-native'");
+    expect(out).toContain("import { Platform } from 'react-native'");
   });
 });
 
@@ -503,7 +503,7 @@ describe('emitReactNative/Image source', () => {
     expect(out).toContain('source={{ uri: "https://example.com/photo.jpg" }}');
     expect(out).toContain('<Image');
     expect(out).not.toContain('src=');
-    expect(out).toContain("import { View, Text, Image } from 'react-native'");
+    expect(out).toContain("import { Image } from 'react-native'");
   });
 
   it('data: URI → source={{ uri: "data:..." }}', () => {
@@ -550,7 +550,7 @@ describe('emitReactNative/AppRegistry', () => {
     );
     expect(out).toContain("AppRegistry.registerComponent('App', () => App)");
     expect(out).toContain("AppRegistry");
-    expect(out).toContain("import { View, Text, AppRegistry } from 'react-native'");
+    expect(out).toContain("import { AppRegistry, View } from 'react-native'");
   });
 
   it('entryComponent: null → AppRegistry suppressed', () => {
@@ -698,5 +698,52 @@ describe('emitReactNative/style-hoisting', () => {
     );
     expect(out).not.toContain('StyleSheet.create(');
     expect(out).toContain('style={{ marginTop: 8 }}');
+  });
+});
+
+describe('emitReactNative/dynamic-import-collector', () => {
+  it('no-JSX module → no react-native import line', () => {
+    const out = emitReactNative(makeModule([letNode('add', intLit(42))]));
+    expect(out).toContain("import React from 'react'");
+    expect(out).not.toContain("from 'react-native'");
+  });
+
+  it('single primitive (span → Text) → only Text imported', () => {
+    const out = emitReactNative(makeModule([letNode('C', appNode('span', '', strLit('hi')))]));
+    expect(out).toContain("import { Text } from 'react-native'");
+    expect(out).not.toContain('View');
+  });
+
+  it('multiple primitives are sorted alphabetically', () => {
+    const out = emitReactNative(makeModule([
+      letNode('C', absNode([], appNode('div', '',
+        appNode('button', '', strLit('ok')),
+        appNode('span', '', strLit('x')),
+      ))),
+    ]));
+    expect(out).toContain("import { Pressable, Text, View } from 'react-native'");
+  });
+
+  it('SafeAreaView with default safeAreaSource → goes to react-native-safe-area-context, no react-native import', () => {
+    const out = emitReactNative(makeModule([letNode('C', absNode([], appNode('SafeAreaView', '')))]));
+    expect(out).not.toContain("from 'react-native'");
+    expect(out).toContain("import { SafeAreaView } from 'react-native-safe-area-context'");
+  });
+
+  it('SafeAreaView + div (→ View) with default context → SafeAreaView in safe-area-context, View in react-native', () => {
+    const out = emitReactNative(makeModule([
+      letNode('C', absNode([], appNode('div', '', appNode('SafeAreaView', '')))),
+    ]));
+    expect(out).toContain("import { View } from 'react-native'");
+    expect(out).toContain("import { SafeAreaView } from 'react-native-safe-area-context'");
+  });
+
+  it('SafeAreaView with safeAreaSource rn-builtin → stays in react-native import', () => {
+    const out = emitReactNative(
+      makeModule([letNode('C', absNode([], appNode('SafeAreaView', '')))]),
+      { reactNative: { safeAreaSource: 'rn-builtin' } },
+    );
+    expect(out).toContain("import { SafeAreaView } from 'react-native'");
+    expect(out).not.toContain('react-native-safe-area-context');
   });
 });
