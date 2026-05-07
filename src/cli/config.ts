@@ -14,6 +14,7 @@ export interface IonConfig {
   include?: string[];
   exclude?: string[];
   sourceMap?: boolean;
+  reactNative?: { entryComponent?: string | null };
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +102,21 @@ export async function loadConfig(configPath: string): Promise<IonConfig | { erro
       return { error: `'${configPath}': "sourceMap" must be a boolean` };
     }
     config.sourceMap = obj['sourceMap'];
+  }
+
+  if (obj['reactNative'] !== undefined) {
+    if (typeof obj['reactNative'] !== 'object' || obj['reactNative'] === null || Array.isArray(obj['reactNative'])) {
+      return { error: `'${configPath}': "reactNative" must be an object` };
+    }
+    const rn = obj['reactNative'] as Record<string, unknown>;
+    if (rn['entryComponent'] !== undefined) {
+      if (typeof rn['entryComponent'] !== 'string' && rn['entryComponent'] !== null) {
+        return { error: `'${configPath}': "reactNative.entryComponent" must be a string or null` };
+      }
+      config.reactNative = { entryComponent: rn['entryComponent'] as string | null };
+    } else {
+      config.reactNative = {};
+    }
   }
 
   return config;

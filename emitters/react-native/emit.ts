@@ -138,6 +138,39 @@ function emitRnJsxNode(node: IonIRNode, indent = 0, inTextContext = false): stri
             return `${pad}{/* <${tagName}> not supported on RN — use @react-native-picker/picker */}`;
           }
           if (RN_STRIPPED_TAGS.has(tagName)) return '';
+          if (tagName === 'img') {
+            _rnImports.add('Image');
+            const attrRaw = app.args.length > 0 ? getAttrRaw(app.args[0]!) : '';
+            const commentChildren: string[] = [];
+            let sourceProp = '';
+            const sourceDictEntry = app.propDict?.find(p => p.key === 'source');
+            if (sourceDictEntry) {
+              sourceProp = `source={${emitTsExprForRN(sourceDictEntry.value)}}`;
+            } else {
+              const srcMatch = attrRaw.match(/\bsrc=(\S+)/);
+              if (!srcMatch) {
+                commentChildren.push(`{/* missing src on <Image> */}`);
+              } else {
+                const srcVal = srcMatch[1]!;
+                if (srcVal.startsWith('require:')) {
+                  sourceProp = `source={require("${srcVal.slice(8)}")}`;
+                } else {
+                  sourceProp = `source={{ uri: "${srcVal}" }}`;
+                }
+              }
+            }
+            const remainingAttrRaw = attrRaw.replace(/\bsrc=\S+/, '').trim();
+            const { attrStr, commentChildren: extraComments } = parseRnAttrString(remainingAttrRaw, 'img');
+            commentChildren.push(...extraComments);
+            const allAttrParts = [sourceProp, attrStr].filter(Boolean).join(' ');
+            const attrPart = allAttrParts ? ` ${allAttrParts}` : '';
+            const childrenStrs = [
+              ...commentChildren.map(c => `${innerPad}${c}`),
+              ...app.args.slice(1).map(c => emitRnJsxNode(c, indent + 1)).filter(s => s.trim()),
+            ];
+            if (childrenStrs.length === 0) return `${pad}<Image${attrPart} />`;
+            return `${pad}<Image${attrPart}>\n${childrenStrs.join('\n')}\n${pad}</Image>`;
+          }
           const { component, isContainer, isText } = lookupPrimitive(tagName);
           if (!component) return '';
           const attrRaw = app.args.length > 0 ? getAttrRaw(app.args[0]!) : '';
@@ -182,7 +215,11 @@ function emitRnJsxNode(node: IonIRNode, indent = 0, inTextContext = false): stri
   }
 }
 
-export function emitReactNative(irModule: IonIRModule): string {
+interface RnEmitConfig {
+  reactNative?: { entryComponent?: string | null };
+}
+
+export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): string {
   irModule = shakePreludeDecls(irModule);
 
   _rnCtorFields = new Map();
@@ -195,6 +232,11 @@ export function emitReactNative(irModule: IonIRModule): string {
   _rnImports = new Set<string>(['View', 'Text']);
   const declParts: string[] = [];
 
+  const entryName = config?.reactNative?.entryComponent !== undefined
+    ? config.reactNative.entryComponent
+    : 'App';
+  let foundEntryComponent = false;
+
   for (const d of irModule.decls) {
     if (d.kind === 'Let') {
       const lt = d as LetNode;
@@ -204,6 +246,7 @@ export function emitReactNative(irModule: IonIRModule): string {
         const params = abs.params.map(p => p.name).join(', ');
         const body = emitRnJsxNode(abs.body, 1);
         const isJsx = body.trim().startsWith('<') || body.trim().startsWith('{/*');
+        if (isJsx && entryName !== null && name === entryName) foundEntryComponent = true;
         if (isJsx) {
           declParts.push(`const ${name}: React.FC = (${params}) => (`);
           declParts.push(`  ${body.trim()}`);
@@ -220,6 +263,11 @@ export function emitReactNative(irModule: IonIRModule): string {
         declParts.push(`const ${name} = ${emitTsExprForRN(value)};`);
       }
     }
+  }
+
+  if (foundEntryComponent && entryName !== null) {
+    _rnImports.add('AppRegistry');
+    declParts.push(`AppRegistry.registerComponent('${entryName}', () => ${entryName});`);
   }
 
   const parts: string[] = [
