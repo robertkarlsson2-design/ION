@@ -111,7 +111,7 @@ describe('IR meta-symbols are excluded from S pool', () => {
     expect(sLine).toMatch(/=status\b/);          // status IS pooled
     expect(sLine).not.toMatch(/=__not__\b/);     // __not__ is NOT pooled
     // Roundtrip and confirm the IR shape survives.
-    const ir2 = decodeModule(out);
+    const ir2 = decodeModule(out) as IonIRModule;
     let statusOvcCount = 0, notUscOvcCount = 0;
     function walk(n: any) {
       if (!n || typeof n !== 'object') return;
@@ -143,7 +143,7 @@ describe('member names are pooled correctly without alias collision', () => {
     const sLine = out.split('\n').find(l => l.startsWith('S ')) ?? '';
     expect(sLine).toMatch(/=status\b/);
     // Must roundtrip.
-    const ir2 = decodeModule(out);
+    const ir2 = decodeModule(out) as IonIRModule;
     let count = 0;
     function walk(n: any) {
       if (!n || typeof n !== 'object') return;
@@ -237,7 +237,7 @@ describe('JS reserved words are excluded from S pool', () => {
     const node = accessor(recv, 'delete');
     const out = encodeModule(baseModule([node, node, node, node, node]));
     // Roundtrip must preserve the member name regardless of pooling decision.
-    const ir2 = decodeModule(out);
+    const ir2 = decodeModule(out) as IonIRModule;
     let count = 0;
     function walk(n: any) {
       if (!n || typeof n !== 'object') return;
@@ -295,7 +295,7 @@ describe('OTOURENV2 crew.ion-shaped IR roundtrips correctly', () => {
     expect(sLine).not.toMatch(/=__not__\b/);
 
     // Stable roundtrip.
-    const ir2 = decodeModule(out);
+    const ir2 = decodeModule(out) as IonIRModule;
     const out2 = encodeModule(ir2);
     expect(out2).toBe(out);
 

@@ -66,7 +66,7 @@ function makeShapeModule(): IonIRModule {
     ],
     span: SPAN,
     symbolId: SYM,
-    typeParams: [],
+    type: UNIT,
   }];
 
   const areaBody = caseNode(varNode('s'), [
