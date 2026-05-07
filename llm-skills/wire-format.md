@@ -335,7 +335,7 @@ debugging compiler output, not for authoring:
 `__lt__` `__gt__` `__le__` `__ge__` `__and__` `__or__` `__neg__` `__not__`
 `__obj__` `__index__` `__nullish__` `__optchain__` `__throw__` `__env__`
 `__set__` `__regex__` `__try__` `__tryfin__` `__finally__` `__do__`
-`__seq__` `__spread__`.
+`__seq__` `__spread__` `__platform__` `__platform_select__`.
 
 ## `__fold__` for dynamic SQL (and reduce in general)
 

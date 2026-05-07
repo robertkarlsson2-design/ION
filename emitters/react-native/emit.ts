@@ -15,13 +15,14 @@ import {
 import type { ParsedAttrs } from './primitives.js';
 
 let _rnCtorFields: Map<string, readonly string[]> = new Map();
+let _rnImports: Set<string> = new Set();
 
 function isJsIdentifier(v: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v);
 }
 
 function emitTsExprForRN(node: IonIRNode): string {
-  return emitTsExpr(node, { jsxEmitter: emitRnJsxNode, ctorFields: _rnCtorFields });
+  return emitTsExpr(node, { jsxEmitter: emitRnJsxNode, ctorFields: _rnCtorFields, rnImports: _rnImports });
 }
 
 function parseRnAttrString(
@@ -140,12 +141,8 @@ export function emitReactNative(irModule: IonIRModule): string {
     }
   }
 
-  const parts: string[] = [
-    '"use strict";',
-    "import React from 'react';",
-    "import { View, Text } from 'react-native';",
-    '',
-  ];
+  _rnImports = new Set<string>(['View', 'Text']);
+  const declParts: string[] = [];
 
   for (const d of irModule.decls) {
     if (d.kind === 'Let') {
@@ -157,22 +154,30 @@ export function emitReactNative(irModule: IonIRModule): string {
         const body = emitRnJsxNode(abs.body, 1);
         const isJsx = body.trim().startsWith('<') || body.trim().startsWith('{/*');
         if (isJsx) {
-          parts.push(`const ${name}: React.FC = (${params}) => (`);
-          parts.push(`  ${body.trim()}`);
-          parts.push(`);`);
+          declParts.push(`const ${name}: React.FC = (${params}) => (`);
+          declParts.push(`  ${body.trim()}`);
+          declParts.push(`);`);
         } else {
-          parts.push(`const ${name} = (${params}) => ${emitTsExprForRN(abs.body)};`);
+          declParts.push(`const ${name} = (${params}) => ${emitTsExprForRN(abs.body)};`);
         }
       } else if (isHtmlElement(value)) {
         const jsx = emitRnJsxNode(value, 1);
-        parts.push(`const ${name}: React.FC = () => (`);
-        parts.push(`  ${jsx.trim()}`);
-        parts.push(`);`);
+        declParts.push(`const ${name}: React.FC = () => (`);
+        declParts.push(`  ${jsx.trim()}`);
+        declParts.push(`);`);
       } else {
-        parts.push(`const ${name} = ${emitTsExprForRN(value)};`);
+        declParts.push(`const ${name} = ${emitTsExprForRN(value)};`);
       }
     }
   }
+
+  const parts: string[] = [
+    '"use strict";',
+    "import React from 'react';",
+    `import { ${[..._rnImports].join(', ')} } from 'react-native';`,
+    '',
+    ...declParts,
+  ];
 
   return parts.join('\n') + '\n';
 }

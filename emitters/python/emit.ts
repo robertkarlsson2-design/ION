@@ -179,6 +179,8 @@ function emitPyExpr(node: IonIRNode): string {
           const argStrs = app.args.map(a => wrapEmitted(emitPyExpr(a)));
           return expandTemplate(pyTemplate, argStrs);
         }
+        if ((calleeName === '__platform__' || calleeName === '__platform_select__') && app.args.length >= 2)
+          return `/* __platform__ requires --target react-native */ ${emitPyExpr(app.args[1]!)}`;
       }
       return `${emitPyExpr(app.callee)}(${app.args.map(emitPyExpr).join(', ')})`;
     }

@@ -426,6 +426,9 @@ function emitExpr(node: IonIRNode, ctx: EmitCtx): string {
           const argStrs = app.args.map(a => wrapEmitted(emitArgExpr(a, ctx)));
           return expandTemplate(tmpl, argStrs);
         }
+        if ((name === '__platform__' || name === '__platform_select__') && app.args.length >= 2) {
+          return `/* __platform__ requires --target react-native */ ${emitExpr(app.args[1]!, ctx)}`;
+        }
         // User-defined function call (top-level static method)
         const args = app.args.map(a => emitArgExpr(a, ctx)).join(', ');
         return `${name}(${args})`;

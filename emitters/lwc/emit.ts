@@ -138,6 +138,11 @@ function emitLwcExpr(node: IonIRNode): string {
     case 'Var': return (node as VarNode).name;
     case 'App': {
       const app = node as AppNode;
+      if (app.callee.kind === 'Var') {
+        const _n = (app.callee as VarNode).name;
+        if ((_n === '__platform__' || _n === '__platform_select__') && app.args.length >= 2)
+          return `/* __platform__ requires --target react-native */ ${emitLwcExpr(app.args[1]!)}`;
+      }
       const callee = emitLwcExpr(app.callee);
       const args = app.args.map(emitLwcExpr).join(', ');
       return `${callee}(${args})`;

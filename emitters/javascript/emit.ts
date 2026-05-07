@@ -247,6 +247,10 @@ function buildApp(node: AppNode, ctx: BuildCtx): JsNode {
     if (unaryOp !== undefined && node.args.length === 1) {
       return { kind: 'JsRaw', code: `${unaryOp}${printJsExpr(buildExpr(node.args[0], ctx))}`, ionSpan: node.span };
     }
+    const _pname = (node.callee as VarNode).name;
+    if ((_pname === '__platform__' || _pname === '__platform_select__') && node.args.length >= 2) {
+      return { kind: 'JsRaw' as const, code: `/* __platform__ requires --target react-native */ ${printJsExpr(buildExpr(node.args[1], ctx))}`, ionSpan: node.span };
+    }
   }
   return {
     kind: 'JsCall',
