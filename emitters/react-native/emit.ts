@@ -61,12 +61,12 @@ function parseRnAttrString(
       if (val.startsWith('{') && val.endsWith('}')) parts.push(`${k}=${val}`);
       else if (rawKey.startsWith('on') && isJsIdentifier(val)) parts.push(`${k}={${val}}`);
       else if (val === '') parts.push(k);
-      else parts.push(`${k}="${val}"`);
+      else parts.push(`${k}="${val.replace(/"/g, '\\"')}"`);
     } else {
       if (val.startsWith('{') && val.endsWith('}')) parts.push(`${rawKey}=${val}`);
       else if (rawKey.startsWith('on') && isJsIdentifier(val)) parts.push(`${rawKey}={${val}}`);
       else if (val === '') parts.push(rawKey);
-      else parts.push(`${rawKey}="${val}"`);
+      else parts.push(`${rawKey}="${val.replace(/"/g, '\\"')}"`);
     }
   }
   return { attrStr: parts.join(' '), commentChildren };
