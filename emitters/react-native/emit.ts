@@ -13,6 +13,7 @@ import {
   coerceInputProps, lookupPrimitive,
 } from './primitives.js';
 import type { ParsedAttrs } from './primitives.js';
+import { translateStyleObject } from './styles.js';
 
 let _rnCtorFields: Map<string, readonly string[]> = new Map();
 let _rnImports: Set<string> = new Set();
@@ -70,6 +71,44 @@ function parseRnAttrString(
   return { attrStr: parts.join(' '), commentChildren };
 }
 
+function emitRnStyleValue(value: IonIRNode): string {
+  if (
+    value.kind === 'App' &&
+    value.callee.kind === 'Var' &&
+    (value.callee as VarNode).name === '__obj__' &&
+    value.args.length % 2 === 0
+  ) {
+    const orig = value as AppNode;
+    const transformed = translateStyleObject(orig);
+    const parts: string[] = [];
+    for (let i = 0; i < transformed.args.length; i += 2) {
+      const origK = orig.args[i]!;
+      const tKey = transformed.args[i]!;
+      const tVal = transformed.args[i + 1]!;
+      const origKs = origK.kind === 'Literal' && origK.value.kind === 'Str'
+        ? origK.value.value : null;
+      const transKs = tKey.kind === 'Literal' && tKey.value.kind === 'Str'
+        ? tKey.value.value : emitTsExprForRN(tKey);
+      const vs = emitTsExprForRN(tVal);
+      const comment = origKs !== null && origKs !== transKs ? ' /* kebab→camel for RN */' : '';
+      parts.push(`${transKs}: ${vs}${comment}`);
+    }
+    return `{ ${parts.join(', ')} }`;
+  }
+  return emitTsExprForRN(value);
+}
+
+function emitRnPropDictAttrs(
+  propDict: readonly { readonly key: string; readonly value: IonIRNode }[],
+): string {
+  if (propDict.length === 0) return '';
+  return ' ' + propDict.map(({ key, value }) =>
+    key === 'style'
+      ? `style={${emitRnStyleValue(value)}}`
+      : `${key}={${emitTsExprForRN(value)}}`
+  ).join(' ');
+}
+
 function emitRnJsxNode(node: IonIRNode, indent = 0): string {
   const pad = '  '.repeat(indent);
   const innerPad = '  '.repeat(indent + 1);
@@ -100,12 +139,14 @@ function emitRnJsxNode(node: IonIRNode, indent = 0): string {
           const attrRaw = app.args.length > 0 ? getAttrRaw(app.args[0]!) : '';
           const { attrStr, commentChildren } = parseRnAttrString(attrRaw, tagName);
           const attrPart = attrStr ? ` ${attrStr}` : '';
+          const propDictStr = app.propDict ? emitRnPropDictAttrs(app.propDict) : '';
+          const allAttrs = attrPart + propDictStr;
           const childrenStrs = [
             ...commentChildren.map(c => `${innerPad}${c}`),
             ...app.args.slice(1).map(c => emitRnJsxNode(c, indent + 1)).filter(s => s.trim()),
           ];
-          if (childrenStrs.length === 0) return `${pad}<${component}${attrPart} />`;
-          return `${pad}<${component}${attrPart}>\n${childrenStrs.join('\n')}\n${pad}</${component}>`;
+          if (childrenStrs.length === 0) return `${pad}<${component}${allAttrs} />`;
+          return `${pad}<${component}${allAttrs}>\n${childrenStrs.join('\n')}\n${pad}</${component}>`;
         }
         if (/^[A-Z]/.test(tagName)) {
           const first = app.args[0];
@@ -113,13 +154,15 @@ function emitRnJsxNode(node: IonIRNode, indent = 0): string {
           const rawAttr = hasAttrStr ? (first.value as { value: string }).value : '';
           const { attrStr, commentChildren } = parseRnAttrString(rawAttr, tagName.toLowerCase());
           const attrPart = attrStr ? ` ${attrStr}` : '';
+          const propDictStr = app.propDict ? emitRnPropDictAttrs(app.propDict) : '';
+          const allAttrs = attrPart + propDictStr;
           const childArgs = hasAttrStr ? app.args.slice(1) : app.args;
           const childrenStrs = [
             ...commentChildren.map(c => `${innerPad}${c}`),
             ...childArgs.map(c => emitRnJsxNode(c, indent + 1)).filter(s => s.trim()),
           ];
-          if (childrenStrs.length === 0) return `${pad}<${tagName}${attrPart} />`;
-          return `${pad}<${tagName}${attrPart}>\n${childrenStrs.join('\n')}\n${pad}</${tagName}>`;
+          if (childrenStrs.length === 0) return `${pad}<${tagName}${allAttrs} />`;
+          return `${pad}<${tagName}${allAttrs}>\n${childrenStrs.join('\n')}\n${pad}</${tagName}>`;
         }
       }
       return `{${emitTsExprForRN(node)}}`;

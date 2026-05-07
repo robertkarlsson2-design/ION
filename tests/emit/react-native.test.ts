@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { emitReactNative } from '../../emitters/react-native/emit.js';
 import { emitTsExpr } from '../../emitters/ui-shared.js';
-import type { IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
+import type { IonIRModule, IonIRNode, AppNode } from '../../src/ir/nodes.js';
+import { translateStyleObject } from '../../emitters/react-native/styles.js';
 import { makeSymbolId } from '../../src/types.js';
 import {
   RN_PRIMITIVES, RN_ATTR_MAP, RN_STRIPPED_TAGS, RN_NATIVE_IMPORTS,
@@ -66,6 +67,23 @@ function makeModule(decls: IonIRNode[]): IonIRModule {
 
 function platformApp(builtin: string, ...args: IonIRNode[]): IonIRNode {
   return { kind: 'App', callee: varNode(builtin), args, span: SPAN, type: UNIT };
+}
+
+function objLit(...kvPairs: IonIRNode[]): IonIRNode {
+  return { kind: 'App', callee: varNode('__obj__'), args: kvPairs, span: SPAN, type: UNIT };
+}
+
+function appNodeWithProps(
+  tag: string,
+  attrStr: string,
+  propDict: readonly { key: string; value: IonIRNode }[],
+  ...children: IonIRNode[]
+): IonIRNode {
+  return { kind: 'App', callee: varNode(tag), args: [strLit(attrStr), ...children], propDict, span: SPAN, type: UNIT };
+}
+
+function accessorNode(receiver: string, member: string): IonIRNode {
+  return { kind: 'App', callee: varNode('__optchain__'), args: [varNode(receiver), strLit(member)], span: SPAN, type: UNIT };
 }
 
 // ---------------------------------------------------------------------------
@@ -304,5 +322,97 @@ describe('emitReactNative/tag-emission', () => {
     );
     expect(out).toContain('keyboardType="email-address"');
     expect(out).not.toContain('type=');
+  });
+});
+
+describe('translateStyleObject', () => {
+  it('kebab key → camelCase', () => {
+    const result = translateStyleObject(objLit(strLit('margin-top'), intLit(8)) as AppNode);
+    const key = result.args[0]!;
+    expect(key.kind).toBe('Literal');
+    if (key.kind === 'Literal' && key.value.kind === 'Str') {
+      expect(key.value.value).toBe('marginTop');
+    }
+  });
+
+  it('"Npx" string value → Int', () => {
+    const result = translateStyleObject(objLit(strLit('marginTop'), strLit('8px')) as AppNode);
+    const val = result.args[1]!;
+    expect(val.kind).toBe('Literal');
+    if (val.kind === 'Literal') {
+      expect(val.value.kind).toBe('Int');
+      if (val.value.kind === 'Int') expect(val.value.value).toBe(8);
+    }
+  });
+
+  it('already-camelCase key unchanged (same reference)', () => {
+    const input = objLit(strLit('marginTop'), intLit(8)) as AppNode;
+    const result = translateStyleObject(input);
+    expect(result.args[0]).toBe(input.args[0]);
+  });
+
+  it('non-px string value unchanged', () => {
+    const result = translateStyleObject(objLit(strLit('color'), strLit('red')) as AppNode);
+    const val = result.args[1]!;
+    expect(val.kind).toBe('Literal');
+    if (val.kind === 'Literal' && val.value.kind === 'Str') {
+      expect(val.value.value).toBe('red');
+    }
+  });
+
+  it('two-pair pairing preserved', () => {
+    const result = translateStyleObject(
+      objLit(strLit('margin-top'), intLit(4), strLit('padding-bottom'), strLit('8px')) as AppNode,
+    );
+    expect(result.args.length).toBe(4);
+    const k0 = result.args[0]!;
+    const k2 = result.args[2]!;
+    const v3 = result.args[3]!;
+    if (k0.kind === 'Literal' && k0.value.kind === 'Str') expect(k0.value.value).toBe('marginTop');
+    if (k2.kind === 'Literal' && k2.value.kind === 'Str') expect(k2.value.value).toBe('paddingBottom');
+    if (v3.kind === 'Literal') {
+      expect(v3.value.kind).toBe('Int');
+      if (v3.value.kind === 'Int') expect(v3.value.value).toBe(8);
+    }
+  });
+});
+
+describe('emitReactNative/style-propDict', () => {
+  it('kebab→camel emitted with comment', () => {
+    const out = emitReactNative(makeModule([
+      letNode('C', appNodeWithProps('div', '', [{ key: 'style', value: objLit(strLit('margin-top'), intLit(8)) }])),
+    ]));
+    expect(out).toContain('marginTop: 8');
+    expect(out).toContain('kebab→camel for RN');
+  });
+
+  it('"Npx" coerced to int', () => {
+    const out = emitReactNative(makeModule([
+      letNode('C', appNodeWithProps('div', '', [{ key: 'style', value: objLit(strLit('marginTop'), strLit('8px')) }])),
+    ]));
+    expect(out).toContain('marginTop: 8');
+    expect(out).not.toContain('"8px"');
+  });
+
+  it('Var passthrough', () => {
+    const out = emitReactNative(makeModule([
+      letNode('C', appNodeWithProps('div', '', [{ key: 'style', value: varNode('myStyles') }])),
+    ]));
+    expect(out).toContain('style={myStyles}');
+  });
+
+  it('Accessor passthrough', () => {
+    const out = emitReactNative(makeModule([
+      letNode('C', appNodeWithProps('div', '', [{ key: 'style', value: accessorNode('styles', 'card') }])),
+    ]));
+    expect(out).toContain('style={styles?.card}');
+  });
+
+  it('already-camelCase: no kebab comment', () => {
+    const out = emitReactNative(makeModule([
+      letNode('C', appNodeWithProps('div', '', [{ key: 'style', value: objLit(strLit('color'), strLit('red')) }])),
+    ]));
+    expect(out).toContain('color: "red"');
+    expect(out).not.toContain('kebab');
   });
 });
