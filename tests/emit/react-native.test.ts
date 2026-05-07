@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { emitReactNative } from '../../emitters/react-native/emit.js';
+import { emitTsExpr } from '../../emitters/ui-shared.js';
 import type { IonIRModule, IonIRNode } from '../../src/ir/nodes.js';
 import { makeSymbolId } from '../../src/types.js';
 
@@ -74,13 +75,26 @@ describe('emitReactNative', () => {
     expect(out).toContain("import React from 'react'");
   });
 
-  it('emits TODO placeholder for non-JSX Let', () => {
+  it('emits expression for non-JSX Let', () => {
     const out = emitReactNative(makeModule([letNode('count', intLit(42))]));
-    expect(out).toContain('const count = /* TODO */;');
+    expect(out).toContain('const count = 42;');
   });
 
   it('emits React.FC shell for HTML-element-call Let', () => {
     const out = emitReactNative(makeModule([letNode('MyComp', appNode('div', '', strLit('Hi')))]));
     expect(out).toContain('const MyComp: React.FC');
+  });
+});
+
+describe('emitTsExpr (shared)', () => {
+  it('__add__(1, 2) emits (1 + 2)', () => {
+    const node: IonIRNode = {
+      kind: 'App',
+      callee: varNode('__add__'),
+      args: [intLit(1), intLit(2)],
+      span: SPAN,
+      type: { kind: 'Int' },
+    };
+    expect(emitTsExpr(node, {})).toBe('(1 + 2)');
   });
 });

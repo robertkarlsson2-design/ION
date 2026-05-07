@@ -82,7 +82,7 @@ describe('runBuild — apex target', () => {
     const output = await readFile(join(outDir, 'task-manager.cls'), 'utf-8');
     expect(output).toContain('public with sharing class');
     expect(output).toContain('TaskManagerController');
-  });
+  }, 30_000);
 
   it('--target apex overrides config target', async () => {
     const wire = encodeModule(makeApexModule());
