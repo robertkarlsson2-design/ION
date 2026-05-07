@@ -14,10 +14,11 @@ import {
   coerceInputProps, lookupPrimitive,
 } from './primitives.js';
 import type { ParsedAttrs } from './primitives.js';
-import { translateStyleObject } from './styles.js';
+import { translateStyleObject, collectAndHoistStyles, canonicalStyleKey, isHoistableStyleObj } from './styles.js';
 
 let _rnCtorFields: Map<string, readonly string[]> = new Map();
 let _rnImports: Set<string> = new Set();
+let _styleReplacements: Map<string, string> = new Map();
 
 function isJsIdentifier(v: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v);
@@ -80,6 +81,10 @@ function emitRnStyleValue(value: IonIRNode): string {
     value.args.length % 2 === 0
   ) {
     const orig = value as AppNode;
+    if (_styleReplacements.size > 0 && isHoistableStyleObj(orig)) {
+      const styleName = _styleReplacements.get(canonicalStyleKey(orig));
+      if (styleName !== undefined) return `styles.${styleName}`;
+    }
     const transformed = translateStyleObject(orig);
     const parts: string[] = [];
     for (let i = 0; i < transformed.args.length; i += 2) {
@@ -216,7 +221,7 @@ function emitRnJsxNode(node: IonIRNode, indent = 0, inTextContext = false): stri
 }
 
 interface RnEmitConfig {
-  reactNative?: { entryComponent?: string | null };
+  reactNative?: { entryComponent?: string | null; styleHoistThreshold?: number };
 }
 
 export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): string {
@@ -230,6 +235,12 @@ export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): s
   }
 
   _rnImports = new Set<string>(['View', 'Text']);
+
+  const threshold = Math.max(2, config?.reactNative?.styleHoistThreshold ?? 3);
+  const { replacements, hoisted } = collectAndHoistStyles(irModule, threshold);
+  _styleReplacements = replacements;
+  if (hoisted.length > 0) _rnImports.add('StyleSheet');
+
   const declParts: string[] = [];
 
   const entryName = config?.reactNative?.entryComponent !== undefined
@@ -263,6 +274,11 @@ export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): s
         declParts.push(`const ${name} = ${emitTsExprForRN(value)};`);
       }
     }
+  }
+
+  if (hoisted.length > 0) {
+    const styleEntries = hoisted.map(({ name, body }) => `  ${name}: ${body},`).join('\n');
+    declParts.push(`const styles = StyleSheet.create({\n${styleEntries}\n});`);
   }
 
   if (foundEntryComponent && entryName !== null) {

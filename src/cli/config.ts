@@ -14,7 +14,7 @@ export interface IonConfig {
   include?: string[];
   exclude?: string[];
   sourceMap?: boolean;
-  reactNative?: { entryComponent?: string | null };
+  reactNative?: { entryComponent?: string | null; styleHoistThreshold?: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -109,14 +109,21 @@ export async function loadConfig(configPath: string): Promise<IonConfig | { erro
       return { error: `'${configPath}': "reactNative" must be an object` };
     }
     const rn = obj['reactNative'] as Record<string, unknown>;
+    const rnConfig: { entryComponent?: string | null; styleHoistThreshold?: number } = {};
     if (rn['entryComponent'] !== undefined) {
       if (typeof rn['entryComponent'] !== 'string' && rn['entryComponent'] !== null) {
         return { error: `'${configPath}': "reactNative.entryComponent" must be a string or null` };
       }
-      config.reactNative = { entryComponent: rn['entryComponent'] as string | null };
-    } else {
-      config.reactNative = {};
+      rnConfig.entryComponent = rn['entryComponent'] as string | null;
     }
+    if (rn['styleHoistThreshold'] !== undefined) {
+      const t = rn['styleHoistThreshold'];
+      if (typeof t !== 'number' || !Number.isInteger(t) || t < 2 || t > 100) {
+        return { error: `'${configPath}': "reactNative.styleHoistThreshold" must be an integer in [2, 100]` };
+      }
+      rnConfig.styleHoistThreshold = t;
+    }
+    config.reactNative = rnConfig;
   }
 
   return config;
