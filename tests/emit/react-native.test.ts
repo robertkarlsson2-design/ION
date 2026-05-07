@@ -30,6 +30,10 @@ function varNode(name: string): IonIRNode {
   return { kind: 'Var', name, symbolId: SYM, span: SPAN, type: UNIT };
 }
 
+function typedVarNode(name: string, typeKind: 'Str' | 'Int' | 'Float' | 'Bool'): IonIRNode {
+  return { kind: 'Var', name, symbolId: SYM, span: SPAN, type: { kind: typeKind } };
+}
+
 function appNode(tag: string, attrStr: string, ...children: IonIRNode[]): IonIRNode {
   return {
     kind: 'App',
@@ -414,5 +418,45 @@ describe('emitReactNative/style-propDict', () => {
     ]));
     expect(out).toContain('color: "red"');
     expect(out).not.toContain('kebab');
+  });
+});
+
+describe('emitReactNative/bare-text-auto-wrap', () => {
+  it('string literal in container (div/View) is wrapped in {JSON}', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp', appNode('div', '', strLit('hello')))]));
+    expect(out).toContain('{"hello"}');
+  });
+
+  it('Int-typed Var in container (div/View) emits {name}, no double-wrap', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp', appNode('div', '', typedVarNode('count', 'Int')))]));
+    expect(out).toContain('{count}');
+    expect(out).not.toContain('{{count}}');
+  });
+
+  it('string literal in Text context (span/Text) emits bare text, no {JSON} wrapper', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp', appNode('span', '', strLit('hello world')))]));
+    expect(out).toContain('hello world');
+    expect(out).not.toContain('{"hello world"}');
+  });
+
+  it('Var in container emits {name} with no double-wrap', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp', appNode('div', '', varNode('foo')))]));
+    expect(out).toContain('{foo}');
+    expect(out).not.toContain('{{foo}}');
+  });
+
+  it('button → <Pressable> and string child is wrapped in {JSON}', () => {
+    const out = emitReactNative(makeModule([letNode('MyComp', appNode('button', '', strLit('click')))]));
+    expect(out).toContain('<Pressable');
+    expect(out).toContain('{"click"}');
+  });
+
+  it('button with string child and nested View: string wrapped, View not wrapped', () => {
+    const out = emitReactNative(
+      makeModule([letNode('MyComp', appNode('button', '', strLit('click'), appNode('div', '')))]),
+    );
+    expect(out).toContain('{"click"}');
+    expect(out).toContain('<View');
+    expect(out).not.toContain('{<View');
   });
 });

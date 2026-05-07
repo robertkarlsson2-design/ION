@@ -10,6 +10,7 @@ import { HTML_TAGS, isHtmlElement, getAttrRaw, emitTsExpr } from '../ui-shared.j
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
 import {
   RN_STRIPPED_TAGS, RN_ATTR_MAP,
+  RN_TEXT_PRIMITIVES, RN_CONTAINER_PRIMITIVES,
   coerceInputProps, lookupPrimitive,
 } from './primitives.js';
 import type { ParsedAttrs } from './primitives.js';
@@ -109,13 +110,16 @@ function emitRnPropDictAttrs(
   ).join(' ');
 }
 
-function emitRnJsxNode(node: IonIRNode, indent = 0): string {
+function emitRnJsxNode(node: IonIRNode, indent = 0, inTextContext = false): string {
   const pad = '  '.repeat(indent);
   const innerPad = '  '.repeat(indent + 1);
   switch (node.kind) {
     case 'Literal': {
       const v = node.value;
-      if (v.kind === 'Str') return v.value ? `{${JSON.stringify(v.value)}}` : '';
+      if (v.kind === 'Str') {
+        if (!v.value) return '';
+        return inTextContext ? v.value : `{${JSON.stringify(v.value)}}`;
+      }
       if (v.kind === 'Int' || v.kind === 'Float') return `{${v.value}}`;
       if (v.kind === 'Bool') return `{${v.value}}`;
       return '';
@@ -134,16 +138,17 @@ function emitRnJsxNode(node: IonIRNode, indent = 0): string {
             return `${pad}{/* <${tagName}> not supported on RN — use @react-native-picker/picker */}`;
           }
           if (RN_STRIPPED_TAGS.has(tagName)) return '';
-          const { component } = lookupPrimitive(tagName);
+          const { component, isContainer, isText } = lookupPrimitive(tagName);
           if (!component) return '';
           const attrRaw = app.args.length > 0 ? getAttrRaw(app.args[0]!) : '';
           const { attrStr, commentChildren } = parseRnAttrString(attrRaw, tagName);
           const attrPart = attrStr ? ` ${attrStr}` : '';
           const propDictStr = app.propDict ? emitRnPropDictAttrs(app.propDict) : '';
           const allAttrs = attrPart + propDictStr;
+          const childInTextCtx = isText ? true : (isContainer ? false : inTextContext);
           const childrenStrs = [
             ...commentChildren.map(c => `${innerPad}${c}`),
-            ...app.args.slice(1).map(c => emitRnJsxNode(c, indent + 1)).filter(s => s.trim()),
+            ...app.args.slice(1).map(c => emitRnJsxNode(c, indent + 1, childInTextCtx)).filter(s => s.trim()),
           ];
           if (childrenStrs.length === 0) return `${pad}<${component}${allAttrs} />`;
           return `${pad}<${component}${allAttrs}>\n${childrenStrs.join('\n')}\n${pad}</${component}>`;
@@ -157,9 +162,12 @@ function emitRnJsxNode(node: IonIRNode, indent = 0): string {
           const propDictStr = app.propDict ? emitRnPropDictAttrs(app.propDict) : '';
           const allAttrs = attrPart + propDictStr;
           const childArgs = hasAttrStr ? app.args.slice(1) : app.args;
+          const childInTextCtx = RN_TEXT_PRIMITIVES.has(tagName) ? true
+            : RN_CONTAINER_PRIMITIVES.has(tagName) ? false
+            : inTextContext;
           const childrenStrs = [
             ...commentChildren.map(c => `${innerPad}${c}`),
-            ...childArgs.map(c => emitRnJsxNode(c, indent + 1)).filter(s => s.trim()),
+            ...childArgs.map(c => emitRnJsxNode(c, indent + 1, childInTextCtx)).filter(s => s.trim()),
           ];
           if (childrenStrs.length === 0) return `${pad}<${tagName}${allAttrs} />`;
           return `${pad}<${tagName}${allAttrs}>\n${childrenStrs.join('\n')}\n${pad}</${tagName}>`;
@@ -167,8 +175,8 @@ function emitRnJsxNode(node: IonIRNode, indent = 0): string {
       }
       return `{${emitTsExprForRN(node)}}`;
     }
-    case 'Abs': return emitRnJsxNode((node as AbsNode).body, indent);
-    case 'Effect': return emitRnJsxNode(node.body, indent);
+    case 'Abs': return emitRnJsxNode((node as AbsNode).body, indent, inTextContext);
+    case 'Effect': return emitRnJsxNode(node.body, indent, inTextContext);
     case 'RawInject': return node.code;
     default: return `{${emitTsExprForRN(node)}}`;
   }

@@ -52,7 +52,7 @@ export const RN_ATTR_MAP: Record<string, string> = {
 export const RN_TEXT_PRIMITIVES: ReadonlySet<string> = new Set(['Text']);
 
 export const RN_CONTAINER_PRIMITIVES: ReadonlySet<string> = new Set([
-  'View', 'ScrollView', 'SafeAreaView', 'KeyboardAvoidingView', 'Modal',
+  'View', 'ScrollView', 'SafeAreaView', 'KeyboardAvoidingView', 'Modal', 'Pressable',
 ]);
 
 export const RN_NATIVE_IMPORTS: ReadonlySet<string> = new Set([
