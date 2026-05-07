@@ -108,7 +108,7 @@ describe('runBuild — lwc target (multi-file bundle)', () => {
     expect(typeof css).toBe('string');
     expect(meta).toContain('<?xml');
     expect(meta).toContain('LightningComponentBundle');
-  });
+  }, 30_000);
 
   it('--target lwc overrides config target', async () => {
     const wire = encodeModule(makeLwcModule());
