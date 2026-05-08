@@ -83,7 +83,7 @@ ARCHITECTURE.md  CLAUDE.md
 3. **`src/parser/`** — depends on `src/lexer/`, `src/ir/`.
 4. **`src/binder/`, `src/checker/`, `src/desugar/`** — depend on `src/parser/`, `src/ir/`.
 5. **`src/cli/`** — depends on everything in `src/` AND on `emitters/`.
-6. **`emitters/<target>/`** — depend on `src/ir/` (types only) and `emitters/ui-shared/`. **Emitters do NOT import from `src/cli/`, `src/checker/`, etc.** They are pure functions of `IonIRModule → string` (or structured output for multi-file targets).
+6. **`emitters/<target>/`** — depend on `src/ir/` (types only), `emitters/ui-shared/`, and `src/prelude/dce.ts` (`shakePreludeDecls` only). **Emitters do NOT import from `src/cli/`, `src/checker/`, etc.** They are pure functions of `IonIRModule → string` (or structured output for multi-file targets). `shakePreludeDecls` is a DCE utility that strips unused prelude `ForeignRef` declarations from the IR before emission; it depends only on `src/ir/` types and is therefore a safe emitter dependency.
 
 The Architecture stage rejects PRs that violate these import boundaries. Concretely: an `emitters/foo/emit.ts` that imports anything from `../../src/checker/` is a blocker.
 
@@ -117,7 +117,7 @@ For multi-file emitters (LWC and similar), register via `getMultiFileEmitter(tar
 
 ## Anti-patterns (Architecture rejects)
 
-- An emitter that imports from `src/checker/` or any other compiler-internal module.
+- An emitter that imports from `src/checker/`, `src/binder/`, `src/parser/`, `src/desugar/`, or `src/cli/`. (Utility helpers `src/ir/`, `src/emit/template.ts`, and `src/prelude/dce.ts` are allowed.)
 - A new compiler stage that bypasses IonIR (e.g. parser → emitter directly).
 - A parser change that doesn't update `tests/parser/` AND `tests/desugar/`.
 - A new emitter without `tests/emit/<name>.test.ts`.

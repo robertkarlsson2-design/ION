@@ -314,16 +314,16 @@ function emit{Language}Decl(node: IonIRNode): string {
 
 export function emit{Language}(irModule: IonIRModule): string {
   // DCE: remove unused prelude declarations
-  const decls = shakePreludeDecls(irModule);
+  const module = shakePreludeDecls(irModule);
   const parts: string[] = [];
 
   // Emit ADT type declarations first (forward declarations)
-  for (const adt of irModule.data) {
+  for (const adt of module.data) {
     parts.push(emit{Language}Decl(adt));
   }
 
   // Emit top-level declarations
-  for (const d of decls) {
+  for (const d of module.decls) {
     parts.push(emit{Language}Decl(d));
   }
 
