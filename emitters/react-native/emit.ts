@@ -5,6 +5,7 @@ import type {
   AbsNode,
   LetNode,
   VarNode,
+  RawInjectNode,
 } from '../../src/ir/nodes.js';
 import { HTML_TAGS, isHtmlElement, getAttrRaw, emitTsExpr } from '../ui-shared/index.js';
 import { shakePreludeDecls } from '../../src/prelude/dce.js';
@@ -275,6 +276,8 @@ export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): s
       } else {
         declParts.push(`const ${name} = ${emitTsExprForRN(value)};`);
       }
+    } else if (d.kind === 'RawInject') {
+      declParts.push(d.code);
     }
   }
 
