@@ -16,7 +16,7 @@ See `README.md` for the full language reference.
 
 ## Project rules
 
-- **Every emitter under `emitters/` is a self-contained module.** It exports one entry function (e.g. `emitReact(irModule) → string`) and consumes only `IonIRNode` / `IonType` from `src/ir/`. Emitters do NOT import from other emitters except `emitters/ui-shared/` (the shared HTML-tag set + attribute parser).
+- **Every emitter under `emitters/` is a self-contained module.** It exports one entry function (e.g. `emitReact(irModule) → string`) and consumes `IonIRNode` / `IonType` from `src/ir/` and `shakePreludeDecls` from `src/prelude/dce.ts`. Emitters do NOT import from other emitters except `emitters/ui-shared/` (the shared HTML-tag set + attribute parser).
 - **Adding a new emitter** is documented in `contributor-skills/new-emitter.md`. Follow that file step-by-step.
 - **Wiring an existing emitter into the CLI** is a one-line addition to `getEmitter(target)` in `src/cli/build.ts`. After that, `target: "<name>"` works in `ion.config.json` and `ion build --target <name>` works on the command line.
 - **Don't bypass IonIR.** The compiler frontend (lexer → parser → binder → checker → desugarer) feeds IonIR; emitters consume IonIR. Adding new "shortcuts" that skip the IR is rejected.
@@ -39,7 +39,7 @@ npm test -- tests/emit/     # emitter-specific suite
 ## Code Review Rules
 
 - New emitters live under `emitters/<name>/emit.ts`, NOT inside `src/`.
-- Emitter code consumes only IR types from `src/ir/`. Does not import from `src/binder/`, `src/checker/`, or other CLI internals.
+- Emitter code consumes IR types from `src/ir/`, utilities from `src/emit/template.ts`, and `shakePreludeDecls` from `src/prelude/dce.ts`. Does not import from `src/binder/`, `src/checker/`, `src/desugar/`, `src/parser/`, or `src/cli/`.
 - New language constructs require: a parser change in `src/parser/`, an IR node addition in `src/ir/nodes.ts`, a checker rule in `src/checker/`, a desugarer step in `src/desugar/`, AND test coverage at all 4 levels.
 - Skill file (`llm-skills/write-ion.md`) is updated alongside any user-visible language change.
 
