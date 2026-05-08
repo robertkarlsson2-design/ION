@@ -30,7 +30,7 @@ Look at `ion.config.json`'s `target` field, or the `--target` CLI flag, or the p
 | `vue` | `writing-ion-for-vue` | Vue Single-File Components |
 | `apex` | `writing-ion-for-apex` | Salesforce Apex classes |
 | `lwc` | `writing-ion-for-lwc` | Lightning Web Components |
-| `react-native` | `writing-ion-for-react` (use as base; RN-specific notes below) | React Native mobile apps |
+| `react-native` | `writing-ion-for-react-native` | React Native mobile apps |
 
 If the project uses **multiple targets** (e.g., backend in TypeScript, frontend in React), load both. They mostly compose without conflict.
 
