@@ -277,7 +277,7 @@ export function emitReactNative(irModule: IonIRModule, config?: RnEmitConfig): s
         declParts.push(`const ${name} = ${emitTsExprForRN(value)};`);
       }
     } else if (d.kind === 'RawInject') {
-      declParts.push((d as RawInjectNode).code);
+      declParts.push(d.code);
     }
   }
 
