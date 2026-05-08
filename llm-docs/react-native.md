@@ -101,9 +101,10 @@ Drawn from `emitters/react-native/primitives.ts::RN_PRIMITIVES`.
 
 ### Comment placeholder only
 
-`select`, `option` — emits:
+`select`, `option` — each emits a comment with its own tag name:
 ```tsx
 {/* <select> not supported on RN — use @react-native-picker/picker */}
+{/* <option> not supported on RN — use @react-native-picker/picker */}
 ```
 
 ### Before/after example
@@ -163,7 +164,7 @@ class=card+bg-white  →  {/* class=card bg-white (no-op on RN) */}
 
 The emitter applies a simple heuristic to decide whether an event handler value becomes `{fn}` or `"string"`.
 
-**Rule:** If the Ion attribute key maps through `RN_ATTR_MAP` to an `on*` name AND the raw value matches `/^[a-zA-Z_][a-zA-Z0-9_]*$/` (a JS identifier), the value is emitted as `{val}`. Otherwise it's a quoted string.
+**Rule:** If the raw attribute name starts with `on` AND the raw value matches `/^[a-zA-Z_][a-zA-Z0-9_]*$/` (a JS identifier), the value is emitted as `{val}`. Otherwise it's a quoted string.
 
 ```
 onclick=handlePress   →  onPress={handlePress}
@@ -348,29 +349,9 @@ App(
 
 ## State — `useState` via `raw(...)`
 
-The React Native emitter has **no tested block-body `let`-chain component form**. Do not rely on it. Use `raw(...)` for hook lines:
+⚠️ **The React Native emitter has no tested block-body `let`-chain component form.** The emitter's `Let`-in-lambda path is untested and may produce syntactically invalid TSX (e.g. a `const` declaration inside an arrow expression body). Do not rely on it.
 
-```
-// Ion wire (inside Abs body):
-Let(
-  name="state",
-  value=RawInject("const [count, setCount] = useState(0)"),
-  body=App(Var("div"), [...])
-)
-```
-
-**Emitted TSX:**
-
-```tsx
-const Counter: React.FC = () => (
-  const [count, setCount] = useState(0)
-  <View>
-    ...
-  </View>
-);
-```
-
-Note: `useState` must come in via an `extern` declaration or a `raw(...)` import line — the emitter never emits `import { useState } from 'react'` automatically.
+For hooks, use `raw(...)` to inject verbatim JS/TSX lines. `useState` must come in via an `extern` declaration or a `raw(...)` import line — the emitter never emits `import { useState } from 'react'` automatically.
 
 
 ## Style translation
