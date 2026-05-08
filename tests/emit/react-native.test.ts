@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { emitReactNative } from '../../emitters/react-native/emit.js';
 import { emitTsExpr } from '../../emitters/ui-shared/index.js';
-import type { IonIRModule, IonIRNode, AppNode } from '../../src/ir/nodes.js';
+import type { IonIRModule, IonIRNode, AppNode, RawInjectNode } from '../../src/ir/nodes.js';
 import { translateStyleObject } from '../../emitters/react-native/styles.js';
 import { makeSymbolId } from '../../src/types.js';
 import {
@@ -88,6 +88,10 @@ function appNodeWithProps(
 
 function accessorNode(receiver: string, member: string): IonIRNode {
   return { kind: 'App', callee: varNode('__optchain__'), args: [varNode(receiver), strLit(member)], span: SPAN, type: UNIT };
+}
+
+function rawInjectNode(code: string): IonIRNode {
+  return { kind: 'RawInject', code, span: SPAN, type: UNIT } as RawInjectNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -755,5 +759,29 @@ describe('emitReactNative/dynamic-import-collector', () => {
     );
     expect(out).toContain("import { SafeAreaView } from 'react-native'");
     expect(out).not.toContain('react-native-safe-area-context');
+  });
+});
+
+describe('emitReactNative/raw-inject', () => {
+  it('top-level RawInject passes code through verbatim', () => {
+    const code = 'const __nativeOnly__ = 1;';
+    const out = emitReactNative(makeModule([rawInjectNode(code)]));
+    expect(out).toContain(code);
+  });
+
+  it('RawInject as JSX child passes code through verbatim (non-regression guard)', () => {
+    const out = emitReactNative(
+      makeModule([letNode('C', absNode([], appNode('div', '', rawInjectNode('{/* injected */}'))))]),
+    );
+    expect(out).toContain('{/* injected */}');
+  });
+
+  it('multiple top-level RawInject nodes all pass through in order', () => {
+    const first = 'const __first__ = 1;';
+    const second = 'const __second__ = 2;';
+    const out = emitReactNative(makeModule([rawInjectNode(first), rawInjectNode(second)]));
+    expect(out).toContain(first);
+    expect(out).toContain(second);
+    expect(out.indexOf(first)).toBeLessThan(out.indexOf(second));
   });
 });
