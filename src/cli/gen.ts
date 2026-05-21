@@ -3,13 +3,15 @@ import { join, relative, basename, dirname } from 'path';
 import { parseRoute } from '../gen/parsers/route.js';
 import { generateRoute as genRoute } from '../gen/generators/route.js';
 import { parseServiceFile, generateServiceFile } from '../gen/index.js';
-import { parseScreen, generateScreen } from '../gen/index.js';
+import { parseScreen, generateScreen, parseAdminList, generateAdminList } from '../gen/index.js';
 
-function detectPattern(src: string): 'route' | 'query' | 'screen' | null {
+function detectPattern(src: string): 'route' | 'query' | 'screen' | 'adminList' | null {
   const first = src.trimStart().split('\n')[0].trim();
   if (first.startsWith('/')) return 'route';
   if (first.startsWith('query ') || first.startsWith('transaction ')) return 'query';
-  // Screen: first line is a component name (PascalCase), next non-empty line has indented content
+  // AdminList: PascalCase + /admin/path + 'paginated' on first line
+  if (/^[A-Z]\w*\s+\/\S+\s+.*paginated/.test(first)) return 'adminList';
+  // Screen: PascalCase component name alone on first line
   if (/^[A-Z]\w*$/.test(first)) return 'screen';
   return null;
 }
@@ -33,6 +35,9 @@ function processFile(defPath: string): { outPath: string; written: boolean } {
   } else if (pattern === 'query') {
     const specs = parseServiceFile(src);
     output = generateServiceFile(specs);
+  } else if (pattern === 'adminList') {
+    const spec = parseAdminList(src);
+    output = generateAdminList(spec);
   } else {
     const spec = parseScreen(src);
     output = generateScreen(spec);
