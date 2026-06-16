@@ -1,0 +1,16 @@
+query listFriends(userId)
+  SQL: SELECT u.id, u.email, u.display_name, u.avatar_url FROM user_friends uf JOIN users u ON u.id=uf.friend_id WHERE uf.user_id=$1 ORDER BY u.display_name
+  -> rows
+
+query getUserById(id)
+  SQL: SELECT id, email, display_name, role FROM users WHERE id=$1
+  -> first | null
+
+transaction unfriend(userId, friendId)
+  DELETE FROM user_friends WHERE (user_id=$1 AND friend_id=$2) OR (user_id=$2 AND friend_id=$1)
+  -> void
+
+transaction acceptRequest(requestId, addresseeId)
+  UPDATE friend_requests SET state='accepted', responded_at=NOW() WHERE id=$1 AND addressee_id=$2 AND state='pending' RETURNING requester_id
+  INSERT INTO user_friends (user_id, friend_id) VALUES ($requesterId, $2), ($2, $requesterId) ON CONFLICT DO NOTHING
+  -> ok | NOT_FOUND

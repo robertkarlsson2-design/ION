@@ -1,0 +1,7 @@
+/friends  auth
+  GET  /                    listFriends(userId)                          -> data
+  DEL  /:targetId           unfriend(userId, :targetId)                  -> 204  uuid:targetId
+  GET  /requests            listRequests(userId, ?direction)
+  POST /requests            sendFriendRequest(userId, body.addresseeEmail) -> 201
+  POST /requests/:id/accept acceptRequest(:id, userId)                   -> 200  uuid:id
+  POST /requests/:id/decline declineRequest(:id, userId)                 -> 200  uuid:id

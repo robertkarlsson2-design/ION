@@ -1,0 +1,9 @@
+Friends
+  load:
+    friends <- GET /friends
+    pending <- GET /friends/requests?direction=incoming
+  actions:
+    accept(requestId)  -> POST /friends/requests/:requestId/accept  -> reload
+    decline(requestId) -> POST /friends/requests/:requestId/decline -> reload
+    unfriend(friendId) -> DEL  /friends/:friendId                   -> reload
+  render: @custom
